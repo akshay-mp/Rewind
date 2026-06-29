@@ -1,0 +1,37 @@
+sequenceDiagram
+    autonumber
+    participant U as Browser SearchOverlay
+    participant A as api.ts debounced search
+    participant T as timeline.py read API
+    participant S as _search_traces
+    participant D as TraceStore rewind.db
+
+    Note over U,D: Stage 1 user types a query and picks filters
+    U->>A: onChange query, optional kind, optional status
+    A->>A: wait 250ms debounce timer
+    Note over A: query.length between 1 and 200 only then fetch
+
+    Note over U,D: Stage 2 validated request fires
+    A->>T: GET /api/v1/search q=query kind=tool status=error
+    T->>T: validate q min 1 max 200
+    T->>T: validate kind in allowed set
+    T->>T: validate status in allowed set
+    alt invalid kind or status
+        T-->>A: 400 with detail message
+        A-->>U: render banner no results
+    else valid filters
+        T->>S: _search_traces query params
+
+        Note over S,D: Stage 3 server side scan
+        loop every trace row
+            S->>D: store.list_traces
+            D-->>S: Trace with spans
+            S->>S: _matches_filters per span
+            S->>S: _span_text snippet grep
+            S->>S: _snippet 200 char excerpt
+        end
+        S-->>T: list of SpanSearchHit
+        T-->>A: 200 SearchResponse
+        A-->>U: render scrollable hit list
+        U->>U: onSelectResult trace_id rewind_id
+    end

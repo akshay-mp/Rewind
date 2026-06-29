@@ -1,0 +1,65 @@
+sequenceDiagram
+    autonumber
+    participant U as User or eval harness
+    participant CLI as rewind replay CLI
+    participant Ctx as for_root contextmanager
+    participant Session as ReplaySession branch
+    participant A as Agent code
+    participant P as openai_intercept.patch
+    participant T as @rewind.tool wrapper
+    participant DB as rewind.db
+
+    Note over U,DB: Setup: caller requests mode BRANCH with branch_at N.
+
+    Note over U,DB: Stage 1 session is created and prefilled with prefix spans
+    U->>CLI: replay trace_id branch_at N mode branch
+    CLI->>Ctx: for_root store trace_id mode BRANCH label
+    Ctx->>DB: get_spans trace_id branch_id empty
+    DB-->>Ctx: list of root spans
+    Ctx->>Session: ReplaySession seed cache with prefix
+    Ctx->>DB: store.insert_branch Branch parent_trace_id new branch_id
+    DB-->>Session: branch_id returned
+    Session->>Session: cursor = branch_at N
+
+    Note over U,DB: Stage 2 agent runs in BRANCH mode and a cache hit reuses prefix
+    U->>A: run agent with branch context
+    A->>P: openai completions create same messages as prefix
+    P->>Session: respond_or_forward CallSignature
+    Session->>Session: _signature_matches span at cursor
+    alt span within prefix matches messages_hash
+        Session->>Session: advance_cursor
+        Session-->>P: RecordedResponse cached
+        P-->>A: cached choice reused from prefix inheritance
+    end
+
+    Note over U,DB: Stage 3 divergence on tool call forwards live
+    A->>T: get_weather city Berlin divergent input
+    T->>Session: active_session
+    Session->>Session: _find_tool_span iterates recorded
+    alt args_hash differs OR cursor exhausted
+        Session-->>T: cache miss permitted in BRANCH mode
+        Note right of Session: no ToolCacheMiss raised here
+    end
+    T->>T: call live user function body
+    T-->>A: list city Berlin temp_c minus 5 live True
+
+    Note over U,DB: Stage 4 live span is captured under the fork branch_id
+    T->>Session: record_new live Span
+    Session->>Session: append to cache advance_cursor to len cache
+    Session->>DB: store.insert_span span branch_id
+    DB-->>Session: persisted
+
+    Note over U,DB: Stage 5 final LLM call also forwards live messages hash changed
+    A->>P: openai completions create updated messages
+    P->>Session: respond_or_forward
+    Session->>Session: no match because messages_hash differs from recorded
+    alt FROZEN would raise but BRANCH permits forward
+        Session-->>P: forward live authorized
+        P->>P: live HTTP to actual OpenAI stub
+        P->>Session: record_new new Span
+        Session->>DB: insert_span branch_id
+    end
+
+    Note over U,DB: Outcome: divergent spans persist under branch_id. Root trace is read only.
+    U->>DB: get_spans trace_id branch_id session branch_id
+    DB-->>U: union root spans plus branch captured spans

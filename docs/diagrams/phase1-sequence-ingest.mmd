@@ -1,0 +1,34 @@
+sequenceDiagram
+    autonumber
+    participant A as Instrumented Agent
+    participant X as OTLP/HTTP Exporter
+    participant R as FastAPI Receiver
+    participant I as ingest.py
+    participant S as TraceStore
+    participant D as rewind.db
+
+    A->>A: build OpenInference spans
+    A->>X: emit ResourceSpans
+    X->>R: POST /v1/traces<br/>Content-Type application/x-protobuf
+    R->>R: detect content-type
+    alt protobuf body
+        R->>I: decode_export_request bytes
+    else JSON body
+        R->>I: decode_export_request_json bytes
+    else unsupported content-type
+        R-->>X: 415 Unsupported Media Type
+    end
+    I-->>R: ExportTraceServiceRequest
+    R->>I: spans_from_request req
+    Note over I: walk resource_spans[]<br/>walk scope_spans[]<br/>walk spans[]<br/>merge resource attrs<br/>classify_span per span<br/>compute messages_hash
+    I-->>R: list Span
+    R->>R: _persist group by trace_id
+    loop per new trace_id
+        R->>S: upsert_trace Trace
+        S->>D: INSERT OR REPLACE traces
+    end
+    loop per span
+        R->>S: insert_span span
+        S->>D: INSERT spans
+    end
+    R-->>X: 200 OK<br/>x-rewind-spans-accepted N

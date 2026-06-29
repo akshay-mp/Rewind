@@ -1,0 +1,43 @@
+flowchart TB
+    %% Phase 1 architecture: OTLP/HTTP ingestion surface
+    %% Reading order top→bottom = agent exports → Rewind persists.
+
+    subgraph P1Delivered["Phase 1 — delivered (green)"]
+        CLI["rewind serve<br/>--port 4318 --db rewind.db"]
+        Receiver["FastAPI receiver<br/>POST /v1/traces, GET /healthz"]
+        Ingest["ingest.py<br/>pure proto → Span decoder"]
+        Classify["classify_span<br/>(existing, Phase 0)"]
+        Store["TraceStore<br/>SQLite + WAL"]
+        DB[("rewind.db<br/>WAL mode")]
+    end
+
+    subgraph P1Future["Future (faded)"]
+        TimelineUI["Phase 2 — Timeline UI"]
+        Engine["Phase 3 — Replay engine"]
+    end
+
+    subgraph P1External["External (instrumented agents)"]
+        AgentSDK["OpenInference SDK<br/>(OpenAI, ADK, LangGraph, ...)"]
+        OTLP["OTLP/HTTP exporter<br/>protobuf or JSON"]
+    end
+
+    AgentSDK --> OTLP
+    OTLP -->|HTTP POST /v1/traces| Receiver
+    CLI -->|uvicorn.run| Receiver
+    Receiver -->|decode_export_request<br/>decode_export_request_json| Ingest
+    Ingest -->|spans_from_request| Classify
+    Ingest -->|list Span| Store
+    Store --> DB
+    DB -.read.-> TimelineUI
+    DB -.read.-> Engine
+
+    %% Styling
+    classDef delivered fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#000
+    classDef future fill:#f8f9fa,stroke:#6c757d,stroke-dasharray:4 4,color:#6c757d
+    classDef ext fill:#e3f2fd,stroke:#1976d2,stroke-width:1px,color:#000
+    classDef db fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#000
+
+    class CLI,Receiver,Ingest,Classify,Store delivered
+    class DB db
+    class TimelineUI,Engine future
+    class AgentSDK,OTLP,AgentSDK,OTLP ext

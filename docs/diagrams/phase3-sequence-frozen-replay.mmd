@@ -1,0 +1,53 @@
+sequenceDiagram
+    autonumber
+    participant A as Agent code
+    participant P as openai_intercept.patch
+    participant T as @rewind.tool wrapper
+    participant S as active_session()
+    participant Cursor as ReplaySession cursor
+    participant DB as rewind.db
+
+    Note over A,DB: Setup: ReplaySession in FROZEN mode. Cursor seeded at 0 with pre-recorded spans.
+
+    Note over A,DB: Stage 1 agent calls the patched LLM endpoint
+    A->>P: openai.resources.chat.completions.create(model, messages)
+    P->>S: active_session()
+    S-->>P: session is not None
+    P->>Cursor: respond_or_forward(CallSignature)
+    Cursor->>Cursor: _signature_matches span.messages_hash
+    alt hash matches AND in FROZEN mode
+        Cursor->>Cursor: advance_cursor
+        Cursor-->>P: RecordedResponse payload cached
+        Note right of Cursor: NO outbound HTTP
+        P-->>A: parsed cached choice from gen_ai.response
+    else hash does not match
+        Cursor-->>P: raise ReplayError divergence
+        P-->>A: bubble to caller
+    end
+
+    Note over A,DB: Stage 2 agent invokes the wrapped tool
+    A->>T: get_weather city Paris
+    T->>S: active_session()
+    S-->>T: session
+    T->>Cursor: _find_tool_span name get_weather args_hash
+    Cursor->>Cursor: iterate recorded_spans from cursor
+    alt kind TOOL name matches input_hash equals
+        Cursor->>Cursor: advance_cursor to idx plus 1
+        Cursor-->>T: RecordedResponse with gen_ai.tool.output
+        Note right of Cursor: live function body NOT executed
+        T-->>A: cached output list city Paris temp_c 18
+    else cursor exhausted OR args_hash differs
+        Cursor-->>T: raise ToolCacheMiss
+        Note right of Cursor: FROZEN mode never falls back
+        T-->>A: bubble to caller
+    end
+
+    Note over A,DB: Stage 3 final LLM call also served from cache
+    A->>P: openai completions.create updated messages
+    P->>S: active_session
+    P->>Cursor: respond_or_forward
+    Cursor->>Cursor: second span matches messages_hash
+    Cursor-->>P: cached RecordedResponse Paris is 18C
+    P-->>A: cached final choice
+
+    Note over A,DB: Outcome: zero outbound HTTP, zero tool side effects, all 3 spans consumed.

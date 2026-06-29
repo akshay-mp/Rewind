@@ -1,0 +1,21 @@
+sequenceDiagram
+    autonumber
+    participant T as Test / CI
+    participant S as rewind serve<br/>(uvicorn subprocess)
+    participant C as client code
+    participant D as rewind.db
+
+    T->>S: spawn python -m rewind serve --port P
+    Note over S: bind 127.0.0.1 P<br/>TraceStore point at db path<br/>install FastAPI app
+    T->>C: _wait_for_health poll loop
+    loop until /healthz 200
+        C->>S: GET /healthz
+        S-->>C: status ok
+    end
+    T->>C: build 3-span OpenInference request
+    C->>S: POST /v1/traces protobuf
+    S-->>C: 200 x-rewind-spans-accepted 3
+    T->>D: open new TraceStore<br/>same db path
+    T->>D: store.get_trace trace_id
+    D-->>T: Trace 3 spans
+    T->>T: assert parent linking round-trips<br/>assert hash_prompt == hash_source

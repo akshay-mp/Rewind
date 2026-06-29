@@ -1,0 +1,27 @@
+sequenceDiagram
+    autonumber
+    participant T as Test
+    participant M as models.py
+    participant C as classify.py
+    participant S as TraceStore
+    participant DB as SQLite WAL
+
+    Note over T,DB: Phase 0 exit criterion: Span to SQLite to reload to identical
+
+    T->>M: Span(agent / llm / tool)
+    M->>C: classify_span(name, attrs)
+    C-->>M: SpanKind.AGENT/LLM/TOOL
+    T->>S: upsert_trace(Trace)
+    S->>DB: BEGIN then INSERT trace then COMMIT
+    T->>S: insert_span(span) x3
+    S->>DB: BEGIN then INSERT span raw_attributes JSON then COMMIT
+    T->>S: get_trace(trace_id)
+    S->>DB: SELECT spans ORDER BY start_time
+    DB-->>S: rows
+    S-->>T: Trace spans = agent, llm, tool
+
+    Note over T: Assert order and kinds and raw_attributes identical
+
+    T->>S: raw_attributes_bytes(rewind_id)
+    S->>DB: SELECT raw_attributes
+    DB-->>T: bytes fidelity check

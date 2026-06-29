@@ -1,0 +1,42 @@
+sequenceDiagram
+    autonumber
+    participant U as Browser
+    participant S as FastAPI localhost 8484
+    participant M as _mount_ui StaticFiles
+    participant T as timeline.py read API
+    participant D as TraceStore rewind.db
+
+    Note over U,D: Stage 1 fetch the SPA shell
+    U->>S: GET /ui
+    S-->>U: 307 redirect to /ui/
+    U->>S: GET /ui/
+    S->>M: serve web dist index.html
+    M-->>U: 200 HTML base=/ui/
+    Note over U: browser parses HTML then loads script tags
+    U->>S: GET /ui/assets/index js
+    U->>S: GET /ui/assets/index css
+    M-->>U: 200 JS and CSS bundles
+
+    Note over U,D: Stage 2 list traces App mounts TraceList on load
+    U->>T: GET /api/v1/traces limit=50
+    T->>D: store.list_traces limit=50
+    D-->>T: list of Trace
+    T-->>U: 200 TraceListResponse
+
+    Note over U,D: Stage 3 user picks a trace Timeline renders
+    U->>T: GET /api/v1/traces/{trace_id}
+    T->>D: store.get_trace trace_id
+    D-->>T: Trace plus spans
+    T-->>U: 200 TraceDetail
+
+    Note over U,D: Stage 4 user clicks a span SpanInspector opens
+    U->>T: GET /api/v1/spans/{rewind_id}
+    T->>D: store.get_span rewind_id
+    D-->>T: Span
+    T-->>U: 200 SpanView with tokens and model
+
+    Note over U,D: Stage 5 user types in search SearchOverlay
+    U->>T: GET /api/v1/search q=tool name
+    T->>D: store.list_traces plus text scan
+    D-->>T: matching spans
+    T-->>U: 200 SearchResponse with rewind_id and snippet

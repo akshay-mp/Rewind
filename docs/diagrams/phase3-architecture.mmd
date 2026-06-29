@@ -1,0 +1,77 @@
+flowchart TB
+    %% Phase 3 architecture: time-travel replay engine + interception surfaces.
+    %% Reading order top → bottom = capture (Phase 1 reused) → storage → replay control plane
+    %% → three interception surfaces → external agent code.
+
+    subgraph P3Delivered["Phase 3 — delivered (green)"]
+        direction TB
+
+        subgraph CapturePlane["Capture plane (Phase 1 reused)"]
+            Receiver["FastAPI receiver<br/>POST /v1/traces"]
+            Ingest["ingest.py"]
+            StoreW["TraceStore<br/>SQLite + WAL"]
+        end
+
+        DB[("rewind.db<br/>traces, spans, branches")]
+
+        subgraph ReplayPlane["Replay control plane (NEW)"]
+            CLI["rewind replay CLI<br/>--branch-at, --mode, --label"]
+            Session["ReplaySession<br/>contextvars + cursor"]
+            Branch["fork<br/>insert_branch + seed cache"]
+        end
+
+        subgraph InterceptPlane["Interception surfaces (3 adapters)"]
+            Patch["openai_intercept.patch<br/>monkey-patch Completions.create"]
+            Tool["tool decorator<br/>@rewind.tool functools.wraps"]
+            Adapter["adapters/langgraph.py<br/>_ReplayChatModel(BaseChatModel)"]
+        end
+    end
+
+    subgraph P3Future["Future (faded)"]
+        Phase5Streaming["Phase 5 — streaming replay<br/>(frozen-streaming fail-closed today)"]
+        EvalHarness["Phase 5.5 — eval harness<br/>(reentrant contextvars ready)"]
+    end
+
+    subgraph P3External["External (instrumented agent runtime)"]
+        AgentCode["User agent code"]
+        OpenAI["openai.resources.chat.completions"]
+        LangGraph["langchain_core BaseChatModel"]
+        UserTool["user @rewind.tool fn"]
+    end
+
+    %% Capture path (carried over)
+    AgentCode -.forwards OTLP.-> Receiver
+    Receiver --> Ingest
+    Ingest --> StoreW
+    StoreW --> DB
+
+    %% Replay control path
+    CLI -->|contextmanager| Session
+    Session -->|fork mode=branch| Branch
+    Branch --> DB
+
+    %% Three interception surfaces bind to the active session via contextvars
+    Session -.active_session.-> Patch
+    Session -.active_session.-> Tool
+    Session -.active_session.-> Adapter
+
+    %% Adapter reach into agent runtime symbols
+    Patch -->|__rewind_patched__| OpenAI
+    Adapter -->|replay_chat_model wrapped| LangGraph
+    Tool -->|@rewind.tool wraps user fn| UserTool
+
+    %% replay provenance
+    Session -.reads recorded spans.-> DB
+    Session -.record_new live span.-> DB
+
+    %% Styling
+    classDef delivered fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#000
+    classDef future fill:#f8f9fa,stroke:#6c757d,stroke-dasharray:4 4,color:#6c757d
+    classDef ext fill:#e3f2fd,stroke:#1976d2,stroke-width:1px,color:#000
+    classDef db fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#000
+
+    class CLI,Session,Branch,Patch,Tool,Adapter delivered
+    class Receiver,Ingest,StoreW delivered
+    class DB db
+    class Phase5Streaming,EvalHarness future
+    class AgentCode,OpenAI,LangGraph,UserTool ext

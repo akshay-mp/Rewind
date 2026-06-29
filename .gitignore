@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Rewind runtime artifacts
+*.db
+*.db-wal
+*.db-shm
+.rewind/
+
+# Node / web build
+web/node_modules/
+web/dist/
+web/build/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# DeepSec reports
+.deepsec/
+deepsec-reports/

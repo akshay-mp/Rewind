@@ -1,0 +1,39 @@
+erDiagram
+    traces ||--o{ branches : "has"
+    traces ||--o{ spans : "owns root"
+    branches ||--o{ spans : "owns replayed"
+
+    traces {
+        TEXT trace_id PK
+        TEXT root_branch_id
+        TEXT created_at
+    }
+    branches {
+        TEXT branch_id PK
+        TEXT trace_id FK
+        TEXT parent_branch_id
+        INTEGER branch_at_index
+        TEXT mode
+        TEXT label
+        TEXT created_at
+    }
+    spans {
+        TEXT rewind_id PK
+        TEXT trace_id FK
+        TEXT span_id
+        TEXT parent_span_id
+        TEXT branch_id
+        TEXT name
+        TEXT kind
+        TEXT start_time
+        TEXT end_time
+        TEXT status
+        TEXT status_message
+        TEXT model_name
+        INTEGER prompt_tokens
+        INTEGER completion_tokens
+        INTEGER total_tokens
+        TEXT messages_hash
+        TEXT tools_hash
+        TEXT raw_attributes "verbatim GenAI semconv JSON"
+    }
