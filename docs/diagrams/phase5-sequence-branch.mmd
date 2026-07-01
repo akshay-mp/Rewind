@@ -1,0 +1,49 @@
+sequenceDiagram
+    autonumber
+    participant U as Browser user
+    participant T as Timeline.tsx
+    participant API as FastAPI timeline.py
+    participant TS as TraceStore
+    participant DB as SQLite (rewind.db)
+
+    Note over U,DB: Phase 5 branch creation: fork modal → POST /branches → new row in branches table.
+
+    Note over U,DB: Stage 1 user picks a parent and opens the fork modal
+    U->>T: switch to branches mode
+    T->>API: GET /api/v1/traces/{trace_id}/branches
+    API->>TS: branch_tree(trace_id)
+    TS->>DB: SELECT span-tree CTE + branches rows
+    DB-->>TS: rows
+    TS-->>API: BranchNode(root, children=...)
+    API-->>T: 200 BranchNodeView JSON
+    T-->>U: render BranchTree with 1 ← and 1 → button per row
+
+    U->>T: click on row's fork ⎇ button
+    T-->>U: open ForkBranchModal (label default "fork of X @ N")
+
+    Note over U,DB: Stage 2 user submits modal POSTs new branch
+    U->>T: edit label · click fork
+    T->>API: POST /api/v1/traces/{trace_id}/branches<br/>{parent_branch_id, branch_at_index, mode: "manual", label}
+    API->>API: pydantic v2 validate CreateBranchRequest
+    API->>TS: fork_branch(trace_id, parent_branch_id, branch_at_index, mode, label)
+    TS->>DB: BEGIN IMMEDIATE
+    TS->>DB: SELECT 1 FROM branches WHERE branch_id = parent
+    alt parent missing
+        DB-->>TS: 0 rows
+        TS-->>API: raises ValueError parent not found
+        API-->>T: 409 conflict with detail
+        T-->>U: error banner in modal
+    else parent present
+        DB-->>TS: 1 row
+        TS->>DB: INSERT INTO branches (branch_id, trace_id, parent_branch_id, ...) VALUES (uuid4, ...)
+        DB-->>TS: ok
+        TS->>DB: COMMIT
+        TS-->>API: CreateBranchResponse(branch_id, ...)
+        API-->>T: 200 JSON
+    end
+
+    Note over U,DB: Stage 3 UI bumps revision and remounts BranchTree to refresh state
+    T->>T: branchRevision++ (forces key change → remount)
+    T->>API: GET /api/v1/traces/{trace_id}/branches (re-fetch)
+    API-->>T: updated tree including new node
+    T-->>U: modal closes · new branch visible in tree

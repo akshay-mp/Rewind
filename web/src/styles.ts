@@ -4,7 +4,7 @@
 // header, and search hits all agree. Dark theme first; light theme variants
 // are picked by the browser via `color-scheme`.
 
-import type { SpanKind, SpanStatus } from "./types";
+import type { EvalVerdict, SpanKind, SpanStatus } from "./types";
 
 interface KindStyle {
   label: string;
@@ -53,6 +53,25 @@ export function statusStyle(status: SpanStatus): string {
     case "UNSET":
     default:
       return "var(--rewind-status-unset)";
+  }
+}
+
+/**
+ * Phase 5.5 — CSS class for an eval verdict pill. The pill is a small
+ * inline element next to each scenario row. The classes (``pill--pass``,
+ * etc.) are defined in ``styles.css``.
+ */
+export function evalVerdictClass(verdict: EvalVerdict): string {
+  switch (verdict) {
+    case "PASS":
+      return "pill pill--pass";
+    case "FAIL":
+      return "pill pill--fail";
+    case "SKIP":
+      return "pill pill--skip";
+    case "ERROR":
+    default:
+      return "pill pill--error";
   }
 }
 

@@ -29,6 +29,8 @@ dependencies = [
     "click>=8.1.0",
     "rich>=13.0.0",
     "anyio>=4.0.0",
+    # Phase 5.5: suite YAML loader (CLI + HTTP POST both parse suite YAML).
+    "pyyaml>=6.0.2",
 ]
 
 [project.optional-dependencies]
@@ -42,9 +44,36 @@ dev = [
     "mypy>=1.13.0",
     "bandit>=1.7.0",
     "types-protobuf>=5.0.0",
+    # Phase 5.5: type stubs for PyYAML (used in eval_api YAML loader).
+    "types-PyYAML>=6.0.12",
 ]
 web = [
     # web/ is a built artifact; no runtime node dependency.
+]
+
+# Phase 6 — per-framework replay-adapter optional extras.
+# Each extra pins the minimal framework package(s) Rewind's adapter wraps;
+# the adapter itself degrades to a clear AdapterError if the framework is
+# absent. Install one or more with:  pip install rewind-ai[adk,crewai]
+adk = ["google-adk>=0.2.0"]
+crewai = ["crewai>=0.70.0"]
+pydantic-ai = ["pydantic-ai>=0.0.30"]
+smolagents = ["smolagents>=0.1.0"]
+# Bundled extra: pull in every framework adapter dependency at once.
+adapters = [
+    "google-adk>=0.2.0",
+    "crewai>=0.70.0",
+    "pydantic-ai>=0.0.30",
+    "smolagents>=0.1.0",
+]
+# Phase 7 — local-model enrichment optional deps. The ``enrichment`` extra
+# enables the preferred tokenizer path in ``render_chat_template`` and the
+# last-ditch VRAM sampler. Without it, enrichment still works — it just
+# falls back to the deterministic ``[role] content`` renderer and skips
+# system-level memory probing.
+enrichment = [
+    "transformers>=4.40.0",
+    "psutil>=5.9.0",
 ]
 
 [project.scripts]
@@ -57,7 +86,15 @@ Homepage = "https://github.com/example/rewind"
 packages = ["src/rewind"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/rewind", "README.md"]
+# Phase 8 — ship docs, examples, and scripts in the sdist so offline users
+# have the quickstart and demo agents. Wheels stay lean (code only).
+include = [
+    "src/rewind",
+    "README.md",
+    "docs",
+    "examples",
+    "scripts",
+]
 
 # --- Ruff (strict) ---------------------------------------------------------
 [tool.ruff]
@@ -123,6 +160,40 @@ disable = [
     "use-implicit-booleaness-not-comparison",  # explicit `== []` is clearer
 ]
 
+# Phase 5.5 eval engine is intentionally one file: pure evaluators + suite
+# runner + dispatch in one place is more readable than splitting into
+# evaluator.py + runner.py + dispatch.py. The pylint maxima for module,
+# function, and class complexity need to relax accordingly.
+[tool.pylint."src/rewind/evaluate.py"]
+disable = [
+    "too-many-lines",  # one-file design choice (documented in module docstring)
+    "too-many-nested-blocks",  # OpenInference response schema is nested
+    "too-many-instance-attributes",  # EvalSuite has many natural fields
+    "too-many-branches",  # suite validation is a long but linear dispatch
+    "too-many-locals",  # scenario runner has many local tracking vars
+]
+
+# eval_api.py view models are intentionally isomorphic to evaluate.py's
+# frozen dataclasses (DB shape → wire shape). The 5-7 identical field
+# declarations are the projection contract, not duplication.
+[tool.pylint."src/rewind/eval_api.py"]
+disable = [
+    "duplicate-code",  # view models mirror dataclasses by design
+]
+
+# Phase 6 — every framework adapter follows the same factory pattern: lazy
+# import inside the factory, subclass upstream's Base LLM class (which has
+# no public composition API), and reuse extract_signature + the Responder
+# protocol. These relaxations apply uniformly to all adapter modules so
+# the pragmas don't have to be scattered inline across 5 files.
+[tool.pylint."src/rewind/adapters/**"]
+disable = [
+    "protected-access",  # subclassing framework classes requires _generate-style overrides
+    "import-outside-toplevel",  # lazy imports keep `rewind --version` fast
+    "too-many-statements",  # factory + closure-bound inner class + helpers in one place
+    "too-few-public-methods",  # inner replay classes expose overrides, no new public surface
+]
+
 # --- mypy (strict) ---------------------------------------------------------
 [tool.mypy]
 python_version = "3.11"
@@ -147,6 +218,28 @@ ignore_missing_imports = true
 module = ["langchain_core.*", "langchain.*", "openai.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# Phase 7 — local-model enrichment optional deps (lazy imported). transformers
+# provides tokenizer support for render_chat_template; psutil is the last-ditch
+# VRAM sampler fallback. Neither is required at install time.
+module = ["transformers.*", "psutil.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Phase 6 — additional framework adapters (ADK / CrewAI / PydanticAI /
+# SmolAgents). All four import lazily inside the factory function and
+# raise AdapterError if missing; type-checks against these packages are
+# performed only when the developer installs the corresponding extra.
+module = [
+    "google.adk.*",
+    "google.genai.*",
+    "crewai.*",
+    "pydantic_ai.*",
+    "smolagents.*",
+    "huggingface_hub.*",
+]
+ignore_missing_imports = true
+
 # --- pytest ----------------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -158,6 +251,7 @@ addopts = [
     "--strict-config",
     "--cov=rewind",
     "--cov-report=term-missing",
+    "-m", "not integration",
 ]
 markers = [
     "integration: end-to-end tests that exercise multiple components",
@@ -170,3 +264,12 @@ branch = true
 
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+
+# --- bandit -----------------------------------------------------------------
+# B105 (hardcoded_password_string) fires on enum string values like
+# "token_budget" / "pass" and on rich colour names like "green". The
+# codebase has no real credentials; ruff S105 / S106 enforce the genuine
+# password cases. We exclude B105 globally and let the other 100+ bandit
+# checks run.
+[tool.bandit]
+skips = ["B105"]

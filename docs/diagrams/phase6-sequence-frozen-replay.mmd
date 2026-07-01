@@ -1,0 +1,51 @@
+sequenceDiagram
+    autonumber
+    participant A as Agent code
+    participant F as adapters.<framework>.factory
+    participant W as wrapped framework model
+    participant S as active_session()
+    participant Sig as extract_signature
+    participant Cursor as ReplaySession cursor
+    participant C as _common.build_live_span
+    participant DB as rewind.db
+
+    Note over A,DB: Setup: trace seeded with N LLM spans.<br/>ReplaySession opened in FROZEN mode. No framework installed at import time.
+
+    Note over A,DB: Stage 0 — module import (no framework required)
+    A->>F: import rewind.adapters.adk  (or any of the four)
+    Note right of F: NO framework import happens<br/>at module load. Only at factory call.
+
+    Note over A,DB: Stage 1 — factory call (framework resolved lazily)
+    A->>F: replay_llm(wrapped, trace_id="…")
+    F->>F: from google.adk.models.llms import BaseLlm  (lazy)
+    alt framework not installed
+        F-->>A: raise AdapterError("install with pip install rewind-ai[adk]")
+    else framework installed
+        F->>F: define _ReplayLlm(BaseLlm) in closure scope
+        F-->>A: return _ReplayLlm(wrapped, trace_id)
+    end
+
+    Note over A,DB: Stage 2 — frozen replay dispatch (zero egress)
+    A->>F: _ReplayLlm.generate_response(request)
+    F->>S: active_session()
+    alt session is None
+        F->>W: wrapped.generate_response(request)
+        W-->>F: live result
+        F-->>A: pass-through (no capture)
+    else session is not None
+        F->>Sig: extract_signature(model=…, messages=…)
+        Sig-->>F: CallSignature(model, messages_hash, tools_hash)
+        F->>Cursor: respond_or_forward(signature)
+        alt hash matches a recorded span
+            Cursor->>Cursor: advance_cursor
+            Cursor-->>F: RecordedResponse(payload, span_id, rewind_id, model)
+            F->>F: materialise payload → framework response type
+            Note right of F: NO outbound HTTP / SDK call
+            F-->>A: recorded response
+        else hash does not match (divergence)
+            Cursor-->>F: RecordedResponse = None
+            F->>C: assert_not_frozen(session)
+            Note right of C: FROZEN mode is strict-determinism
+            C-->>A: raise ReplayError("frozen replay diverged at cursor=N")
+        end
+    end

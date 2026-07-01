@@ -1,23 +1,49 @@
 """Top-level Rewind CLI.
 
 Phase 0 exposes only ``rewind --version``. Phase 1 adds ``serve``; Phase 2
-adds ``ui``; Phase 3 adds ``replay``; P5.5 adds ``eval``.
+adds ``ui``; Phase 3 adds ``replay``; Phase 4 adds ``checkpoint``; P5.5
+adds ``eval``; Phase 7 adds ``enrich`` and ``render-template``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from rewind import __version__
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from rewind.evaluate import EvalSuiteResult
+    from rewind.models import Checkpoint
+    from rewind.storage import TraceStore
+
 
 #: Default bind address for ``rewind serve``. Loopback only — this is a
 #: local-only debug surface; binding to 0.0.0.0 requires an explicit flag and
 #: is documented as riskier in the Phase 1 threat model.
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 4318
-_DEFAULT_DB = "rewind.db"
+#: Default database location: ``~/.rewind/rewind.db``. Phase 8 packaging
+#: decision — a single well-known path means the README quickstart works
+#: from any CWD without ``--db`` flags. The directory is created on first
+#: use by :func:`_ensure_default_db_path`.
+_DEFAULT_DB = Path.home() / ".rewind" / "rewind.db"
+
+
+def _ensure_default_db_path(db_path: Path) -> Path:
+    """If ``db_path`` is under the default ``~/.rewind/``, create the dir.
+
+    Phase 8 contract: ``pipx install`` → ``rewind serve`` must not fail just
+    because ``~/.rewind/`` doesn't exist yet. Only auto-creates the default
+    path (a user passing ``--db /tmp/foo.db`` is on their own — explicit).
+    """
+    if db_path == _DEFAULT_DB:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    return db_path
 
 
 @click.group()
@@ -71,6 +97,7 @@ def serve(host: str, port: int, db_path: Path) -> None:
     from rewind.storage import TraceStore
     # pylint: enable=import-outside-toplevel
 
+    db_path = _ensure_default_db_path(db_path)
     store = TraceStore(db_path=str(db_path))
     app = create_app(store)
     click.echo(
@@ -241,9 +268,494 @@ def replay(
         raise click.exceptions.Exit(1) from exc
 
 
+@cli.command(name="eval", context_settings={"help_option_names": ["-h", "--help"]})
+@click.argument(
+    "suite_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+    help="SQLite database file to read seed traces from and persist the run into.",
+)
+@click.option(
+    "--save/--no-save",
+    "persist",
+    default=True,
+    show_default=True,
+    help="Persist the run into eval_runs; --no-save runs the suite in dry-run mode.",
+)
+@click.option(
+    "--suite-name",
+    default=None,
+    help="Override the suite name (otherwise read from YAML's top-level 'name').",
+)
+def eval_cmd(
+    suite_path: Path,
+    db_path: Path,
+    persist: bool,
+    suite_name: str | None,
+) -> None:
+    """Run an eval suite defined as YAML and print the per-scenario verdicts.
+
+    \b
+    SUITE_PATH is a YAML file matching the docs/phases/phase-5.5.md contract:
+    a top-level ``name`` + ``scenarios`` list. The suite runs through the
+    async orchestrator (asyncio.gather + bounded semaphore) so scenarios
+    execute in parallel up to ``concurrency``.
+
+    \b
+    Exit codes:
+      0  overall verdict PASS (all scenarios PASS or SKIP)
+      1  overall verdict FAIL (at least one scenario FAIL)
+      2  overall verdict ERROR (anything raised inside the orchestrator)
+
+    \b
+    Examples:
+      rewind eval tests/fixtures/suite.yaml --db rewind.db
+      rewind eval suite.yaml --no-save           # dry-run, prints verdicts only
+      rewind eval suite.yaml --suite-name dev    # override name
+    """
+    # pylint: disable=import-outside-toplevel
+    import asyncio
+
+    from rewind.eval_api import parse_suite_from_yaml
+    from rewind.evaluate import EvalSuite, SuiteValidationError, evaluate
+    from rewind.storage import TraceStore
+
+    # pylint: enable=import-outside-toplevel
+
+    suite_yaml = suite_path.read_text(encoding="utf-8")
+    try:
+        suite = parse_suite_from_yaml(suite_yaml)
+    except SuiteValidationError as exc:
+        click.echo(f"rewind eval: suite validation failed: {exc}", err=True)
+        raise click.exceptions.Exit(2) from exc
+    if suite_name is not None:
+        suite = EvalSuite(
+            name=suite_name,
+            scenarios=suite.scenarios,
+            concurrency=suite.concurrency,
+            scenario_timeout_s=suite.scenario_timeout_s,
+            judge=suite.judge,
+        )
+
+    store = TraceStore(db_path=str(db_path))
+    try:
+        result = asyncio.run(evaluate(suite, store=store))
+    except SuiteValidationError as exc:
+        click.echo(f"rewind eval: suite validation failed: {exc}", err=True)
+        raise click.exceptions.Exit(2) from exc
+
+    if persist:
+        store.upsert_eval_run(result, suite_yaml=suite_yaml)
+
+    _print_eval_summary(result)
+    if result.overall_verdict.value == "pass":
+        return
+    if result.overall_verdict.value == "fail":
+        raise click.exceptions.Exit(1)
+    raise click.exceptions.Exit(2)
+
+
+def _print_eval_summary(result: EvalSuiteResult) -> None:
+    """Render the per-scenario verdicts as a compact table.
+
+    Uses :mod:`rich.table` for column alignment when available; falls back
+    to plain ``click.echo`` otherwise (e.g. when tests stub stdout).
+    """
+    # pylint: disable=import-outside-toplevel
+    try:
+        from rich.console import Console
+        from rich.table import Table
+    except ImportError:  # pragma: no cover - rich is a hard dep but be safe
+        Console = None  # type: ignore[assignment, misc]
+        Table = None  # type: ignore[assignment, misc]
+
+    overall = result.overall_verdict.value.upper()
+    suite_name_disp = result.suite_name
+    run_id = result.run_id
+
+    if Console is None or Table is None:  # pragma: no cover
+        click.echo(f"suite       {suite_name_disp}")
+        click.echo(f"run_id      {run_id}")
+        click.echo(f"overall     {overall}")
+        for scen in result.scenarios:
+            click.echo(
+                f"  {scen.verdict.value.upper():5s}  {scen.name}"
+                + (f"  ({scen.error_message})" if scen.error_message else "")
+            )
+        return
+
+    console = Console()
+    table = Table(title=f"Eval suite: {suite_name_disp}", show_lines=False)
+    table.add_column("Scenario", overflow="fold")
+    table.add_column("Verdict", justify="right")
+    table.add_column("Branch")
+    table.add_column("Tokens")
+    table.add_column("Detail")
+    verdict_color = {"PASS": "green", "FAIL": "red", "SKIP": "yellow", "ERROR": "red"}
+    for scen in result.scenarios:
+        v = scen.verdict.value.upper()
+        detail = ""
+        if scen.error_message:
+            detail = scen.error_message
+        elif scen.outcomes:
+            detail = scen.outcomes[0].detail
+        # Cap detail to 60 chars to keep the table narrow.
+        if len(detail) > 60:
+            detail = detail[:57] + "..."
+        branch = str(scen.branch_id)[:8] if scen.branch_id else "-"
+        tokens = (
+            str(scen.rollup.total_tokens) if scen.rollup.total_tokens else "-"
+        )
+        table.add_row(
+            scen.name,
+            f"[{verdict_color.get(v, 'white')}]{v}[/{verdict_color.get(v, 'white')}]",
+            branch,
+            tokens,
+            detail,
+        )
+    console.print(table)
+    console.print(f"overall: [{verdict_color.get(overall, 'white')}]{overall}")
+    console.print(f"run_id:  {run_id}")
+
+
 def main() -> None:
     """Entrypoint referenced by ``[project.scripts] rewind``."""
     cli()
+
+
+@cli.group()
+def checkpoint() -> None:
+    """Inspect state snapshots captured by :func:`rewind.checkpoint`.
+
+    Phase 4 added named state checkpoints to the replay engine: an agent
+    that mutates the world can call ``rewind.checkpoint(name, payload)``
+    inside a re-run, and FETCH the same state back on subsequent FROZEN
+    runs without re-running the side effect.
+
+    This group is read-only: it lets you list and dump snapshots for a
+    given trace/branch. Captures happen via the agent calling
+    :func:`rewind.checkpoint` inside an active replay session.
+    """
+
+
+@checkpoint.command("list")
+@click.argument("trace_id")
+@click.option(
+    "--branch",
+    "branch_id",
+    default=None,
+    help="Constrain to one branch id. Omit to scan every branch in the trace.",
+)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+    help="SQLite database file to read.",
+)
+def checkpoint_list(
+    trace_id: str, branch_id: str | None, db_path: Path
+) -> None:
+    """List checkpoints captured for ``trace_id``.
+
+    Without ``--branch`` the command iterates every branch and prints
+    branch-grouped checkpoints. With ``--branch`` it lists only that
+    branch's snapshots. Output is a tab-separated table feedable to
+    downstream tools.
+    """
+    # pylint: disable=import-outside-toplevel
+    from uuid import UUID
+
+    from rewind.storage import TraceStore
+    # pylint: enable=import-outside-toplevel
+
+    store = TraceStore(db_path=str(db_path))
+
+    if branch_id is not None:
+        try:
+            bid = UUID(branch_id)
+        except ValueError as exc:
+            click.echo(f"rewind: --branch must be a UUID, got {branch_id!r}", err=True)
+            raise click.exceptions.Exit(2) from exc
+        _print_checkpoints_for_branch(store, bid)
+        return
+
+    # No branch filter: scan all branches in the trace, group output.
+    branches = store.list_branches(trace_id)
+    if not branches:
+        click.echo(f"rewind: no branches found for trace {trace_id}", err=True)
+        raise click.exceptions.Exit(1)
+
+    for branch in branches:
+        click.echo(f"# branch {branch.branch_id} ({branch.label or branch.mode})")
+        _print_checkpoints_for_branch(store, branch.branch_id)
+
+
+def _print_checkpoints_for_branch(
+    store: TraceStore, bid: UUID
+) -> None:
+    """Print one branch's checkpoints as a TSV block.
+
+    Helper for ``checkpoint list``; kept at module top-level so test
+    fixtures can call it directly without going through click.
+
+    Args:
+        store: A :class:`~rewind.storage.TraceStore` instance.
+        bid: Branch UUID to list checkpoints for.
+    """
+    cps: list[Checkpoint] = store.list_checkpoints(bid)
+    if not cps:
+        click.echo("(no checkpoints)")
+        return
+    for cp in cps:
+        click.echo(
+            f"{cp.name}\tcursor={cp.cursor_index}\t"
+            f"created={cp.created_at}\tlabel={cp.label or '-'}\t"
+            f"keys={sorted(cp.payload.keys())!r}"
+        )
+
+
+@checkpoint.command("restore")
+@click.argument("trace_id")
+@click.argument("name")
+@click.option(
+    "--branch",
+    "branch_id",
+    required=True,
+    help="Branch id the checkpoint was captured under (required: names are "
+    "scoped per-branch).",
+)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+    help="SQLite database file to read.",
+)
+def checkpoint_restore(
+    trace_id: str, name: str, branch_id: str, db_path: Path
+) -> None:
+    """Print a stored checkpoint's payload as JSON.
+
+    Use this to inspect a snapshot captured during a prior agent run, or
+    to pipe into a ``diff`` against the live state. The ``trace_id`` is
+    accepted for symmetry with the rest of the CLI but is not used in
+    the lookup — ``(branch_id, name)`` is the unique key.
+    """
+    # pylint: disable=import-outside-toplevel
+    import json as _json
+    from uuid import UUID
+
+    from rewind.storage import TraceStore
+    # pylint: enable=import-outside-toplevel
+
+    _ = trace_id  # parsed but unused — present for CLI symmetry
+    store = TraceStore(db_path=str(db_path))
+    try:
+        bid = UUID(branch_id)
+    except ValueError as exc:
+        click.echo(f"rewind: --branch must be a UUID, got {branch_id!r}", err=True)
+        raise click.exceptions.Exit(2) from exc
+
+    cp = store.get_checkpoint(bid, name)
+    if cp is None:
+        click.echo(
+            f"rewind: no checkpoint named {name!r} on branch {branch_id}",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+    click.echo(_json.dumps(cp.payload, sort_keys=True, indent=2))
+
+
+# ----------------------------------------------------------------------
+# Phase 7 — local-model enrichment commands
+# ----------------------------------------------------------------------
+
+
+@cli.command()
+@click.argument("trace_id")
+@click.option(
+    "--branch",
+    "branch_id",
+    default=None,
+    help="Branch id to enrich. Omit to enrich the trace's root timeline.",
+)
+@click.option(
+    "--quant/--no-quant",
+    "parse_quant",
+    default=True,
+    show_default=True,
+    help="Parse model_name for GGUF quant tags (q4_K_M, q8_0, f16, ...) and "
+    "stamp the result onto span.raw_attributes['rewind.local.quant'].",
+)
+@click.option(
+    "--vram/--no-vram",
+    "sample_vram_flag",
+    default=False,
+    show_default=True,
+    help="Sample GPU memory and utilisation once per LLM span "
+    "(nvidia-smi / asitop / macmon / psutil). Off by default: sampler probes "
+    "an external process and adds ~2ms per LLM span.",
+)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+    help="SQLite database file to read + write.",
+)
+def enrich(
+    trace_id: str,
+    branch_id: str | None,
+    parse_quant: bool,
+    sample_vram_flag: bool,
+    db_path: Path,
+) -> None:
+    """Apply Phase 7 local-model enrichment to every span in a trace/branch.
+
+    Walks every span, calls :func:`rewind.enrichment.enrich_span`, and
+    persists the updated ``raw_attributes`` back into the store. Idempotent —
+    re-running with the same flags produces the same output.
+
+    \b
+    Examples:
+      rewind enrich <trace>                           # quant only (default)
+      rewind enrich <trace> --vram                    # quant + GPU sample
+      rewind enrich <trace> --branch <uuid> --no-quant
+    """
+    # pylint: disable=import-outside-toplevel
+    from uuid import UUID
+
+    from rewind.enrichment import enrich_span
+    from rewind.storage import TraceStore
+    # pylint: enable=import-outside-toplevel
+
+    store = TraceStore(db_path=str(db_path))
+    bid: UUID | None = UUID(branch_id) if branch_id else None
+
+    # get_trace() loads the root branch only; for non-root branches we pull
+    # spans via get_spans() to span both the original timeline and branches.
+    if bid is None:
+        trace = store.get_trace(trace_id)
+        if trace is None:
+            click.echo(f"rewind: no such trace {trace_id!r}", err=True)
+            raise click.exceptions.Exit(1)
+        spans = trace.spans
+    else:
+        spans = store.get_spans(trace_id, branch_id=bid)
+        if not spans:
+            click.echo(
+                f"rewind: no spans found for trace {trace_id!r} branch {branch_id!r}",
+                err=True,
+            )
+            raise click.exceptions.Exit(1)
+
+    enriched = 0
+    for span in spans:
+        # enrich_span mutates raw_attributes in place; insert_span's
+        # ON CONFLICT clause persists the updated JSON back to the row.
+        enrich_span(span, parse_model_quant=parse_quant, sample_gpu=sample_vram_flag)
+        store.insert_span(span, branch_id=bid)
+        enriched += 1
+    click.echo(
+        f"rewind enrich → enriched {enriched} span(s) "
+        f"(quant={parse_quant}, vram={sample_vram_flag})",
+        err=True,
+    )
+
+
+@cli.command(name="render-template")
+@click.argument("trace_id")
+@click.argument("span_index", type=int)
+@click.option(
+    "--branch",
+    "branch_id",
+    default=None,
+    help="Branch id containing the span. Omit for the root timeline.",
+)
+@click.option(
+    "--model",
+    "model_override",
+    default=None,
+    help="Override the model name when resolving a HuggingFace tokenizer. "
+    "Useful when the recorded model_name is an Ollama tag and you want to "
+    "render against the upstream HF repo (e.g. 'Qwen/Qwen3-32B-Instruct').",
+)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+    help="SQLite database file to read.",
+)
+def render_template(
+    trace_id: str,
+    span_index: int,
+    branch_id: str | None,
+    model_override: str | None,
+    db_path: Path,
+) -> None:
+    """Render the post-chat-template prompt for one LLM span.
+
+    Phase 7 inspection tool: local-model failures routinely hide in the
+    chat template (missing ``<|im_start|>``, wrong role tags). This
+    renders the exact string the model would see — using transformers'
+    ``apply_chat_template`` when the tokenizer is available, or a
+    readable ``[role] content`` fallback otherwise.
+
+    \b
+    Exit codes:
+      0  span rendered (transformers or fallback)
+      1  span not found / not an LLM span / no messages attribute
+    """
+    # pylint: disable=import-outside-toplevel
+    from uuid import UUID
+
+    from rewind.enrichment import render_chat_template
+    from rewind.storage import TraceStore
+    # pylint: enable=import-outside-toplevel
+
+    store = TraceStore(db_path=str(db_path))
+    bid: UUID | None = UUID(branch_id) if branch_id else None
+    spans = store.get_spans(trace_id, branch_id=bid)
+    if not spans:
+        click.echo(f"rewind: no such trace {trace_id!r}", err=True)
+        raise click.exceptions.Exit(1)
+    if span_index < 0 or span_index >= len(spans):
+        click.echo(
+            f"rewind: span_index {span_index} out of range "
+            f"(trace has {len(spans)} spans)",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    span = spans[span_index]
+    messages = span.raw_attributes.get("gen_ai.prompt") or span.raw_attributes.get(
+        "llm.input_messages"
+    )
+    if not isinstance(messages, list):
+        click.echo(
+            "rewind: span has no messages to render "
+            "(expected gen_ai.prompt or llm.input_messages list)",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    rendered = render_chat_template(
+        messages,
+        model_name=model_override or span.model_name,
+    )
+    click.echo(rendered)
 
 
 if __name__ == "__main__":

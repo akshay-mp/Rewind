@@ -1,0 +1,52 @@
+sequenceDiagram
+    %% Phase 5.5 — parallel scenario execution inside evaluate().
+    %% Exit criterion: N=50 scenarios complete in ≤ slowest single scenario + p99 overhead.
+    autonumber
+    participant Caller as evaluate caller<br/>(HTTP / CLI / test)
+    participant Eval as evaluate orchestrator
+    participant Sem as asyncio.Semaphore(8)
+    participant Store as TraceStore<br/>(WAL SQLite)
+    participant Replay as ReplaySession
+    participant Evalr as pure evaluators
+
+    Caller->>Eval: evaluate(suite, store=, factory=None)
+    Note over Eval: validate_suite(suite) re-checked<br/>pending_futures = []
+    loop for each EvalScenario
+        Eval->>Eval: create_task _run_scenario(s, seq)<br/>wrapped with Semaphore + wait_for(timeout)
+    end
+    Eval->>Eval: results = await gather(*tasks, return_exceptions=True)
+    Note over Eval: every task independently:<br/>acquire slot → run → release
+
+    par scenario A (worker 1)
+        Eval->>Sem: await sem.acquire()
+        Sem-->>Eval: slot
+        Eval->>Store: get_trace(seed_trace_id)
+        Store-->>Eval: Trace or None
+        alt trace missing
+            Eval->>Eval: SKIP + error_message
+        else trace present
+            Eval->>Replay: ReplaySession(trace, mode=FROZEN)
+            Replay-->>Eval: candidate spans
+            Eval->>Evalr: dispatch(handlers, spans, expectation)
+            Evalr-->>Eval: EvaluatorOutcome[]
+            Eval->>Eval: ScenarioResult
+        end
+        Eval->>Sem: sem.release()
+    and scenario B (worker 2)
+        Eval->>Sem: await sem.acquire()
+        Sem-->>Eval: slot
+        Eval->>Store: get_trace(other seed_trace_id)
+        Store-->>Eval: Trace
+        Eval->>Replay: ReplaySession(...)
+        Replay-->>Eval: candidate spans (no leakage)
+        Eval->>Evalr: dispatch(...)
+        Evalr-->>Eval: outcomes (no leakage)
+        Eval->>Sem: sem.release()
+    and N more workers
+        Note over Eval: each scenario sees only its own seed<br/>via branch_id partition key
+    end
+
+    Eval->>Eval: gather returns in completion order
+    Note over Eval: reorder results by original seq index<br/>→ result order == suite.scenarios order
+    Eval->>Eval: overall_verdict = worst of all per-scenario verdicts<br/>PASS < SKIP < FAIL < ERROR
+    Eval-->>Caller: EvalSuiteResult

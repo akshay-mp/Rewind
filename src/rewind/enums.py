@@ -66,4 +66,71 @@ class SpanStatus(StrEnum):
     UNSET = "UNSET"
 
 
-__all__ = ["ReplayMode", "SpanKind", "SpanStatus"]
+@verify(UNIQUE)
+class EvaluatorKind(StrEnum):
+    """The built-in evaluators a Phase 5.5 suite can request.
+
+    These mirror the Agents_Arena evaluator *semantics* — see plan.md §9
+    ("Eval harness overlaps with Agents_Arena"). Rewind implements each
+    one against its own span model; it does not reuse Agents_Arena's code.
+
+    The five deterministic checks are always available. ``LLM_JUDGE`` is
+    opt-in per-suite (deterministic-by-default policy) and requires the
+    caller to provide a judge callable.
+    """
+
+    TOOL_CHECK = "tool_check"
+    GOAL_CHECK = "goal_check"
+    CONSISTENCY = "consistency"
+    TOKEN_BUDGET = "token_budget"  # noqa: S105 - not a password
+    NO_HALLUCINATION = "no_hallucination"
+    LLM_JUDGE = "llm_judge"
+
+
+@verify(UNIQUE)
+class EvalVerdict(StrEnum):
+    """Per-scenario outcome the harness assigns after running evaluators.
+
+    * ``PASS`` — all enabled evaluators returned pass.
+    * ``FAIL`` — at least one evaluator returned fail (deterministic,
+      debuggable — the UI hands the user the failing scenario as a branch).
+    * ``SKIP`` — the scenario could not run (missing seed, replay error
+      before evaluators fired). Skipped scenarios do not affect baseline
+      diffs.
+    * ``ERROR`` — an evaluator itself crashed. Surfaced distinctly from
+      ``FAIL`` so a buggy evaluator doesn't masquerade as an agent regression.
+    """
+
+    PASS = "pass"  # noqa: S105 - not a password
+    FAIL = "fail"
+    SKIP = "skip"
+    ERROR = "error"
+
+
+@verify(UNIQUE)
+class CandidateMode(StrEnum):
+    """How a Phase 5.5 scenario produces its candidate branch.
+
+    * ``FROZEN`` — serve recorded spans only, no egress. Used to validate
+      that a recorded trace still meets its expected (a regression on the
+      *evaluator* itself, or a stored-span corruption check).
+    * ``BRANCH`` — fork at the seed cursor and forward live from there.
+      The default: "run this query against the live model and see what
+      changed vs. the seed".
+    * ``FULL_RERUN`` — re-execute every span live. The strictest
+      reproducibility check.
+    """
+
+    FROZEN = "frozen"
+    BRANCH = "branch"
+    FULL_RERUN = "full"
+
+
+__all__ = [
+    "CandidateMode",
+    "EvalVerdict",
+    "EvaluatorKind",
+    "ReplayMode",
+    "SpanKind",
+    "SpanStatus",
+]

@@ -5,11 +5,25 @@
 // (parent_span_id is null) start new swim-lanes. Clicking a bar opens the
 // inspector for that span. A filter rail on the left lets the user narrow by
 // kind / model / status / free text search.
+//
+// Phase 5 added a "branch&nbsp;⎇" toggle that swaps the canvas for a
+// BranchTree + DiffView panel. The tree lets users pick two branches to
+// compare; the diff view shows the side-by-side span comparison with
+// token-level message diffs.
 
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, api } from "../api";
 import { formatDuration, formatTimestamp, kindStyle, statusStyle } from "../styles";
-import type { SpanKind, SpanStatus, SpanView, TraceDetail } from "../types";
+import type {
+  BranchNodeView,
+  CreateBranchRequest,
+  SpanKind,
+  SpanStatus,
+  SpanView,
+  TraceDetail,
+} from "../types";
+import { BranchTree } from "./BranchTree";
+import { DiffView } from "./DiffView";
 
 interface Props {
   traceId: string;
@@ -43,11 +57,32 @@ const KIND_OPTIONS: SpanKind[] = [
 ];
 const STATUS_OPTIONS: SpanStatus[] = ["OK", "ERROR", "UNSET"];
 
+type Mode = "timeline" | "branches";
+
+interface ForkFormState {
+  parent: BranchNodeView;
+  label: string;
+  branchAtIndex: number;
+}
+
 export function Timeline({ traceId, onBack, onSelectSpan, selectedRewindId }: Props): JSX.Element {
   const [trace, setTrace] = useState<TraceDetail | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Phase 5 — branch & diff state.
+  const [mode, setMode] = useState<Mode>("timeline");
+  const [leftBranchId, setLeftBranchId] = useState<string | null>(null);
+  const [rightBranchId, setRightBranchId] = useState<string | null>(null);
+  const [forkForm, setForkForm] = useState<ForkFormState | null>(null);
+  const [forkStatus, setForkStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "saving" }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+  // Bumped after a successful createBranch so the BranchTree refetches.
+  const [branchRevision, setBranchRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,11 +146,28 @@ export function Timeline({ traceId, onBack, onSelectSpan, selectedRewindId }: Pr
             {formatTimestamp(trace.created_at)}
           </span>
         )}
+        <nav className="timeline__mode-toggle">
+          <button
+            type="button"
+            className={mode === "timeline" ? "tab tab--active" : "tab"}
+            onClick={() => setMode("timeline")}
+          >
+            timeline
+          </button>
+          <button
+            type="button"
+            className={mode === "branches" ? "tab tab--active" : "tab"}
+            onClick={() => setMode("branches")}
+            title="Compare branches"
+          >
+            branches ⎇
+          </button>
+        </nav>
       </header>
 
       {error !== null && <div className="banner banner--error">{error}</div>}
       {loading && <div className="muted">loading…</div>}
-      {!loading && error === null && trace !== null && (
+      {!loading && error === null && trace !== null && mode === "timeline" && (
         <>
           <FilterRail filters={filters} onChange={setFilters} />
           <TimelineCanvas
@@ -125,8 +177,180 @@ export function Timeline({ traceId, onBack, onSelectSpan, selectedRewindId }: Pr
           />
         </>
       )}
+      {!loading && error === null && trace !== null && mode === "branches" && (
+        <div className="branch-panel">
+          <BranchTree
+            // ``branchRevision`` is in the key so a successful fork remounts
+            // the tree (cheap GET, guarantees a freshly sorted view).
+            key={`${traceId}-${branchRevision}`}
+            traceId={traceId}
+            leftBranchId={leftBranchId}
+            rightBranchId={rightBranchId}
+            onPickLeft={setLeftBranchId}
+            onPickRight={setRightBranchId}
+            onBranchFrom={(node) => {
+              setForkForm({
+                parent: node,
+                label: defaultForkLabel(node),
+                branchAtIndex: node.branch_at_index ?? 0,
+              });
+              setForkStatus({ kind: "idle" });
+            }}
+          />
+          {leftBranchId !== null && rightBranchId !== null ? (
+            <DiffView
+              traceId={traceId}
+              leftBranchId={leftBranchId}
+              rightBranchId={rightBranchId}
+            />
+          ) : (
+            <div className="branch-panel__hint muted">
+              Pick a left branch (← button) and a right branch (→ button)
+              to see the side-by-side diff.
+            </div>
+          )}
+          {forkForm !== null && (
+            <ForkBranchModal
+              traceId={traceId}
+              form={forkForm}
+              status={forkStatus}
+              onChangeLabel={(label) =>
+                setForkForm((prev) =>
+                  prev === null ? prev : { ...prev, label },
+                )
+              }
+              onChangeIndex={(branchAtIndex) =>
+                setForkForm((prev) =>
+                  prev === null ? prev : { ...prev, branchAtIndex },
+                )
+              }
+              onCancel={() => {
+                setForkForm(null);
+                setForkStatus({ kind: "idle" });
+              }}
+              onSubmit={async () => {
+                setForkStatus({ kind: "saving" });
+                const body: CreateBranchRequest = {
+                  trace_id: traceId,
+                  parent_branch_id: forkForm.parent.branch_id,
+                  branch_at_index: forkForm.branchAtIndex,
+                  mode: "manual",
+                  label: forkForm.label,
+                };
+                try {
+                  await api.createBranch(traceId, body);
+                  setForkStatus({ kind: "idle" });
+                  setForkForm(null);
+                  setBranchRevision((n) => n + 1);
+                } catch (err) {
+                  setForkStatus({
+                    kind: "error",
+                    message: err instanceof ApiError ? err.message : String(err),
+                  });
+                }
+              }}
+            />
+          )}
+        </div>
+      )}
     </section>
   );
+}
+
+function defaultForkLabel(node: BranchNodeView): string {
+  // Suggest "fork of <label> @ <index>" so the user has something to edit.
+  return `fork of ${node.label} @ ${node.branch_at_index ?? 0}`;
+}
+
+interface ForkBranchModalProps {
+  traceId: string;
+  form: ForkFormState;
+  status: { kind: "idle" } | { kind: "saving" } | { kind: "error"; message: string };
+  onChangeLabel: (label: string) => void;
+  onChangeIndex: (index: number) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}
+
+function ForkBranchModal({
+  traceId: _traceId,
+  form,
+  status,
+  onChangeLabel,
+  onChangeIndex,
+  onCancel,
+  onSubmit,
+}: ForkBranchModalProps): JSX.Element {
+  // ``_traceId`` unused locally — kept on the props so the modal's POST is
+  // trace-scoped at the call-site (where the closure builds the body).
+  void _traceId;
+  return (
+    <div className="modal-backdrop" role="dialog" aria-label="Fork branch">
+      <div className="modal">
+        <header className="modal__header">
+          <h3>fork branch</h3>
+          <button type="button" className="link-button" onClick={onCloseIfIdle(status, onCancel)}>
+            close ✕
+          </button>
+        </header>
+        <p className="muted">
+          off <code>{form.parent.label}</code> @ index {form.parent.branch_at_index ?? 0}
+        </p>
+        <label className="modal__field">
+          label
+          <input
+            type="text"
+            value={form.label}
+            onChange={(e) => onChangeLabel(e.target.value)}
+            disabled={status.kind === "saving"}
+          />
+        </label>
+        <label className="modal__field">
+          branch at index (inclusive of parent)
+          <input
+            type="number"
+            min={0}
+            value={form.branchAtIndex}
+            onChange={(e) => onChangeIndex(Number.parseInt(e.target.value, 10) || 0)}
+            disabled={status.kind === "saving"}
+          />
+        </label>
+        {status.kind === "error" && (
+          <div className="banner banner--error">{status.message}</div>
+        )}
+        <footer className="modal__footer">
+          <button
+            type="button"
+            className="link-button"
+            onClick={onCancel}
+            disabled={status.kind === "saving"}
+          >
+            cancel
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={onSubmit}
+            disabled={status.kind === "saving" || form.label.trim() === ""}
+          >
+            {status.kind === "saving" ? "forking…" : "fork"}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// When a save is in flight we don't want the ✕ to dismiss the modal —
+// otherwise the user has no way to see the response. ``onCloseIfIdle`` returns
+// a handler that no-ops while saving.
+function onCloseIfIdle(
+  status: ForkBranchModalProps["status"],
+  onCancel: () => void,
+): () => void {
+  return () => {
+    if (status.kind !== "saving") onCancel();
+  };
 }
 
 function FilterRail({

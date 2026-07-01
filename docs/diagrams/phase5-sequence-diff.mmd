@@ -1,0 +1,45 @@
+sequenceDiagram
+    autonumber
+    participant U as Browser user
+    participant D as DiffView.tsx
+    participant M as MessageDiffBlock.tsx (lazy)
+    participant API as FastAPI timeline.py
+    participant DE as diff.py (pure-logic)
+    participant TS as TraceStore
+    participant DB as SQLite (rewind.db)
+
+    Note over U,DB: Phase 5 two-branch diff: pick two branches → span_diff renders → expand a row → message_diff renders.
+
+    Note over U,DB: Stage 1 user picks left and right via BranchTree ← / → buttons
+    U->>D: ← on left-variant + → on right-variant
+    D->>API: GET /api/v1/traces/{trace_id}/diff?left=...&right=...
+    API->>API: validate UUIDs · check both branches exist via _branch_exists
+    alt branch unknown
+        API-->>D: 404 not found
+        D-->>U: render banner--error "branch not found"
+    else both exist
+        API->>TS: get_spans(trace_id, branch_id=left) + get_spans(..., right)
+        TS->>DB: SELECT spans WHERE trace_id AND branch_id
+        DB-->>TS: left_rows right_rows
+        TS-->>API: Spans lists (each ordered by started_at)
+        API->>DE: span_diff(left_spans, right_spans)
+        Note right of DE: zip-equal-window — _spans_equal compares<br/>name+kind+model+status+content_hash.<br/>First unequal pair → first_divergence_index.
+        DE-->>API: SpanDiff(pairs=[SpanPair(status, ...)], first_divergence_index)
+        API-->>D: 200 SpanDiffView JSON
+        D-->>U: render DiffSummary + one DiffRow per pair<br/>(branch-point marker on first divergence)
+    end
+
+    Note over U,DB: Stage 2 user expands a row for token-level message diff (lazy)
+    U->>D: click "msg diff" on a pair row
+    D->>M: render MessageDiffBlock(left_rewind_id, right_rewind_id)
+    M->>API: GET /api/v1/spans/{left_rewind_id}/message-diff?other={right_rewind_id}
+    API->>TS: get both span rows by rewind_id
+    TS->>DB: SELECT raw_attributes WHERE span key
+    DB-->>TS: rows
+    TS-->>API: span pair with extracted text via _extract_choice_content
+    API->>DE: message_diff(left_text, right_text)
+    Note right of DE: _tokenise keeps whitespace separate,<br>_is_word_token guards punctuation,<br>_coalesce_changed merges isolated <>+/- into a single <>+/- fragment.
+    DE-->>API: MessageDiff(fragments=[MessageFragment(op="equal"|"insert"|"delete"|"changed", text)])
+    API-->>M: 200 MessageDiffView JSON
+    M-->>U: render fragments as ins / del / changed-del-ins
+    Note over U: button toggles to "hide msg diff" on next click

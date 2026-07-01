@@ -1,0 +1,49 @@
+sequenceDiagram
+    autonumber
+    participant A as Agent code
+    participant SDK as checkpoint ctxmgr
+    participant AS as active_session ContextVar
+    participant S as ReplaySession
+    participant DB as rewind.db checkpoints table
+
+    Note over A,DB: Setup: agent runs inside replay for_root, mode FROZEN or BRANCH.
+
+    Note over A,DB: Stage 1 entry checkpoint name and payload are given
+    A->>SDK: with checkpoint(name init, payload default state)
+    SDK->>AS: lookup active_session
+    alt no active session in production outside replay
+        AS-->>SDK: None
+        SDK->>SDK: yield CheckpointToken(restored False no-op capture_fn)
+        Note right of SDK: zero production cost when not replaying
+    else active session present
+        AS-->>SDK: ReplaySession instance weakref
+        SDK->>S: query for branch_id name row
+        S->>DB: SELECT WHERE branch_id AND name
+        alt FROZEN mode and row exists recorded run
+            DB-->>S: row payload dict
+            S-->>SDK: recorded_state dict
+            SDK->>SDK: yield CheckpointToken(restored True loaded payload)
+            Note right of SDK: body of with skipped no side effects re-run
+        else BRANCH mode or row missing
+            S-->>SDK: None
+            SDK->>SDK: yield CheckpointToken(restored False capture_fn bound)
+            Note right of SDK: agent body runs live below
+        end
+    end
+
+    Note over A,DB: Stage 2 agent continues inside body
+    A->>A: optionally check token.restored
+    alt token.restored True FROZEN path
+        A->>A: skip side effects use token.payload state
+        Note right of A: deterministic replay never re-runs ground truth
+    else token.restored False capture path
+        A->>A: run side effects live LLM calls tool calls
+        A->>SDK: token.capture final state dict
+        SDK->>S: persist payload keyed by branch_id name
+        S->>DB: INSERT INTO checkpoints branch_id name payload
+        DB-->>S: row id assigned
+    end
+
+    Note over A,DB: Stage 3 ctxmgr exit unwinds contextvar lookup
+    A->>SDK: __exit__ block leaves with
+    SDK->>SDK: reset ContextVar token no global leakage

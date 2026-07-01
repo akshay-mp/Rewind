@@ -1,0 +1,71 @@
+flowchart TB
+    %% Phase 5.5 architecture — eval harness layered on top of the Phase 1-5
+    %% capture/replay stack. New surfaces are highlighted as NEW; the reused
+    %% storage layer is unchanged bar a migration.
+
+    subgraph P55["Phase 5.5 — delivered"]
+        direction TB
+
+        subgraph EvalEngine["Pure eval engine (NEW — evaluate.py)"]
+            Spec["EvalSuite · EvalScenario<br/>Expectation union"]
+            Handlers["5 evaluators<br/>tool_check · goal_check<br/>consistency · token_budget<br/>no_hallucination"]
+            Orchestrate["async evaluate<br/>gather + Semaphore + wait_for"]
+            Serialize["to_dict / from_dict<br/>_EVAL_RESULT_FORMAT_VERSION=1"]
+        end
+
+        subgraph EvalStore["Storage migration (SCHEMA_VERSION 2 → 3)"]
+            EvalTables[("eval_runs · eval_scenarios<br/>FK ON DELETE CASCADE")]
+            FiveHelpers["5 helpers<br/>upsert · get · list · _row · delete"]
+        end
+
+        subgraph EvalApi["HTTP surface (NEW — eval_api.py)"]
+            RoutesList["GET /api/v1/evals"]
+            RoutesCreate["POST /api/v1/evals<br/>asyncio.run · 256 KiB cap"]
+            RoutesGet["GET /api/v1/evals/{id}"]
+            RoutesBaseline["GET /api/v1/evals/{id}/baseline"]
+            RoutesDelete["DELETE /api/v1/evals/{id}"]
+        end
+
+        subgraph EvalCLI["CLI surface (NEW — cli.py eval_cmd)"]
+            Cli["rewind eval suite.yaml<br/>--db · --save · --suite-name"]
+            CliSummary["_print_eval_summary<br/>rich.table · verdict colour"]
+        end
+    end
+
+    subgraph P55UI["Phase 5.5 React surface (NEW)"]
+        EvalRunsList["EvalRuns.tsx<br/>paginated list of runs"]
+        EvalRunDetailComp["EvalRunDetail.tsx<br/>scenario verdicts + baseline Δ"]
+        TypesNew["types.ts · api.ts<br/>EvalRun · Scenario · Diff"]
+    end
+
+    subgraph Reused["Phase 1-5 reused"]
+        Replay["replay.ReplaySession<br/>FROZEN/LIVE candidate"]
+        StoreV3["storage.TraceStore<br/>WAL · busy_timeout=5s"]
+        ExistingTrace[("traces · spans · branches<br/>checkpoints")]
+    end
+
+    %% flow
+    Spec --> Orchestrate
+    Handlers --> Orchestrate
+    Replay --> Orchestrate
+    Orchestrate --> Serialize
+    Serialize --> EvalTables
+    FiveHelpers --> EvalTables
+    EvalTables --> RoutesList
+    EvalTables --> RoutesGet
+    EvalTables --> RoutesBaseline
+    EvalTables --> RoutesDelete
+    RoutesCreate --> Orchestrate
+    RoutesCreate --> FiveHelpers
+    Cli --> Orchestrate
+    Cli --> CliSummary
+    Cli --> FiveHelpers
+
+    RoutesList --> EvalRunsList
+    RoutesGet --> EvalRunDetailComp
+    RoutesBaseline --> EvalRunDetailComp
+    TypesNew --> EvalRunsList
+    TypesNew --> EvalRunDetailComp
+
+    StoreV3 --> EvalStore
+    ExistingTrace -. reads .-> Replay

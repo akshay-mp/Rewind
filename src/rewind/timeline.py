@@ -46,8 +46,16 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
+from rewind.diff import (
+    BranchNode,
+    MessageDiff,
+    SpanDiff,
+    branch_tree,
+    message_diff,
+    span_diff,
+)
 from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Span, Trace
+from rewind.models import Branch, Span, Trace
 from rewind.storage import TraceStore
 
 #: Upper bound on ``limit`` to prevent pathological pagination scans.
@@ -150,6 +158,115 @@ class SearchResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+# --- Phase 5: branch + diff projections -----------------------------------
+
+
+class BranchNodeView(BaseModel):
+    """Recursive branch tree node — one per :class:`rewind.models.Branch`.
+
+    Used by the timeline UI's branch picker. ``children`` is recursive; the
+    root node has ``parent_branch_id is None``.
+
+    Field shape mirrors :class:`rewind.diff.BranchNode` 1:1 — the
+    duplication is the cost of a clean layer split (pure dataclass vs
+    Pydantic BaseModel). Pylint's duplicate-code detector flags it; the
+    alternative (sharing one type across layers) would couple the diff
+    engine to the wire shape.
+    """
+
+    branch_id: UUID
+    trace_id: str
+    parent_branch_id: UUID | None
+    branch_at_index: int | None
+    mode: str
+    label: str
+    created_at: str
+    children: list[BranchNodeView] = Field(default_factory=list)
+
+
+class SpanPairView(BaseModel):
+    """One row of a side-by-side comparison.
+
+    ``left`` and ``right`` are optional :class:`SpanView`s — at divergent
+    indices one may be missing (``left_only`` / ``right_only``). The spans
+    are identical technical projections (so the inspector can render them
+    uniformly), but ``branch_id`` is carried per-side so the UI can label
+    which branch each came from.
+    """
+
+    index: int
+    left: SpanView | None
+    right: SpanView | None
+    status: str
+    is_first_divergence: bool
+
+
+class SpanDiffView(BaseModel):
+    """Span-sequence diff between two branches.
+
+    The Phase 5 exit criterion *"Diffing two branches marks exactly which
+    span first diverged"* is captured by :attr:`first_divergence_index`
+    plus the :attr:`is_first_divergence` sentinel on exactly one row.
+    """
+
+    pairs: list[SpanPairView]
+    first_divergence_index: int | None
+    left_count: int
+    right_count: int
+    identical: bool
+
+
+class MessageFragmentView(BaseModel):
+    """One segment of a token-aligned message diff."""
+
+    text: str
+    kind: str
+
+
+class MessageDiffView(BaseModel):
+    """Token-level diff of two assistant messages.
+
+    The Phase 5 exit criterion *"token-level message diff renders
+    add/remove/change correctly"* is captured here.
+    """
+
+    left: str
+    right: str
+    fragments: list[MessageFragmentView]
+    added_tokens: int
+    removed_tokens: int
+    identical: bool
+
+
+class CreateBranchRequest(BaseModel):
+    """Request body for ``POST /traces/{trace_id}/branches``.
+
+    Captures the *"Branch from span N with an edited system prompt"* user
+    action. ``parent_branch_id`` defaults to the trace root branch when
+    omitted. ``mode`` is textual (ReplayMode) — the storage layer accepts
+    anything; the replay context manager will re-validate when the user
+    drives the branch live.
+    """
+
+    parent_branch_id: UUID | None = Field(
+        default=None,
+        description="Branch to fork from. Defaults to the trace root.",
+    )
+    branch_at_index: int = Field(
+        ..., ge=0, description="0-based span index where the branch diverges."
+    )
+    mode: str = Field(default="frozen", description="ReplayMode for the branch.")
+    label: str = Field(
+        default="", description="Human-readable label for the branch picker."
+    )
+
+
+class CreateBranchResponse(BaseModel):
+    """Response for branch creation — the new branch row, materialised."""
+
+    branch: BranchNodeView
 
 
 # --- app factory ----------------------------------------------------------
@@ -300,8 +417,15 @@ def _span_text(span: Span) -> str:
 # --- routes ---------------------------------------------------------------
 
 
-def _register_routes(app: FastAPI) -> None:
-    """Wire all Phase 2 read-only routes onto ``app``."""
+def _register_routes(app: FastAPI) -> None:  # pylint: disable=too-many-statements
+    """Wire all Phase 2/5 routes onto ``app``.
+
+    Statement count is high (82) because each route is one block of
+    handler + validation + store lookup + projection. Splitting into
+    per-endpoint modules would force an artificial separation (the
+    routes share :func:`_ensure_trace_exists` and the projection helpers
+    below). The single-function form keeps the read surface auditable:
+    one function = the entire HTTP contract."""
 
     @app.get("/api/v1/traces", tags=["timeline"])
     def list_traces(
@@ -480,9 +604,342 @@ def _register_routes(app: FastAPI) -> None:
         page = hits[offset : offset + limit]
         return SearchResponse(items=page, total=total, limit=limit, offset=offset)
 
+    # ------------------------------------------------------------------
+    # Phase 5: branch tree, span diff, message diff, branch creation
+    # ------------------------------------------------------------------
+    # Endpoints below break the strict read-only contract above by one
+    # method: ``POST`` to create a branch row. Branch creation is a
+    # bookkeeping operation (a row in ``branches`` table); it does not
+    # spawn live agent runs (``mode='frozen'`` by default). The user
+    # later drives replay through the Python replay context manager.
+    # ------------------------------------------------------------------
+
+    @app.get(
+        "/api/v1/traces/{trace_id}/branches",
+        tags=["timeline", "branches"],
+    )
+    def list_branch_tree(request: Request, trace_id: str) -> BranchNodeView:
+        """Return the branch tree for a trace, rooted at the original branch.
+
+        The tree is flat in storage (``branches`` rows by ``parent_branch_id``)
+        and recursively assembled here. Returns ``404`` if the trace has
+        no branches (shouldn't happen — every inserted trace auto-creates a
+        root branch — but defensible).
+        """
+        store: TraceStore = request.app.state.store
+        _ensure_trace_exists(store, trace_id)
+        branches = store.list_branches(trace_id)
+        tree = branch_tree(branches)
+        if tree is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"trace {trace_id} has no branches",
+            )
+        return _branch_node_view(tree)
+
+    @app.get(
+        "/api/v1/traces/{trace_id}/diff",
+        tags=["timeline", "diff"],
+    )
+    def diff_branches(
+        request: Request,
+        trace_id: str,
+        left: UUID = Query(..., description="Left branch id."),  # noqa: B008
+        right: UUID = Query(..., description="Right branch id."),  # noqa: B008
+    ) -> SpanDiffView:
+        """Side-by-side span diff of two branches on the same trace.
+
+        Both branches are loaded via :meth:`TraceStore.get_spans`, which
+        transparently unions the parent prefix in (so a forked branch sees
+        spans 0..branch_at_index from its parent + its own subsequent
+        spans). The first divergence is identified by comparing
+        ``(kind, messages_hash, tools_hash)`` — see
+        :func:`rewind.diff.span_diff`.
+        """
+        store: TraceStore = request.app.state.store
+        _ensure_trace_exists(store, trace_id)
+        # Existence check first — ``get_spans`` unions the root-prefix in,
+        # so a bogus branch_id would otherwise silently return the root's
+        # spans (and look like an empty diff against itself).
+        if not _branch_exists(store, trace_id, left):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"branch {left} not found on trace {trace_id}",
+            )
+        if not _branch_exists(store, trace_id, right):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"branch {right} not found on trace {trace_id}",
+            )
+        left_spans = store.get_spans(trace_id, branch_id=left)
+        right_spans = store.get_spans(trace_id, branch_id=right)
+        return _span_diff_view(
+            span_diff(left_spans, right_spans),
+            left_branch_id=left,
+            right_branch_id=right,
+        )
+
+    @app.get(
+        "/api/v1/spans/{rewind_id}/message-diff",
+        tags=["timeline", "diff"],
+    )
+    def diff_messages(
+        request: Request,
+        rewind_id: UUID,
+        other: UUID = Query(..., description="Span to diff against."),  # noqa: B008
+    ) -> MessageDiffView:
+        """Token-level diff of two LLM spans' assistant responses.
+
+        Pulls ``gen_ai.response`` (OpenInference convention) or
+        ``raw_response`` from each span's ``raw_attributes``, extracts the
+        assistant message text, and runs :func:`rewind.diff.message_diff`.
+        """
+        store: TraceStore = request.app.state.store
+        left_span = store.get_span(rewind_id)
+        right_span = store.get_span(other)
+        if left_span is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"span {rewind_id} not found",
+            )
+        if right_span is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"span {other} not found",
+            )
+        return _message_diff_view(
+            message_diff(
+                _extract_message_text(left_span),
+                _extract_message_text(right_span),
+            )
+        )
+
+    @app.post(
+        "/api/v1/traces/{trace_id}/branches",
+        tags=["timeline", "branches"],
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_branch(
+        request: Request,
+        trace_id: str,
+        body: CreateBranchRequest,
+    ) -> CreateBranchResponse:
+        """Create a new branch row — the *\"Branch from here\"* action.
+
+        Persists a :class:`rewind.models.Branch` row whose
+        ``parent_branch_id`` defaults to the trace root when omitted.
+        The branch is ``frozen`` by default (bookkeeping only); to drive
+        it live, call :func:`rewind.replay.replay` from Python with the
+        returned ``branch_id``.
+        """
+        store: TraceStore = request.app.state.store
+        trace = _ensure_trace_exists(store, trace_id)
+        # ``trace.root_branch_id`` is just an identifier on the trace row —
+        # the actual root *branch* row may carry a different UUID (e.g. when
+        # the trace was seeded via direct row inserts in tests). Resolve the
+        # real root from ``list_branches`` so the new branch's parent
+        # pointer is reachable in the tree.
+        if body.parent_branch_id is not None:
+            parent = body.parent_branch_id
+        else:
+            branches = store.list_branches(trace_id)
+            root_branch_row = next(
+                (b for b in branches if b.parent_branch_id is None),
+                None,
+            )
+            # No root branch exists → fall back to the trace's stored
+            # identifier (preserves legacy behaviour for traces seeded
+            # without an explicit root branch row).
+            parent = (
+                trace.root_branch_id
+                if root_branch_row is None
+                else root_branch_row.branch_id
+            )
+        branch = Branch(
+            trace_id=trace_id,
+            parent_branch_id=parent,
+            branch_at_index=body.branch_at_index,
+            mode=body.mode,
+            label=body.label,
+        )
+        store.insert_branch(branch)
+        # Re-read to confirm row landed.
+        branches = store.list_branches(trace_id)
+        tree = branch_tree(branches)
+        # Find the node we just created.
+        node = _find_branch_node(tree, branch.branch_id) if tree else None
+        if node is None:
+            # Defensive: insert succeeded but the row isn't visible —
+            # surface a 500 with enough context to debug.
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    f"branch {branch.branch_id} inserted but not found in tree"
+                ),
+            )
+        return CreateBranchResponse(branch=_branch_node_view(node))
+
+
+BranchNodeView.model_rebuild()
+
+
+# --- Phase 5 helpers ------------------------------------------------------
+
+
+def _ensure_trace_exists(store: TraceStore, trace_id: str) -> Trace:
+    """404 if the trace isn't in the store; else return it."""
+    trace = store.get_trace(trace_id)
+    if trace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"trace {trace_id} not found",
+        )
+    return trace
+
+
+def _branch_exists(
+    store: TraceStore, trace_id: str, branch_id: UUID
+) -> bool:
+    """``True`` if ``branch_id`` is one of ``trace_id``'s branches."""
+    return any(
+        b.branch_id == branch_id for b in store.list_branches(trace_id)
+    )
+
+
+def _branch_node_view(node: BranchNode) -> BranchNodeView:
+    """Recursively project a :class:`BranchNode` into the wire shape."""
+    return BranchNodeView(
+        branch_id=node.branch_id,
+        trace_id=node.trace_id,
+        parent_branch_id=node.parent_branch_id,
+        branch_at_index=node.branch_at_index,
+        mode=node.mode,
+        label=node.label,
+        created_at=node.created_at,
+        children=[_branch_node_view(child) for child in node.children],
+    )
+
+
+def _find_branch_node(
+    node: BranchNode | None, branch_id: UUID
+) -> BranchNode | None:
+    """DFS the branch tree for ``branch_id``; returns the node or ``None``."""
+    if node is None:
+        return None
+    if node.branch_id == branch_id:
+        return node
+    for child in node.children:
+        found = _find_branch_node(child, branch_id)
+        if found is not None:
+            return found
+    return None
+
+
+def _span_diff_view(
+    diff: SpanDiff,
+    *,
+    left_branch_id: UUID,
+    right_branch_id: UUID,
+) -> SpanDiffView:
+    """Project a :class:`SpanDiff` into the wire shape."""
+    pairs: list[SpanPairView] = []
+    for pair in diff.pairs:
+        pairs.append(
+            SpanPairView(
+                index=pair.index,
+                left=(
+                    _span_view(pair.left, left_branch_id)
+                    if pair.left is not None
+                    else None
+                ),
+                right=(
+                    _span_view(pair.right, right_branch_id)
+                    if pair.right is not None
+                    else None
+                ),
+                status=pair.status,
+                is_first_divergence=pair.is_first_divergence,
+            )
+        )
+    return SpanDiffView(
+        pairs=pairs,
+        first_divergence_index=diff.first_divergence_index,
+        left_count=diff.left_count,
+        right_count=diff.right_count,
+        identical=diff.identical,
+    )
+
+
+def _message_diff_view(diff: MessageDiff) -> MessageDiffView:
+    """Project a :class:`MessageDiff` into the wire shape."""
+    return MessageDiffView(
+        left=diff.left,
+        right=diff.right,
+        fragments=[
+            MessageFragmentView(text=f.text, kind=f.kind) for f in diff.fragments
+        ],
+        added_tokens=diff.added_tokens,
+        removed_tokens=diff.removed_tokens,
+        identical=diff.identical,
+    )
+
+
+def _extract_message_text(span: Span) -> str:
+    """Pull the assistant message text out of a span's ``raw_attributes``.
+
+    Order of preference (mirrors ``openai_intercept._materialise_chat_completion``):
+
+    1. ``gen_ai.response.choices[0].message.content`` (OpenInference).
+    2. ``raw_response.choices[0].message.content`` (older exporters).
+    3. ``gen_ai.completion`` string (some SDKs flatten the whole choice).
+    4. Empty string (privacy-skinned exporter — diff is a no-op).
+
+    The function never raises; a missing/odd payload becomes "" so the
+    diff endpoint degrades gracefully rather than 500-ing.
+    """
+    attrs = span.raw_attributes or {}
+    for key in ("gen_ai.response", "raw_response", "response"):
+        content = _extract_choice_content(attrs.get(key))
+        if content is not None:
+            return content
+    # Some exporters flatten the completion to a string under gen_ai.completion.
+    completion = attrs.get("gen_ai.completion")
+    if isinstance(completion, str):
+        return completion
+    return ""
+
+
+def _extract_choice_content(payload: object) -> str | None:
+    """Drill into ``payload.choices[0].message.content`` if the shape fits.
+
+    Returns ``None`` for any shape that doesn't match so the caller can
+    fall through to the next candidate key. Kept as a helper so the
+    outer extractor stays flat (pylint ``too-many-nested-blocks``).
+    """
+    if not isinstance(payload, dict):
+        return None
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    message = first.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    return content if isinstance(content, str) else None
+
 
 __all__ = [
+    "BranchNodeView",
+    "CreateBranchRequest",
+    "CreateBranchResponse",
+    "MessageDiffView",
+    "MessageFragmentView",
     "SearchResponse",
+    "SpanDiffView",
+    "SpanPairView",
     "SpanSearchHit",
     "SpanView",
     "TraceDetail",

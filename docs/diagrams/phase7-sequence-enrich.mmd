@@ -1,0 +1,41 @@
+sequenceDiagram
+    %% Phase 7 — `rewind enrich TRACE` command sequence.
+    %% Drives every span in a trace (or branch) through enrich_span.
+
+    autonumber
+    actor U as User
+    participant CLI as rewind cli
+    participant Store as TraceStore
+    participant ES as enrich_span()
+    participant PQ as parse_quant()
+    participant SV as sample_vram()
+    participant Ops as NVIDIA-smi<br/>macmon · psutil
+
+    U->>CLI: rewind enrich TRACE<br/>[--branch B] [--sample-vram]
+    Note over CLI: resolve target spans<br/>(root branch vs B)
+    CLI->>Store: get_trace(T) ⟵ branch_id=None<br/>else get_spans(T, branch_id=B)
+    Store-->>CLI: list[Span]
+    loop each span
+        opt span.kind == LLM
+            CLI->>ES: enrich_span(span,<br/>parse_quant=True,<br/>sample_gpu=flag)
+            opt parse_model_quant=True
+                ES->>PQ: parse_quant(span.model_name)
+                Note over ES,PQ: preferred: rewind.local.quant attr<br/>(if already set, skip parse)
+                PQ-->>ES: QuantInfo(label="q4_K_M", bits=4)
+                ES->>ES: span.raw_attributes["rewind.local.quant"]=label
+            end
+            opt sample_gpu=True
+                ES->>SV: sample_vram()
+                SV->>Ops: probe nvidia-smi → asitop/macmon → psutil
+                Ops-->>SV: vram_mib:int, gpu_pct:int | None
+                SV-->>ES: VramSample(vram_mib, gpu_pct)
+                ES->>ES: write vram_mib + gpu_pct attrs (if present)
+            end
+            ES-->>CLI: mutated span
+        end
+        CLI->>Store: insert_span(span, branch_id=B)<br/>(ON CONFLICT DO UPDATE)
+    end
+    Store-->>CLI: ok
+    CLI-->>U: "enriched N spans, M had quant hint, K had VRAM sample"
+
+    Note over U,Ops: Side-effect free — reads source attrs,<br/>only writes under rewind.local.* namespace.<br/>No schema migration required.

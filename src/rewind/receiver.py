@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from rewind import __version__
+from rewind.eval_api import mount_eval
 from rewind.ingest import (
     IngestError,
     decode_export_request,
@@ -81,6 +82,9 @@ def create_app(store: TraceStore) -> FastAPI:
 
     # Phase 2: read-only timeline API lives at /api/v1/* and shares the store.
     mount_timeline(app)
+
+    # Phase 5.5: eval harness API lives at /api/v1/evals* and shares the store.
+    mount_eval(app)
 
     # Phase 2: static UI artifact at /ui. Mounted last so /api and /v1 win.
     _mount_ui(app)

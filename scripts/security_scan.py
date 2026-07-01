@@ -33,7 +33,7 @@ PY = sys.executable
 
 def run(cmd: list[str], cwd: Path = REPO_ROOT) -> tuple[int, str]:
     """Run ``cmd`` and return (returncode, combined output)."""
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=cwd)
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=cwd)  # noqa: S603
     return proc.returncode, (proc.stdout + proc.stderr).strip()
 
 
@@ -62,7 +62,15 @@ def main() -> int:
     print(f"  ruff S      -> rc={rc}")
 
     # 2. bandit (independent AST SAST, defence-in-depth).
-    rc, out_b = run([PY, "-m", "bandit", "-r", str(src), "-q"])
+    #
+    # B105 (hardcoded_password_string) is suppressed via .bandit + explicit
+    # ``-s B105`` — it constantly false-positives on enum string values
+    # like ``EvalVerdict.PASS = "pass"`` and rich colour names like
+    # ``"green"``. The codebase stores no real credentials; ruff S105/S106
+    # still enforce the genuine password cases (see pyproject.toml).
+    rc, out_b = run(
+        [PY, "-m", "bandit", "-r", "-s", "B105", str(src), "-q"]
+    )
     (out / "bandit.txt").write_text(out_b, encoding="utf-8")
     if rc != 0:
         failures.append("bandit")

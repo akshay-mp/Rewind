@@ -13,11 +13,17 @@ import type { SpanView } from "../types";
 interface Props {
   rewindId: string;
   onClose: () => void;
+  /**
+   * Optional Phase 5 hook — switches the parent view to the branch panel.
+   * Wired when the inspector is rendered inside a trace timeline view
+   * (in other contexts, e.g. search result, it's omitted).
+   */
+  onViewBranches?: () => void;
 }
 
 type Tab = "structured" | "raw";
 
-export function SpanInspector({ rewindId, onClose }: Props): JSX.Element {
+export function SpanInspector({ rewindId, onClose, onViewBranches }: Props): JSX.Element {
   const [span, setSpan] = useState<SpanView | null>(null);
   const [tab, setTab] = useState<Tab>("structured");
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +96,7 @@ export function SpanInspector({ rewindId, onClose }: Props): JSX.Element {
           </nav>
 
           {tab === "structured" ? (
-            <StructuredView span={span} />
+            <StructuredView span={span} onViewBranches={onViewBranches} />
           ) : (
             <RawView raw={span.raw_attributes} />
           )}
@@ -100,7 +106,7 @@ export function SpanInspector({ rewindId, onClose }: Props): JSX.Element {
   );
 }
 
-function StructuredView({ span }: { span: SpanView }): JSX.Element {
+function StructuredView({ span, onViewBranches }: { span: SpanView; onViewBranches: (() => void) | undefined }): JSX.Element {
   const messages = extractMessages(span.raw_attributes);
   const tools = extractTools(span.raw_attributes);
   return (
@@ -136,6 +142,18 @@ function StructuredView({ span }: { span: SpanView }): JSX.Element {
           label="tools_hash"
           value={<code className="hash">{span.tools_hash.slice(0, 12)}…</code>}
         />
+      )}
+      {span.branch_id !== null && onViewBranches !== undefined && (
+        <div className="inspector__actions">
+          <button
+            type="button"
+            className="link-button"
+            onClick={onViewBranches}
+            title="Switch to the branch panel for this trace"
+          >
+            view branches / diff ⎇
+          </button>
+        </div>
       )}
       {messages.length > 0 && <MessagesPanel messages={messages} />}
       {tools.length > 0 && <ToolsPanel tools={tools} />}

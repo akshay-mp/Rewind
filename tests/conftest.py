@@ -1,11 +1,14 @@
-"""Shared pytest fixtures for Rewind tests."""
+import os
 
-from __future__ import annotations
+# Clear proxy variables so loopback requests are not intercepted by sandbox proxies
+for key in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]:
+    os.environ.pop(key, None)
+os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 
-import pytest
+import pytest  # noqa: E402
 
-from rewind.enums import SpanKind
-from rewind.models import Branch, Span, Trace
+from rewind.enums import SpanKind  # noqa: E402
+from rewind.models import Branch, Span, Trace  # noqa: E402
 
 
 @pytest.fixture

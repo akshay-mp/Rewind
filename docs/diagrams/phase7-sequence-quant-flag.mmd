@@ -1,0 +1,44 @@
+sequenceDiagram
+    %% Phase 7 — quant-divergence auto-flag in span_diff().
+    %% Surfaces when same base model appears on two branches with
+    %% different quant suffixes (silent quality regression).
+
+    autonumber
+    actor U as User
+    participant Diff as span_diff(left, right)
+    participant BQP as _base_quant_pairs(spans)
+    participant QFS as quant_from_span(span)
+    participant PQ as parse_quant(model_name)
+    participant Store as TraceStore
+
+    Note over U,Store: Setup: trace T has two branches.<br/>Branch A used qwen2.5:7b-q4_K_M (cheap laptop)<br/>Branch B used qwen2.5:7b-q8_0 (VRAM-rich box).
+
+    U->>Diff: span_diff(left_branch=A, right_branch=B)
+
+    Note over Diff: ... existing per-span field diffs ...
+
+    Diff->>BQP: _base_quant_pairs(left.spans)
+    loop each LLM span
+        BQP->>QFS: quant_from_span(span)
+        QFS->>QFS: preferred: span.raw_attributes["rewind.local.quant"]
+        alt attr missing
+            QFS->>PQ: parse_quant(span.model_name)
+            PQ-->>QFS: QuantInfo(label, bits)
+        end
+        QFS-->>BQP: QuantInfo
+        Note over BQP: collect (strip_quant_suffix(model), quant) tuple
+    end
+    BQP-->>Diff: left_set = {("qwen2.5:7b", "q4_K_M")}
+
+    Diff->>BQP: _base_quant_pairs(right.spans)
+    BQP-->>Diff: right_set = {("qwen2.5:7b", "q8_0")}
+
+    Note over Diff: For each left base, check if right side<br/>has same base but different quant.
+
+    Diff->>Diff: bases_match = (qwen2.5:7b in both sets)
+    Diff->>Diff: quants_diff = ("q4_K_M" ≠ "q8_0")
+    Diff->>Diff: quant_diverges = bases_match AND quants_diff
+
+    Diff-->>U: SpanDiff(..., quant_diverges=True)
+
+    Note over U,Diff: UI surfaces a yellow 🔶 quant badge on the<br/>diverging span — silent model swap is caught.

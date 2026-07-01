@@ -1,0 +1,7 @@
+[bandit]
+# Phase-wide excludes. See pyproject.toml [tool.bandit] for rationale.
+# B105 (hardcoded_password_string) fires on enum string values like
+# "token_budget" / "pass" (EvalVerdict) and rich colour strings like
+# "green". The codebase stores no real credentials; ruff S105/S106 still
+# enforce the genuine password cases.
+skips = ["B105"]

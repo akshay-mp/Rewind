@@ -1,0 +1,72 @@
+flowchart TB
+    %% Phase 5 architecture: branching & diff UI.
+    %% Reading order top → bottom = capture (Phases 1/3/4 reused) → pure diff engine
+    %% → HTTP API surface → React timeline surface with branches mode.
+
+    subgraph P5Delivered["Phase 5 — delivered (green)"]
+        direction TB
+
+        subgraph CapturePlane["Capture plane (Phases 1/3 reused)"]
+            Receiver["FastAPI receiver<br/>POST /v1/traces  · GET /ui"]
+            Ingest["ingest.py"]
+            StoreW["TraceStore<br/>SQLite + WAL"]
+        end
+
+        DB[("rewind.db<br/>traces, spans, branches,<br/>checkpoints")]
+
+        subgraph DiffEngine["Pure diff engine (NEW — diff.py)"]
+            SpanDiff["span_diff<br/>zip + _spans_equal<br/>false → diverged"]
+            MsgDiff["message_diff<br/>tokenise + _coalesce_changed"]
+            BranchTree["branch_tree<br/>Agentic list → recursive BranchNode"]
+        end
+
+        subgraph ApiPlane["HTTP API surface (NEW routes in timeline.py)"]
+            RouteBranches["GET /traces/{id}/branches<br/>POST /traces/{id}/branches"]
+            RouteDiff["GET /traces/{id}/diff<br/>left=…&right=…"]
+            RouteMsgDiff["GET /spans/{rid}/message-diff<br/>other=…"]
+        end
+    end
+
+    subgraph P5UI["Phase 5 React surface (NEW — web/)"]
+        BranchTreeComp["BranchTree.tsx<br/>recursive rows + ← / → picks"]
+        DiffViewComp["DiffView.tsx<br/>SpanDiffView + MessageDiffBlock"]
+        TimelineBranches["Timeline branches mode<br/>+ fork modal"
+        ]
+    end
+
+    subgraph P5External["External (instrumented agent runtime)"]
+        AgentCode["User agent code"]
+        Renderer["browser<br/>Vite dev 5173 · prod /ui"]
+    end
+
+    %% Capture path (reused)
+    AgentCode -.OTLP.-> Receiver
+    Receiver --> Ingest
+    Ingest --> StoreW
+    StoreW --> DB
+
+    %% Read path (NEW — pure-logic source of truth)
+    DB -->|"SELECT spans by branch"| BranchTree
+    DB -->|"zip prefix pair"| SpanDiff
+    DB -->|"extract message text pair"| MsgDiff
+
+    %% API binding
+    RouteBranches --> BranchTree
+    RouteDiff --> SpanDiff
+    RouteMsgDiff --> MsgDiff
+
+    %% Frontend → API → engine
+    Renderer -.JSON.-> RouteBranches
+    Renderer -.JSON.-> RouteDiff
+    Renderer -.JSON.-> RouteMsgDiff
+
+    BranchTreeComp --> RouteBranches
+    DiffViewComp --> RouteDiff
+    DiffViewComp -.msg diff per row.-> RouteMsgDiff
+    TimelineBranches --> BranchTreeComp
+    TimelineBranches --> DiffViewComp
+
+    %% Fork create-a-branch path (reuses Phase 1 TraceStore.fork_branch)
+    TimelineBranches -->|POST body| RouteBranches
+    RouteBranches -->|fork_branch| StoreW
+    StoreW --> DB

@@ -1,0 +1,70 @@
+flowchart TB
+    %% Phase 8 — Polish, Packaging, Distribution. No new source modules;
+    %% the work is wiring the existing pipeline into a one-command install
+    %% + demo agents + benchmark script + polished docs surface.
+
+    subgraph P8["Phase 8 — delivered"]
+        direction TB
+
+        subgraph Packaging["Packaging (MODIFIED — pyproject.toml)"]
+            Scripts["[project.scripts]<br/>rewind = rewind.cli:main"]
+            DefaultDB["Default db = ~/.rewind/rewind.db<br/>(mkdir on first use)"]
+            Extras["[project.optional-dependencies]<br/>enrichment = transformers, psutil"]
+            Sdist["[tool.hatch.build.targets.sdist]<br/>include docs/ examples/ scripts/"]
+        end
+
+        subgraph Bench["Benchmark (NEW — scripts/benchmark_receiver.py)"]
+            RecvBench["receiver subcommand<br/>POST OTLP/HTTP × iters<br/>report p50/p90/p99 per span"]
+            IntcBench["interceptor subcommand<br/>in-process no-op hot path<br/>report p50/p90/p99 per call"]
+        end
+
+        subgraph Examples["Demo agents (NEW — examples/)"]
+            direction LR
+            Tool["tool_caller.py<br/>(LLM → tool → LLM)"]
+            Rag["rag_loop.py<br/>(retrieve → LLM × 2 turns)"]
+            Coder["multi_step_coder.py<br/>(plan → write → run → reflect)"]
+        end
+
+        subgraph Docs["Polished docs (NEW + MODIFIED)"]
+            Quick["docs/quickstart.md<br/>5-minute install-to-trace"]
+            Wiring["docs/wiring.md<br/>per-framework OpenInference recipes"]
+            Branch["docs/branching-diff-walkthrough.md"]
+            Adapters["docs/replay-adapters.md<br/>per-framework replay adapter recipes"]
+            Phase7["docs/phases/phase-7.md"]
+            Phase8["docs/phases/phase-8.md"]
+        end
+    end
+
+    subgraph Reused["Reused from earlier phases (unchanged)"]
+        direction LR
+        CLI["rewind.cli — serve / ui / enrich / render-template / replay / eval"]
+        Receiver["receiver.py — POST /v1/traces"]
+        Store[("storage.py — TraceStore<br/>~/.rewind/rewind.db")]
+        Engine["replay.py — ReplaySession"]
+        Enrich["enrichment.py — enrich_span"]
+    end
+
+    %% Packaging wiring
+    Scripts -->|"pipx install rewind-ai<br/>→ rewind serve"| CLI
+    DefaultDB -->|"auto-mkdir on first write"| Store
+    Extras -.->|"lazy import"| Enrich
+
+    %% Benchmark wiring
+    RecvBench -.->|"POSTs OTLP/HTTP"| Receiver
+    IntcBench -.->|"spans_from_request + no-op"| Engine
+
+    %% Examples wiring
+    Examples -.->|"OTEL_EXPORTER_OTLP_ENDPOINT=<br/>http://127.0.0.1:4318"| Receiver
+
+    %% Docs wiring
+    Docs -.->|"refer to"| Examples
+    Docs -.->|"refer to"| Adapters
+
+    %% Style
+    classDef newFunc fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#000
+    classDef modified fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#000
+    classDef reused fill:#f1f5f9,stroke:#475569,color:#000
+
+    class Bench,Examples,Quick,Wiring,Branch,Adapters,Phase8 newFunc
+    class Packaging,Docs,Phase7 modified
+    class CLI,Receiver,Store,Engine,Enrich reused

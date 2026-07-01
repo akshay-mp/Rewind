@@ -1,0 +1,37 @@
+sequenceDiagram
+    %% Phase 5.5 — baseline diff: candidate vs golden/good run.
+    %% No re-execution; reads stored verdicts and joins on scenario_name.
+    autonumber
+    participant Op as Operator / UI
+    participant Api as FastAPI eval_api
+    participant Store as TraceStore
+    participant Candidate as candidate eval_runs row
+    participant Baseline as baseline eval_runs row
+
+    Note over Op,Baseline: Earlier: candidate run was submitted via POST /api/v1/evals<br/>+ baseline run persisted previously
+    Op->>Api: GET /api/v1/evals/{candidate_id}/baseline<br/>?baseline_run_id={baseline_id}
+    Api->>Api: _is_valid_uuid both params<br/>else HTTP 400
+
+    Api->>Store: get_eval_run(candidate_id)
+    Store->>Candidate: SELECT * FROM eval_runs<br/>+ scenarios ORDER BY seq
+    Candidate-->>Store: EvalSuiteResult
+    Store-->>Api: candidate_result
+
+    alt candidate missing
+        Api-->>Op: HTTP 404 not found
+    end
+
+    Api->>Store: get_eval_run(baseline_id)
+    Store->>Baseline: SELECT * FROM eval_runs<br/>+ scenarios ORDER BY seq
+    Baseline-->>Store: EvalSuiteResult
+    Store-->>Api: baseline_result
+
+    alt baseline missing
+        Api-->>Op: HTTP 404 not found
+    end
+
+    Api->>Api: _build_baseline_diff(baseline, candidate)
+    Note over Api: index baseline.scenarios by name<br/>for each candidate scenario:<br/>changed = (v_cand != v_base)<br/>copy detail strings per side
+    Api-->>Op: EvalBaselineDiffView JSON<br/>{ baseline_run_id, candidate_run_id,<br/>overall_changed, scenarios[] }
+
+    Note over Op: EvalRunDetail.tsx renders Δ marker<br/>on every changed row + summary banner

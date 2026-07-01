@@ -199,8 +199,62 @@ class Trace(RewindModel):
         return counts
 
 
+class Checkpoint(RewindModel):
+    """A named state snapshot captured during a side-effecting agent run.
+
+    Phase 4's job: keep replay correct for agents that mutate the world. A
+    checkpoint captures the *agent-visible* state at a cursor position so that
+    on a future ``FROZEN`` replay the side-effecting block can be skipped and
+    state restored from the snapshot instead.
+
+    Lifecycle:
+
+    * Captured on first live forward (BRANCH / FULL_RERUN past the cursor) —
+      the agent calls ``rewind.checkpoint(name, payload=...)`` and Rewind
+      persists the payload under ``(branch_id, name, cursor_index)``.
+    * Served on subsequent FROZEN replays at the same cursor position — the
+      checkpoint's ``payload`` is returned to the agent without re-running
+      the side-effecting body.
+
+    The ``payload`` is JSON-serialised via ``_stable_json`` and stored in a
+    dedicated ``checkpoints`` table (NOT as a span). Checkpoints are not OTel
+    spans — they are Rewind's own bookkeeping.
+    """
+
+    checkpoint_id: UUID = Field(default_factory=uuid4)
+    trace_id: str = Field(..., description="OTel trace id this checkpoint belongs to.")
+    branch_id: UUID = Field(..., description="Branch under which the checkpoint was captured.")
+    name: str = Field(..., description="User-supplied checkpoint name (unique per branch).")
+    cursor_index: int = Field(
+        ...,
+        description="ReplaySession.cursor value at capture time. Used so a "
+        "later replay can restore the right snapshot at the right position.",
+    )
+    label: str = Field(default="", description="Human-readable label for the diff UI.")
+    payload: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Arbitrary JSON-serialisable state for restore on FROZEN replay.",
+    )
+    created_at: str = Field(default_factory=_utcnow_iso)
+
+    @field_validator("name")
+    @classmethod
+    def _name_non_empty(cls, v: str) -> str:
+        if not v:
+            raise ValueError("checkpoint name must be non-empty")
+        return v
+
+    @field_validator("cursor_index")
+    @classmethod
+    def _cursor_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("cursor_index must be >= 0")
+        return v
+
+
 __all__ = [
     "Branch",
+    "Checkpoint",
     "RewindModel",
     "Span",
     "Trace",

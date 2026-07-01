@@ -1,0 +1,84 @@
+flowchart TB
+    %% Phase 7 architecture — local-model enrichment. Pure-Python module
+    %% (no hard deps) that annotates LLM spans with GGUF quant info,
+    %% renders the *post*-chat-template prompt, and samples VRAM. Also
+    %% surfaces a new auto-flag in the diff: quant divergence.
+
+    subgraph P7["Phase 7 — delivered"]
+        direction TB
+
+        subgraph EnrichMod["src/rewind/enrichment.py (NEW — pure-Python, no hard deps)"]
+            direction TB
+            ParseQuant["parse_quant(model_name) -> QuantInfo<br/>regex-extracts GGUF suffix<br/>(q4_K_M · q8_0 · f16 · bf16 · fp16 · iX)"
+            QuantFromSpan["quant_from_span(span) -> QuantInfo<br/>prefers rewind.local.quant attr<br/>falls back to parse_quant(model_name)"]
+            RenderTpl["render_chat_template(messages, *, model_name) -> str<br/>try transformers.AutoTokenizer.apply_chat_template<br/>fallback [role] content concatenation"]
+            SampleVram["sample_vram() -> VramSample<br/>probe nvidia-smi → asitop/macmon → psutil<br/>returns VramSample(None, None) cleanly on miss"]
+            EnrichSpan["enrich_span(span, *, parse_model_quant, sample_gpu) -> Span<br/>ENTRY: mutates raw_attributes in place"]
+        end
+
+        subgraph DiffMod["src/rewind/diff.py (MODIFIED — new auto-flag)"]
+            QuantDiv["_detect_quant_divergence(left, right) -> bool<br/>collects (base, quant) pairs per side<br/>fires when base matches & quant differs"]
+            SpanDiff["SpanDiff dataclass<br/>NEW field: quant_diverges: bool = False"]
+        end
+
+        subgraph CLI2["src/rewind/cli.py (MODIFIED — 2 new commands)"]
+            CMDenrich["rewind enrich TRACE [--branch B]<br/>[--parse-quant] [--sample-vram]<br/>walks spans, persists via insert_span"]
+            CMDrender["rewind render-template TRACE INDEX<br/>[--branch B] [--model NAME]<br/>renders one LLM span's post-template prompt"]
+        end
+
+        subgraph Attrs["New raw_attributes keys (NEW — no schema bump)"]
+            direction LR
+            AttrQuant["rewind.local.quant"]
+            AttrVram["rewind.local.vram_mib"]
+            AttrGpu["rewind.local.gpu_pct"]
+        end
+    end
+
+    subgraph Reused["Reused from earlier phases (unchanged)"]
+        direction LR
+        Engine["replay.py — ReplaySession"]
+        Store[("storage.py — TraceStore<br/>get_spans · insert_span")]
+        Models["models.py — Span (raw_attributes dict)"]
+        Enum["enums.py — SpanKind.LLM"]
+    end
+
+    subgraph External["Optional external deps (lazy-imported, never required)"]
+        direction LR
+        Transformers[("transformers<br/>pip install transformers")]
+        Psutil[("psutil<br/>pip install psutil")]
+        NvidiaSmi[("/usr/bin/nvidia-smi<br/>(system binary)")]
+        MacMon[("macmon / asitop<br/>(system binary)")]
+    end
+
+    %% Module-level wiring
+    EnrichSpan -->|"parse_model_quant=True"| ParseQuant
+    EnrichSpan -->|"parse_model_quant=True"| QuantFromSpan
+    EnrichSpan -->|"sample_gpu=True"| SampleVram
+    EnrichSpan -.->|"writes into"| Attrs
+    EnrichSpan -->|"returns mutated"| Models
+
+    %% Diff flow
+    DiffMod -->|"reads quant_from_span<br/>per LLM span"| QuantFromSpan
+
+    %% CLI flow
+    CMDenrich -->|"per span"| EnrichSpan
+    CMDenrich -->|"persist upsert"| Store
+    CMDrender --> RenderTpl
+    CMDrender -->|"load spans"| Store
+
+    %% Lazy external deps
+    RenderTpl -.->|"preferred path"| Transformers
+    SampleVram -.->|"probe 1"| NvidiaSmi
+    SampleVram -.->|"probe 2"| MacMon
+    SampleVram -.->|"probe 3 (fallback)"| Psutil
+
+    %% Style
+    classDef newFunc fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#000
+    classDef modified fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#000
+    classDef reused fill:#f1f5f9,stroke:#475569,color:#000
+    classDef ext fill:#fce7f3,stroke:#be185d,color:#000
+
+    class ParseQuant,QuantFromSpan,RenderTpl,SampleVram,EnrichSpan,Attrs newFunc
+    class DiffMod,CLI2 modified
+    class Engine,Store,Models,Enum reused
+    class Transformers,Psutil,NvidiaSmi,MacMon ext

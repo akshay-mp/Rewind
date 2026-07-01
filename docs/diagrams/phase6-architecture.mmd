@@ -1,0 +1,90 @@
+flowchart TB
+    %% Phase 6 architecture — five per-framework replay adapters built on
+    %% the shared _common module + the Phase 3 replay engine. New surfaces
+    %% are highlighted as NEW; everything they delegate to is reused
+    %% unchanged from earlier phases.
+
+    subgraph P6["Phase 6 — delivered"]
+        direction TB
+
+        subgraph Common["Shared adapter helpers (NEW — _common.py)"]
+            BuildSpan["build_live_span<br/>(LLM + TOOL.Span constructor)"]
+            AssertFrozen["assert_not_frozen<br/>(raises ReplayError on divergence)"]
+        end
+
+        subgraph Adapters["Per-framework adapter modules (NEW)"]
+            direction LR
+            ADK["adapters/adk.py<br/>replay_llm(BaseLlm)<br/>generate_response[_async]"]
+            CrewAI["adapters/crewai.py<br/>replay_llm(BaseLLM)<br/>call[_async] · get_response"]
+            PydAI["adapters/pydantic_ai.py<br/>replay_model(Model)<br/>request[_stream]"]
+            Smol["adapters/smolagents.py<br/>replay_model(Model)<br/>__call__ · generate · astream"]
+            LangGraph["adapters/langgraph.py<br/>replay_chat_model(BaseChatModel)<br/>(from Phase 3 — pattern origin)"]
+        end
+
+        subgraph Deps["pyproject wiring (NEW)"
+            extras["[project.optional-dependencies]<br/>adk · crewai · pydantic-ai · smolagents · adapters"]
+            mypyOvr["[[tool.mypy.overrides]]<br/>ignore_missing_imports=true<br/>google.adk.* · crewai.* · pydantic_ai.* · smolagents.*"]
+            pylintGlob["[tool.pylint.'src/rewind/adapters/**']<br/>disable protected-access<br/>import-outside-toplevel · too-many-*"]
+        end
+    end
+
+    subgraph Reused["Reused from earlier phases (unchanged)"]
+        direction TB
+        ExtractSig["openai_intercept.extract_signature<br/>(CallSignature(model, msgs_hash, tools_hash))"]
+        Engine["replay.py<br/>active_session() ContextVar<br/>ReplaySession · respond_or_forward · record_new"]
+        Store[("storage.py — TraceStore<br/>spans · traces · SCHEMA_VERSION=3")]
+        Models["models.py<br/>Span · Trace · hash_payload"]
+    end
+
+    subgraph Frameworks["Underlying agent frameworks (NOT installed by default)"]
+        direction LR
+        googleADK[("google-adk<br/>pip install rewind-ai[adk]")]
+        crewaiPkg[("crewai<br/>pip install rewind-ai[crewai]")]
+        pydanticAIPkg[("pydantic-ai<br/>pip install rewind-ai[pydantic-ai]")]
+        smolagentsPkg[("smolagents<br/>pip install rewind-ai[smolagents]")]
+        langchainPkg[("langchain-core<br/>already required by Phase 3")]
+    end
+
+    %% Adapter → framework (lazy import inside factory only)
+    ADK -.->|"from google.adk.models.llms<br/>import BaseLlm (lazy)"| googleADK
+    CrewAI -.->|"from crewai.llms.base_llm<br/>import BaseLLM (lazy)"| crewaiPkg
+    PydAI -.->|"from pydantic_ai.models<br/>import Model (lazy)"| pydanticAIPkg
+    Smol -.->|"from smolagents.models<br/>import Model (lazy)"| smolagentsPkg
+    LangGraph -.->|"from langchain_core...<br/>import BaseChatModel (lazy)"| langchainPkg
+
+    %% Adapter → common helpers (always loaded; pure Python)
+    ADK --> BuildSpan
+    CrewAI --> BuildSpan
+    PydAI --> BuildSpan
+    Smol --> BuildSpan
+    LangGraph --> BuildSpan
+    ADK --> AssertFrozen
+    CrewAI --> AssertFrozen
+    PydAI --> AssertFrozen
+    Smol --> AssertFrozen
+    LangGraph --> AssertFrozen
+
+    %% Adapter → reused infrastructure
+    ADK -->|"signature()"| ExtractSig
+    CrewAI -->|"signature()"| ExtractSig
+    PydAI -->|"signature()"| ExtractSig
+    Smol -->|"signature()"| ExtractSig
+    LangGraph -->|"signature()"| ExtractSig
+
+    ExtractSig --> Engine
+    BuildSpan -->|"record_new(span)"| Engine
+    AssertFrozen -->|"raises ReplayError"| Engine
+    Engine --> Store
+    BuildSpan --> Models
+
+    %% pyproject wiring affects build
+    extras -.->|"declares optional deps"| Frameworks
+    mypyOvr -.->|"permits type-check|src without frameworks"| Adapters
+    pylintGlob -.->|"relaxes rules only for adapters glob"| Adapters
+
+    classDef new fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+    classDef reused fill:#fff8e1,stroke:#f57c00,stroke-width:1px,color:#000
+    classDef external fill:#fce4ec,stroke:#c2185b,stroke-width:1px,color:#000
+    class BuildSpan,AssertFrozen,ADK,CrewAI,PydAI,Smol,extras,mypyOvr,pylintGlob new
+    class ExtractSig,Engine,Store,Models,LangGraph reused
+    class googleADK,crewaiPkg,pydanticAIPkg,smolagentsPkg,langchainPkg external
