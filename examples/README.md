@@ -39,6 +39,8 @@ and run.
 
 ## Demos
 
+### Capture-only (toy agents)
+
 | File | Agent pattern | Surfaces |
 |---|---|---|
 | [`tool_caller.py`](./tool_caller.py) | Single-shot tool-caller: user asks → LLM picks a tool → tool runs → LLM summarises. | LLM spans, tool span, tool-result span. Smallest possible multi-span trace. |
@@ -48,6 +50,21 @@ and run.
 Each demo wraps the actual `openai` SDK with OpenInference's instrumentation
 context manager; the `OTEL_EXPORTER_OTLP_ENDPOINT` env var (set by these
 scripts to `http://127.0.0.1:4318`) points the OTLP exporter at Rewind.
+
+### Deep-research integration (capture + replay + branch + diff)
+
+| File | What it is | Status |
+|---|---|---|
+| [`deep_research_demo.py`](./deep_research_demo.py) | **The recommended live demo (Python/CLI).** A flattened 8-step deep-research agent run against a local model (Unsloth/Ollama) through Rewind's real capture → frozen → branch+diff engine. Runs in ~3 min on a 27B model. | ✅ Working |
+| [`deep_research.py`](./deep_research.py) | A heavier variant that drives the full `open_deep_research` LangGraph graph. More faithful to ODR but heavier/fragile — see its README for the Python-3.14 / `jsonschema-rs` caveat. | ⚠️ Needs 3.11–3.13 |
+| [`deep_research_README.md`](./deep_research_README.md) | Setup + env vars + how-it-works for the Python demos. | — |
+
+### The polished web UI
+
+| Path | What it is |
+|---|---|
+| [`../web-demo/`](../web-demo/) | A Next.js + shadcn/ui app with a three-panel debugger: span timeline (left), span detail + prompt editor (right), branch diff (modal). Talks to your local model via the OpenAI SDK and mirrors spans into Rewind's receiver. **This is the demo to show people.** |
+| [`../docs/demo-run.md`](../docs/demo-run.md) | Step-by-step run guide for the web demo against Unsloth Studio. |
 
 ## After running
 
@@ -61,12 +78,13 @@ instantly. From there:
 
 ## What these demos **don't** do
 
-- **No Replay**: these demos exercise capture only. Replay (`rewind.replay()`
-  ctxmgr) is documented separately under `docs/phases/phase-3.md` — it's the
-  opt-in debug-mode counterpart to capture.
+- **No Replay** *(the capture-only demos above)*: `tool_caller`/`rag_loop`/
+  `multi_step_coder` exercise capture only. For the full capture → frozen
+  replay → branch → diff loop, use [`deep_research_demo.py`](./deep_research_demo.py)
+  or the [`web-demo/`](../web-demo/) UI — see [`docs/demo-run.md`](../docs/demo-run.md).
 - **No Eval**: these demos produce one trace per run. Running them under
   `rewind eval` (Phase 5.5) is the way to score agent variants at scale.
-- **No framework deps**: each demo uses plain `openai` so they run anywhere
-  with `pip install openinference-instrumentation-openai`. Demos for ADK /
-  CrewAI / PydanticAI / SmolAgents follow the same shape but import those
-  frameworks' own OpenInference instrumentation packages.
+- **No framework deps** *(capture-only demos)*: each uses plain `openai` so
+  they run anywhere with `pip install openinference-instrumentation-openai`.
+  Demos for ADK / CrewAI / PydanticAI / SmolAgents follow the same shape but
+  import those frameworks' own OpenInference instrumentation packages.

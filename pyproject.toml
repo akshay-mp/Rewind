@@ -75,6 +75,19 @@ enrichment = [
     "transformers>=4.40.0",
     "psutil>=5.9.0",
 ]
+# Deep-research integration extra. Pulls in the canonical LangGraph deep-
+# research agent (open_deep_research) + the OpenInference LangChain
+# instrumentor used by ``examples/deep_research.py``. The example degrades
+# to an actionable install hint if these are absent. Note: on Python 3.14
+# ``open-deep-research``'s transitive ``langgraph-cli[inmem]`` pulls
+# ``jsonschema-rs<0.30`` which has no 3.14 wheel; install the package with
+# ``--no-deps`` after satisfying the runtime deps (langgraph, langchain-openai,
+# langchain-community, langchain-tavily, langchain-mcp-adapters, mcp) — see
+# ``examples/deep_research_README.md``.
+deepresearch = [
+    "open-deep-research>=0.0.16",
+    "openinference-instrumentation-langchain>=0.1.0",
+]
 
 [project.scripts]
 rewind = "rewind.cli:main"
@@ -125,6 +138,15 @@ ignore = ["S101"]  # allow assert in tests
 "src/rewind/openai_intercept.py" = ["ANN401"]
 "src/rewind/tool_intercept.py" = ["ANN401"]
 "src/rewind/adapters/**" = ["ANN401"]
+# Deep-research integration scripts. The ODR graph + LangChain model objects
+# are genuinely Any-typed at the SDK boundary; the scripts mirror the existing
+# adapter-override pragmatism. (Examples live outside src/ so they don't ship
+# in the wheel, but we still keep them lint-clean.)
+"examples/deep_research.py" = ["ANN401"]
+# Example scripts use Any at SDK boundaries (OpenAI client, OTel objects) the
+# same way the adapters do, and intentionally write to a /tmp demo DB.
+"examples/deep_research_demo.py" = ["ANN401", "S108"]
+"examples/**" = ["ANN401", "S108", "E501"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -238,6 +260,12 @@ module = [
     "smolagents.*",
     "huggingface_hub.*",
 ]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Deep-research integration (examples/deep_research.py). open_deep_research
+# is an optional extra; type-checks run only when the developer installs it.
+module = ["open_deep_research.*"]
 ignore_missing_imports = true
 
 # --- pytest ----------------------------------------------------------------
