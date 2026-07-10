@@ -110,7 +110,7 @@ def main() -> int:
     # 1. Mock LLM call #1 — decides to call the tool.
     # (OpenInference captures this as a gen_ai.llm span.)
     resp1 = fake_llm_completion(messages)
-    print(f"[assistant] (decides to call get_weather(city=Lisbon))")
+    print("[assistant] (decides to call get_weather(city=Lisbon))")
     _ = resp1  # response shape logged by instrumentation
     messages.append(tool_call_msg)
 
@@ -139,5 +139,5 @@ def main() -> int:
 if __name__ == "__main__":
     # The ``json``/``Any`` imports are exercised by the type-annotated
     # ``messages`` list; the bench linter doesn't always see this.
-    _ = json.loads  # noqa: F841
+    _ = json.loads
     sys.exit(main())

@@ -52,9 +52,12 @@ live under `diagrams/` and follow the naming convention
 |---|---|
 | [`README.md`](../README.md)   | Project overview, status table, install + quick-start, dev workflow |
 | [`quickstart.md`](quickstart.md) | 5-minute install-to-trace flow (end-user entry point) |
+| [`demo-run.md`](demo-run.md) | **Live demo run guide** — capture → branch → diff against a local model (Unsloth) in the polished `web-demo/` UI. The doc to follow when showing Rewind to people. |
 | [`wiring.md`](wiring.md)     | Per-framework OpenInference wiring recipes (OpenAI, ADK, LangGraph, CrewAI, PydanticAI, SmolAgents, MCP) |
 | [`branching-diff-walkthrough.md`](branching-diff-walkthrough.md) | The core debugging workflow (branch + diff) end-to-end |
 | [`replay-adapters.md`](replay-adapters.md) | Per-framework replay adapter usage (ADK/CrewAI/PydanticAI/SmolAgents) |
+| [`../web-demo/`](../web-demo/) | The Next.js + shadcn/ui debugger frontend (three-panel timeline / span detail / branch diff). See `demo-run.md` for setup. |
+| [`../examples/deep_research_demo.py`](../examples/deep_research_demo.py) | Python/CLI equivalent of the live demo (headless capture→frozen→branch). |
 | [`../plan.md`](../../plan.md) | Original full phased plan, competitive analysis, architectural asymmetry |
 | `memories/repo/`              | Per-phase completion notes + project conventions (repo-scoped; machine-curated) |
 

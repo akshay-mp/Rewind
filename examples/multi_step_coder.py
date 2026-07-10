@@ -46,8 +46,8 @@ def write_code(task: str) -> str:
 
 def run_code(snippet: str) -> dict[str, Any]:
     """Mock code-runner tool — exec's the snippet and captures stdout/stderr."""
-    import io
     import contextlib
+    import io
 
     out, err = io.StringIO(), io.StringIO()
     try:
@@ -56,7 +56,7 @@ def run_code(snippet: str) -> dict[str, Any]:
             exec(snippet, {"__name__": "__demo__"})  # noqa: S102
             # pylint: enable=exec-used
         return {"ok": True, "stdout": out.getvalue(), "stderr": err.getvalue()}
-    except Exception as exc:  # noqa: BLE001 - demo surfaces any failure
+    except Exception as exc:
         return {"ok": False, "stdout": out.getvalue(), "stderr": f"{type(exc).__name__}: {exc}"}
 
 
