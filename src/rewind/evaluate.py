@@ -1411,6 +1411,127 @@ def _roll_up_overall_verdict(results: list[ScenarioResult]) -> EvalVerdict:
 
 
 # ----------------------------------------------------------------------
+# Phase 4 — frozen verification runner
+# ----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RegressionResult:
+    """Outcome of one ``run_frozen_verification`` execution.
+
+    * ``passed`` — True if every expected check matched the re-executed output.
+    * ``detail`` — human-readable summary of what matched / drifted.
+    * ``branch_id`` — the branch the verification ran on (None if it couldn't start).
+    """
+
+    passed: bool
+    detail: str
+    branch_id: UUID | None = None
+
+
+async def run_frozen_verification(
+    case_id: str,
+    *,
+    store: Any,  # noqa: ANN401
+    factory: ReplaySessionFactory | None = None,
+) -> RegressionResult:
+    """Re-execute a regression case's seed trace in FROZEN mode and verify.
+
+    Loads the case from the store, materialises its seed trace's spans under
+    FROZEN replay (via the same factory the eval suite uses), and checks the
+    ``expected`` dict against the re-materialised spans. Any drift (a
+    different span count, a missing required text) surfaces as
+    ``passed=False`` with a detail string.
+
+    This is the deterministic core of the regression suite: same trace +
+    same checks = same verdict, regardless of the live model's current
+    behaviour.
+    """
+    case = store.get_regression_case(case_id)
+    if case is None:
+        return RegressionResult(passed=False, detail=f"case {case_id} not found")
+
+    seed_trace_id = case["seed_trace_id"]
+    expected = case.get("expected", {})
+    factory = factory or _default_replay_session_factory
+    started = _utcnow_iso()
+
+    # Build a minimal FROZEN scenario so the existing factory handles the
+    # ReplaySession.for_root + span materialisation.
+    scenario = EvalScenario(
+        name=case.get("name", case_id),
+        seed_trace_id=seed_trace_id,
+        candidate_mode=CandidateMode.FROZEN,
+        branch_at_index=None,
+        evaluators=[],
+    )
+
+    try:
+        spans, branch_id = factory(store, scenario)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        return RegressionResult(
+            passed=False,
+            detail=f"failed to materialise frozen replay: {exc}",
+        )
+
+    failures: list[str] = []
+    for key, want in expected.items():
+        if key == "span_count":
+            if len(spans) != want:
+                failures.append(
+                    f"span_count drift: expected {want}, got {len(spans)}"
+                )
+        elif key == "required_text":
+            blob = " ".join(_span_text(s) for s in spans)
+            for needle in want:
+                if needle not in blob:
+                    failures.append(f"missing required text: {needle!r}")
+
+    passed = not failures
+    detail = "all checks passed" if passed else "; ".join(failures)
+    store.insert_regression_run(
+        {
+            "run_id": str(uuid4()),
+            "case_id": case_id,
+            "passed": passed,
+            "detail": detail,
+            "branch_id": str(branch_id),
+            "started_at": started,
+            "finished_at": _utcnow_iso(),
+        }
+    )
+    return RegressionResult(
+        passed=passed,
+        detail=detail,
+        branch_id=branch_id,
+    )
+
+
+def _span_text(span: Any) -> str:  # noqa: ANN401
+    """Flatten a span's raw_attributes into a searchable text blob.
+
+    Recursively walks nested dicts/lists so content buried under
+    ``gen_ai.response.choices[0].message.content`` is reachable by the
+    required-text check.
+    """
+    parts: list[str] = [getattr(span, "name", "") or ""]
+
+    def _walk(obj: Any) -> None:  # noqa: ANN401
+        if isinstance(obj, str):
+            parts.append(obj)
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                _walk(v)
+        elif isinstance(obj, (list, tuple)):
+            for item in obj:
+                _walk(item)
+
+    attrs = getattr(span, "raw_attributes", None) or {}
+    _walk(attrs)
+    return " ".join(parts)
+
+
+# ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
 
@@ -1443,6 +1564,7 @@ __all__ = [
     "GoalCheckExpectation",
     "JudgeCallable",
     "NoHallucinationExpectation",
+    "RegressionResult",
     "ReplaySessionFactory",
     "ScenarioLatency",
     "ScenarioResult",
@@ -1458,6 +1580,7 @@ __all__ = [
     "evaluate_no_hallucination",
     "evaluate_token_budget",
     "evaluate_tool_check",
+    "run_frozen_verification",
     "scenario_result_from_dict",
     "scenario_result_to_dict",
     "validate_suite",

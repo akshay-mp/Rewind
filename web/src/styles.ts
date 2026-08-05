@@ -75,6 +75,25 @@ export function evalVerdictClass(verdict: EvalVerdict): string {
   }
 }
 
+/**
+ * Phase 9 — CSS class for an interactive session status pill. Mirrors the
+ * eval-verdict pill pattern: running = neutral, paused = info/accent, done
+ * = pass, errored = error. The classes are defined in ``styles.css``.
+ */
+export function sessionStatusClass(status: string): string {
+  switch (status) {
+    case "done":
+      return "pill pill--pass";
+    case "errored":
+      return "pill pill--error";
+    case "paused":
+      return "pill pill--info";
+    case "running":
+    default:
+      return "pill pill--skip";
+  }
+}
+
 export function formatDuration(startIso: string, endIso: string): string {
   const startMs = Date.parse(startIso);
   const endMs = Date.parse(endIso);

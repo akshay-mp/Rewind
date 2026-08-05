@@ -1,0 +1,56 @@
+sequenceDiagram
+    autonumber
+    participant A as Agent code
+    participant P as pydantic_ai._step / openai _step_async
+    participant V as decide_with_validation
+    participant G as gate_async
+    participant C as AsyncioChannel
+    participant App as Approver
+    participant Cursor as respond_or_forward
+
+    Note over A,Cursor: Setup: same as the APPROVE flow — INTERACTIVE + channel attached.
+
+    Note over A,Cursor: Stage 1 developer rewrites the outbound messages
+    A->>P: await model.request(messages)
+    P->>G: await gate_async(session, step)
+    G->>C: await channel.submit(step)
+    C->>App: pending step surfaced
+    Note right of App: developer edits messages + model
+    App->>C: channel.decide(EDIT(messages=[...], model=gpt-5))
+    C->>V: decide_with_validation(decision)
+    alt EDIT carries no override field
+        V-->>C: raise ValueError
+        Note right of V: fast-fail at the channel boundary
+    else EDIT has at least one override
+        V-->>C: validated Decision
+    end
+    C-->>G: Decision(kind=EDIT, messages, model)
+    G-->>P: decision
+
+    Note over A,Cursor: Stage 2 apply the edit before dispatch
+    P->>P: messages = decision.messages<br/>kwargs.model = decision.model
+    Note right of P: signature recomputed on the EDITED payload
+    P->>Cursor: respond_or_forward(edited_signature)
+
+    Note over A,Cursor: Stage 3 edited signature almost always diverges
+    alt edited signature still matches recorded (rare — same hash by accident)
+        Cursor-->>P: cached RecordedResponse
+    else edited signature diverges (the common case)
+        Cursor-->>P: None
+        Note right of Cursor: BRANCH-like forward authorised
+        P->>P: forward to live model with edited kwargs
+        P->>P: capture live span under session.branch_id
+    end
+    P-->>A: edited response
+
+    Note over A,Cursor: Stage 4 alternative — STOP unwinds the run
+    alt developer chooses STOP instead
+        App->>C: channel.decide(STOP)
+        C-->>G: Decision(kind=STOP)
+        G-->>P: decision(kind=STOP)
+        P->>P: raise SteppingStopped(step)
+        Note right of P: distinct from ReplayError —<br/>normal termination, not a contract violation
+        P-->>A: SteppingStopped propagates<br/>(Phase B runner will catch → status=done)
+    end
+
+    Note over A,Cursor: Outcome: edit applied pre-dispatch; divergence is the expected path, not an error.

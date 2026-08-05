@@ -1,7 +1,11 @@
 # Rewind — Documentation Index
 
 > Time-travel debugging for AI agents. **OTel-in / replay-out.**
-> Phases 0 through 8 are complete (full plan delivered). See `README.md`
+> Phases 0 through 9 are complete. Phases 0–8 delivered the original plan
+> (OTel-in / replay-out engine); Phase 9 adds the interactive step-through
+> debugging primitive on top. The live workbench verification guide covers
+> start, review, rewind, prompt variants, pricing, and browser reconnect.
+> See `README.md`
 > (parent) for install + usage, or jump straight to [`quickstart.md`](quickstart.md)
 > for the 5-minute install-to-trace flow.
 
@@ -24,6 +28,7 @@ touched the surface you're working on; earlier phases link forward.
 | 6   | Remaining per-framework replay adapters (ADK/CrewAI/PydanticAI/SmolAgents) | [`phase-6.md`](phases/phase-6.md) | ✅ |
 | 7   | Local-model enrichment (quant, VRAM, chat-template, quant divergence) | [`phase-7.md`](phases/phase-7.md) | ✅ |
 | 8   | Polish, packaging, distribution (default DB, extras, benchmark, demos, user docs) | [`phase-8.md`](phases/phase-8.md) | ✅ |
+| 9   | Interactive step-through debugging primitive (ApprovalChannel + gates) | [`phase-9.md`](phases/phase-9.md) | ✅ |
 
 ## Phase diagrams (`diagrams/`)
 
@@ -45,6 +50,7 @@ live under `diagrams/` and follow the naming convention
 | 6   | `phase6-architecture.mmd`                       | `phase6-sequence-branch-divergence.mmd`, `phase6-sequence-frozen-replay.mmd` |
 | 7   | `phase7-architecture.mmd`                       | `phase7-sequence-enrich.mmd`, `phase7-sequence-quant-flag.mmd` |
 | 8   | `phase8-architecture.mmd`                       | _no new runtime flows — sequences documented inline in `phases/phase-8.md` §3_ |
+| 9   | `phase9-architecture.mmd`, `phase9-architecture-server.mmd` | `phase9-sequence-approve.mmd`, `phase9-sequence-edit.mmd` |
 
 ## Other docs (parent `../`)
 
@@ -56,17 +62,20 @@ live under `diagrams/` and follow the naming convention
 | [`wiring.md`](wiring.md)     | Per-framework OpenInference wiring recipes (OpenAI, ADK, LangGraph, CrewAI, PydanticAI, SmolAgents, MCP) |
 | [`branching-diff-walkthrough.md`](branching-diff-walkthrough.md) | The core debugging workflow (branch + diff) end-to-end |
 | [`replay-adapters.md`](replay-adapters.md) | Per-framework replay adapter usage (ADK/CrewAI/PydanticAI/SmolAgents) |
+| [`debugger-roadmap.md`](debugger-roadmap.md) | Complete interactive-debugger feature plan, current milestone status, exit criteria, and recommended delivery order |
+| [`interactive-workbench-testing.md`](interactive-workbench-testing.md) | Local live-workbench walkthrough and reconnect/variant acceptance checks |
 | [`../web-demo/`](../web-demo/) | The Next.js + shadcn/ui debugger frontend (three-panel timeline / span detail / branch diff). See `demo-run.md` for setup. |
 | [`../examples/deep_research_demo.py`](../examples/deep_research_demo.py) | Python/CLI equivalent of the live demo (headless capture→frozen→branch). |
 | [`../plan.md`](../../plan.md) | Original full phased plan, competitive analysis, architectural asymmetry |
 | `memories/repo/`              | Per-phase completion notes + project conventions (repo-scoped; machine-curated) |
 
-## Quality snapshot (Phase 8 exit — full plan delivered)
+## Quality snapshot (2026-08-05 local verification)
 
-- **Tests:** 332 passing / 12 skipped (the 12 are framework-gated adapter
-  suites requiring an uninstalled framework).
+- **Tests:** 486 passing / 12 skipped / 48 deselected (the skipped tests are
+  framework-gated adapter suites requiring an uninstalled framework).
 - **Lint:** `ruff check src/rewind tests` clean; `pylint src/rewind/` 10.00/10.
-- **Types:** `mypy --strict src/rewind` clean across 29 source files.
+- **Types:** `mypy --strict src/rewind` clean across 35 source files.
+- **Web:** TypeScript check and production build pass.
 - **Security:** `ruff select S` clean; `bandit -r src/rewind` clean; `deepsec`
   skipped when unavailable on `PATH`.
 - **Performance:** interceptor p99 = 0.167µs (target <100µs; ~600× headroom).

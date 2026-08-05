@@ -27,11 +27,14 @@ workloads (<=50 scenarios, ~=30s ceiling).
 from __future__ import annotations
 
 import asyncio
+import json
+from collections.abc import AsyncIterator
 from typing import Any, TypeAlias
 from uuid import UUID
 
 import yaml
 from fastapi import FastAPI, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from rewind.enums import CandidateMode, EvaluatorKind, EvalVerdict
@@ -171,6 +174,51 @@ class EvalBaselineDiffView(BaseModel):
     candidate_run_id: str
     overall_changed: bool
     scenarios: list[BaselineScenarioDiffView]
+
+
+# --- Phase 4: regression case + run views ---------------------------------
+
+
+class RegressionCaseView(BaseModel):
+    """A regression case: golden trace + expected checks."""
+
+    case_id: str
+    name: str
+    seed_trace_id: str
+    expected: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = ""
+
+
+class CreateRegressionCaseRequest(BaseModel):
+    """Body for ``POST /api/v1/regression-cases``."""
+
+    case_id: str = Field(..., description="Client-generated unique id.")
+    name: str
+    seed_trace_id: str
+    expected: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = ""
+
+
+class RegressionRunView(BaseModel):
+    """One regression run result."""
+
+    run_id: str
+    case_id: str
+    passed: bool
+    detail: str | None = None
+    branch_id: str | None = None
+    started_at: str
+    finished_at: str
+
+
+class RunRegressionRequest(BaseModel):
+    """Body for ``POST /api/v1/regression-cases/{id}/run``."""
+
+    factory_ref: str | None = Field(
+        default=None,
+        description="Optional registered factory ref. Defaults to the built-in "
+        "frozen-replay factory.",
+    )
 
 
 class CreateEvalRunRequest(BaseModel):
@@ -613,6 +661,139 @@ def mount_eval(app: FastAPI) -> None:
         store.delete_eval_run(run_id)
         return {"status": "deleted", "run_id": run_id}
 
+    # --- Phase 4: regression cases + runs --------------------------------
+    @app.get("/api/v1/regression-cases", tags=["eval", "regression"])
+    def list_regression_cases(request: Request) -> list[RegressionCaseView]:
+        """List all regression cases, newest-first."""
+        store: TraceStore = request.app.state.store
+        return [RegressionCaseView(**r) for r in store.list_regression_cases()]
+
+    @app.post(
+        "/api/v1/regression-cases",
+        tags=["eval", "regression"],
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_regression_case(
+        request: Request,
+        body: CreateRegressionCaseRequest,
+    ) -> RegressionCaseView:
+        """Create or update a regression case (upsert by case_id)."""
+        store: TraceStore = request.app.state.store
+        if store.get_trace(body.seed_trace_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"seed trace {body.seed_trace_id} not found",
+            )
+        store.upsert_regression_case(body.model_dump())
+        return RegressionCaseView(**body.model_dump())
+
+    @app.get(
+        "/api/v1/regression-cases/{case_id}",
+        tags=["eval", "regression"],
+    )
+    def get_regression_case(
+        request: Request, case_id: str
+    ) -> RegressionCaseView:
+        """Return one regression case by id."""
+        store: TraceStore = request.app.state.store
+        case = store.get_regression_case(case_id)
+        if case is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"regression case {case_id} not found",
+            )
+        return RegressionCaseView(**case)
+
+    @app.delete(
+        "/api/v1/regression-cases/{case_id}",
+        tags=["eval", "regression"],
+    )
+    def delete_regression_case(
+        request: Request, case_id: str
+    ) -> dict[str, str]:
+        """Delete a regression case (cascades to runs)."""
+        store: TraceStore = request.app.state.store
+        if not store.delete_regression_case(case_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"regression case {case_id} not found",
+            )
+        return {"status": "deleted", "case_id": case_id}
+
+    @app.post(
+        "/api/v1/regression-cases/{case_id}/run",
+        tags=["eval", "regression"],
+    )
+    async def run_regression_case(
+        request: Request,
+        case_id: str,
+        body: RunRegressionRequest,
+    ) -> RegressionRunView:
+        """Run ``run_frozen_verification`` for one case and persist the result."""
+        # pylint: disable=import-outside-toplevel
+
+        from rewind.evaluate import run_frozen_verification
+        # pylint: enable=import-outside-toplevel
+
+        store: TraceStore = request.app.state.store
+        if store.get_regression_case(case_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"regression case {case_id} not found",
+            )
+        await run_frozen_verification(case_id, store=store)
+        runs = store.list_regression_runs(case_id)
+        latest = runs[0] if runs else None
+        if latest is None:  # pragma: no cover - insert always lands a row
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="regression run persisted but not readable",
+            )
+        return RegressionRunView(**latest)
+
+    @app.get(
+        "/api/v1/regression-cases/{case_id}/runs",
+        tags=["eval", "regression"],
+    )
+    def list_regression_runs(
+        request: Request, case_id: str
+    ) -> list[RegressionRunView]:
+        """List regression runs for a case, newest-first."""
+        store: TraceStore = request.app.state.store
+        if store.get_regression_case(case_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"regression case {case_id} not found",
+            )
+        return [RegressionRunView(**r) for r in store.list_regression_runs(case_id)]
+
+    @app.post(
+        "/api/v1/regression-suites/stream",
+        tags=["eval", "regression"],
+    )
+    async def stream_regression_suite(
+        request: Request,
+        case_ids: list[str],
+    ) -> StreamingResponse:
+        """Run a suite of regression cases and stream progress via SSE.
+
+        The request body is a JSON array of case ids. The response is an SSE
+        stream of ``suite_started`` / ``case_done`` / ``suite_finished``
+        events (see :class:`rewind.suite_runner.SuiteRunner`).
+        """
+        # pylint: disable=import-outside-toplevel
+        from rewind.suite_runner import SuiteRunner
+        # pylint: enable=import-outside-toplevel
+
+        store: TraceStore = request.app.state.store
+
+        async def _stream() -> AsyncIterator[str]:
+            runner = SuiteRunner(store, case_ids=case_ids)
+            async for event in runner.run():
+                yield f"data: {json.dumps(event, default=str)}\n\n"
+
+        return StreamingResponse(_stream(), media_type="text/event-stream")
+
 
 def _is_valid_uuid(value: str) -> bool:
     """Cheap UUID-format check (not a strict UUID parse — fast pre-validation)."""
@@ -627,11 +808,15 @@ __all__ = [
     "BaselineScenarioDiffView",
     "CreateEvalRunRequest",
     "CreateEvalRunResponse",
+    "CreateRegressionCaseRequest",
     "EvalBaselineDiffView",
     "EvalRunDetailView",
     "EvalRunListResponse",
     "EvalRunSummaryView",
     "EvaluatorOutcomeView",
+    "RegressionCaseView",
+    "RegressionRunView",
+    "RunRegressionRequest",
     "ScenarioLatencyView",
     "ScenarioResultView",
     "TokenRollupView",

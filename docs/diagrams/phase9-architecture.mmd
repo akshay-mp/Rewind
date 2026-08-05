@@ -1,0 +1,79 @@
+flowchart TB
+    %% Phase 9 architecture: interactive step-through debugging primitive.
+    %% Reading order top → bottom = replay session (Phase 3 reused) → stepping
+    %% gate → approval channel → two interception surfaces wired (PydanticAI
+    %% adapter + OpenAI async intercept). Tool-intercept bridge and HTTP/UI
+    %% transport are future phases.
+
+    subgraph P9Delivered["Phase 9 — delivered (green)"]
+        direction TB
+
+        subgraph ReplayPlane["Replay control plane (Phase 3 reused)"]
+            Session["ReplaySession<br/>mode=INTERACTIVE + approval field"]
+            Ctx["_active_session<br/>ContextVar"]
+        end
+
+        subgraph SteppingPlane["Stepping primitive (NEW)"]
+            Gate["gate_async / gate_sync<br/>the single choke point"]
+            Step["Step + Decision dataclasses<br/>+ DecisionKind enum"]
+            Validate["decide_with_validation<br/>rejects inconsistent edits"]
+            Disarm["_disarm<br/>STEP_ONCE flips to BRANCH"]
+        end
+
+        subgraph ChannelPlane["Approval channels (NEW)"]
+            AsyncCh["AsyncioChannel<br/>asyncio.Queue pair"]
+            ThreadCh["ThreadBridgeChannel<br/>threading.Event bridge"]
+        end
+
+        subgraph InterceptPlane["Interception surfaces (2 wired this phase)"]
+            PydanticAI["adapters/pydantic_ai.py<br/>_step in async def request"]
+            OpenAIAsync["openai_intercept.py<br/>_step_async in _dispatch_async"]
+        end
+    end
+
+    subgraph P9Future["Future (faded)"]
+        ToolBridge["Phase D — tool_intercept.py<br/>gate_sync wired"]
+        HTTPServer["Phase B — stepping_api.py<br/>SSE + POST /decide"]
+        WebUI["Phase C — web/ interactive route<br/>EventSource + edit controls"]
+        OtherAdapters["ADK / CrewAI / SmolAgents /<br/>LangGraph async gates"]
+    end
+
+    subgraph P9External["External"]
+        AgentCode["User agent code<br/>(async run)"]
+        Approver["Approver<br/>(test / CLI / future UI)"]
+    end
+
+    %% Session carries the channel via ContextVar (Phase 3 contract reused)
+    Session -.approval field.-> ChannelPlane
+    Session -.active_session.-> Ctx
+    Ctx -.looked up per call.-> InterceptPlane
+
+    %% Dispatchers call the gate before respond_or_forward
+    PydanticAI -->|before respond_or_forward| Gate
+    OpenAIAsync -->|before respond_or_forward| Gate
+    Gate -->|build| Step
+    Gate -->|apply| Decision
+    Gate -->|on bad decision| Validate
+    Gate -->|on STEP_ONCE| Disarm
+
+    %% Channel mechanics
+    Gate -.await submit step.-> AsyncCh
+    Gate -.await submit_sync step.-> ThreadCh
+    AsyncCh -.push step / pull decision.-> Approver
+    ThreadCh -.push step / pull decision.-> Approver
+
+    %% Agent drives the calls that hit the gate
+    AgentCode -->|await model.request| PydanticAI
+    AgentCode -->|await completions.create| OpenAIAsync
+
+    %% STOP unwinds to the agent
+    Gate -.SteppingStopped.-> AgentCode
+
+    %% Styling
+    classDef delivered fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#000
+    classDef future fill:#f8f9fa,stroke:#6c757d,stroke-dasharray:4 4,color:#6c757d
+    classDef ext fill:#e3f2fd,stroke:#1976d2,stroke-width:1px,color:#000
+
+    class Session,Ctx,Gate,Step,Validate,Disarm,AsyncCh,ThreadCh,PydanticAI,OpenAIAsync delivered
+    class ToolBridge,HTTPServer,WebUI,OtherAdapters future
+    class AgentCode,Approver ext

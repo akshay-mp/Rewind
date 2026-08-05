@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -252,9 +253,31 @@ class Checkpoint(RewindModel):
         return v
 
 
+@dataclass(frozen=True, slots=True)
+class LatencyBreakdown:
+    """Phase 5.2 — detailed latency decomposition for one LLM call.
+
+    All values are in **milliseconds** relative to ``queue_entered_at`` (the
+    moment the call was handed to the provider). ``None`` means the provider
+    didn't emit that timestamp (e.g. non-streaming calls have no
+    ``first_token_at``).
+
+    * ``queue_ms`` — time spent waiting before the request was sent.
+    * ``ttft_ms`` — time-to-first-token (streaming only).
+    * ``generation_ms`` — first-token → completion (the bulk of generation).
+    * ``total_ms`` — wall-clock for the whole call.
+    """
+
+    queue_ms: float | None = None
+    ttft_ms: float | None = None
+    generation_ms: float | None = None
+    total_ms: float | None = None
+
+
 __all__ = [
     "Branch",
     "Checkpoint",
+    "LatencyBreakdown",
     "RewindModel",
     "Span",
     "Trace",

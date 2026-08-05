@@ -269,6 +269,153 @@ class CreateBranchResponse(BaseModel):
     branch: BranchNodeView
 
 
+class CheckpointView(BaseModel):
+    """One checkpoint row rendered for the inspector.
+
+    Mirrors :class:`rewind.models.Checkpoint` 1:1. The ``payload`` is the
+    full agent-visible state snapshot captured at the cursor; the list
+    endpoint includes it so the UI can render captured state without a
+    second round-trip per checkpoint.
+    """
+
+    checkpoint_id: UUID
+    trace_id: str
+    branch_id: UUID
+    name: str
+    cursor_index: int
+    label: str
+    payload: dict[str, Any]
+    created_at: str
+
+
+# --- Phase 2.1: durable experiment record projections ---------------------
+
+
+class PromptVersionView(BaseModel):
+    """One prompt-variant experiment row.
+
+    A prompt version is an immutable record of an A/B experiment initiated
+    from an executed step: the base messages/model, the edited variant, and
+    (once completed) the model's response + usage. Persisted so a page
+    refresh or a teammate's machine can hydrate the full experiment history.
+    """
+
+    version_id: str
+    trace_id: str
+    cursor_index: int
+    base_messages: list[Any] = Field(default_factory=list)
+    messages: list[Any] = Field(default_factory=list)
+    base_model: str = ""
+    model: str = ""
+    branch_id: str = ""
+    parent_version_id: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    author_note: str = ""
+    updated_at: str = ""
+    assertions: dict[str, Any] = Field(default_factory=dict)
+    evaluator_names: list[str] = Field(default_factory=list)
+    status: str = "running"
+    created_at: str = ""
+    result: str | None = None
+    usage: dict[str, Any] = Field(default_factory=dict)
+    latency_ms: int | None = None
+    completed_at: str | None = None
+    reasoning: str | None = None
+    pricing: dict[str, Any] = Field(default_factory=dict)
+    assertion_result: dict[str, Any] = Field(default_factory=dict)
+    review_verdict: str | None = None
+    review_note: str | None = None
+    evaluator_results: dict[str, Any] = Field(default_factory=dict)
+
+
+class PromptVersionResultView(BaseModel):
+    """Request body for ``PUT /prompt-versions/{id}/result``."""
+
+    result: str = Field(..., description="The model's response text.")
+    usage: dict[str, Any] = Field(
+        default_factory=dict, description="Token usage breakdown."
+    )
+    latency_ms: int | None = Field(None, description="Wall-clock latency in ms.")
+    completed_at: str = Field(default="", description="ISO timestamp of completion.")
+    reasoning: str | None = None
+    pricing: dict[str, Any] = Field(default_factory=dict)
+    assertion_result: dict[str, Any] = Field(default_factory=dict)
+    review_verdict: str | None = None
+    review_note: str | None = None
+    evaluator_results: dict[str, Any] = Field(default_factory=dict)
+
+
+class CreatePromptVersionRequest(BaseModel):
+    """Request body for ``POST /traces/{trace_id}/prompt-versions``."""
+
+    version_id: str = Field(..., description="Client-generated unique id.")
+    cursor_index: int = Field(..., ge=0, description="Step cursor this variant forks from.")
+    base_messages: list[Any] = Field(default_factory=list)
+    messages: list[Any] = Field(default_factory=list)
+    base_model: str = ""
+    model: str = ""
+    branch_id: str = ""
+    parent_version_id: str | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    author_note: str = ""
+    updated_at: str = ""
+    assertions: dict[str, Any] = Field(default_factory=dict)
+    evaluator_names: list[str] = Field(default_factory=list, max_length=20)
+    created_at: str = ""
+
+
+class AssertionProfileView(BaseModel):
+    """A reusable expected-output check set.
+
+    Assertion profiles can be attached to multiple steps/variants so a QA
+    bar (e.g. "must cite sources, no PII, under 500 tokens") is defined once
+    and reused across experiments.
+    """
+
+    profile_id: str
+    name: str
+    required_text: list[str] = Field(default_factory=list)
+    forbidden_text: list[str] = Field(default_factory=list)
+    require_json: bool = False
+    require_citations: bool = False
+    max_tokens: int | None = None
+    max_cost_usd: float | None = None
+    created_at: str = ""
+
+
+class StepReviewView(BaseModel):
+    """A developer review plus durable expected-output checks for a step."""
+
+    trace_id: str
+    cursor_index: int
+    review_note: str | None = None
+    review_verdict: str | None = Field(
+        None, description='"accepted" | "rejected" | null'
+    )
+    assertions: dict[str, Any] = Field(default_factory=dict)
+    assertion_result: dict[str, Any] = Field(default_factory=dict)
+    updated_at: str = ""
+
+
+# --- Phase 5.1: execution DAG projection ----------------------------------
+
+
+class DAGNodeView(BaseModel):
+    """One node in the execution DAG (recursive).
+
+    Mirrors :class:`rewind.dag.DAGNode`. ``children`` is recursive; root
+    nodes have ``parent_span_id is None``.
+    """
+
+    span_id: str
+    name: str
+    kind: str
+    status: str
+    parent_span_id: str | None
+    start_time: str
+    children: list[DAGNodeView] = Field(default_factory=list)
+
+
 # --- app factory ----------------------------------------------------------
 
 
@@ -638,6 +785,28 @@ def _register_routes(app: FastAPI) -> None:  # pylint: disable=too-many-statemen
         return _branch_node_view(tree)
 
     @app.get(
+        "/api/v1/traces/{trace_id}/dag",
+        tags=["timeline", "dag"],
+    )
+    def get_trace_dag(
+        request: Request, trace_id: str
+    ) -> list[DAGNodeView]:
+        """Return the execution DAG (parent → children tree) for a trace.
+
+        Built from the root-branch spans' ``parent_span_id`` pointers. The
+        UI renders this as a collapsible tree showing which LLM call spawned
+        which tool call. Returns a list of root nodes (spans with no parent).
+        """
+        store: TraceStore = request.app.state.store
+        _ensure_trace_exists(store, trace_id)
+        spans = store.get_spans(trace_id)
+        # pylint: disable=import-outside-toplevel
+        from rewind.dag import build_dag
+        # pylint: enable=import-outside-toplevel
+        roots = build_dag(spans)
+        return [_dag_node_view(n) for n in roots]
+
+    @app.get(
         "/api/v1/traces/{trace_id}/diff",
         tags=["timeline", "diff"],
     )
@@ -779,8 +948,221 @@ def _register_routes(app: FastAPI) -> None:  # pylint: disable=too-many-statemen
             )
         return CreateBranchResponse(branch=_branch_node_view(node))
 
+    @app.get(
+        "/api/v1/traces/{trace_id}/branches/{branch_id}/checkpoints",
+        tags=["timeline", "checkpoints"],
+    )
+    def list_checkpoints(
+        request: Request,
+        trace_id: str,
+        branch_id: UUID,
+    ) -> list[CheckpointView]:
+        """List every checkpoint on a branch in cursor order.
+
+        Each row carries its full ``payload`` so the inspector can render
+        captured state without a follow-up request per checkpoint.
+        """
+        store: TraceStore = request.app.state.store
+        _ensure_trace_exists(store, trace_id)
+        if not _branch_exists(store, trace_id, branch_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"branch {branch_id} not found on trace {trace_id}",
+            )
+        checkpoints = store.list_checkpoints(branch_id)
+        return [CheckpointView(**cp.model_dump()) for cp in checkpoints]
+
+    @app.get(
+        "/api/v1/branches/{branch_id}/checkpoints/{name}",
+        tags=["timeline", "checkpoints"],
+    )
+    def get_checkpoint(
+        request: Request,
+        branch_id: UUID,
+        name: str,
+    ) -> CheckpointView:
+        """Return a single checkpoint by ``(branch_id, name)`` with full payload.
+
+        Used by the inspector's per-checkpoint drill-down. The checkpoint
+        name is URL-encoded by the caller; FastAPI decodes ``name`` before
+        it reaches this handler.
+        """
+        store: TraceStore = request.app.state.store
+        checkpoint = store.get_checkpoint(branch_id, name)
+        if checkpoint is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"checkpoint '{name}' not found on branch {branch_id}",
+            )
+        return CheckpointView(**checkpoint.model_dump())
+
+    # --- Phase 2.1: durable experiment records ----------------------------
+    @app.post(
+        "/api/v1/traces/{trace_id}/prompt-versions",
+        tags=["timeline", "prompt-versions"],
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_prompt_version(
+        request: Request,
+        trace_id: str,
+        body: CreatePromptVersionRequest,
+    ) -> PromptVersionView:
+        """Persist a new prompt-variant experiment.
+
+        The UI calls this when the developer initiates an A/B variant from a
+        reviewed step. The version is stored ``running`` until
+        ``PUT .../result`` lands.
+        """
+        store: TraceStore = request.app.state.store
+        _ensure_trace_exists(store, trace_id)
+        row = {
+            "version_id": body.version_id,
+            "trace_id": trace_id,
+            "cursor_index": body.cursor_index,
+            "base_messages": body.base_messages,
+            "messages": body.messages,
+            "base_model": body.base_model,
+            "model": body.model,
+            "branch_id": body.branch_id,
+            "parent_version_id": body.parent_version_id,
+            "parameters": body.parameters,
+            "author_note": body.author_note,
+            "updated_at": body.updated_at or body.created_at,
+            "assertions": body.assertions,
+            "evaluator_names": body.evaluator_names,
+            "created_at": body.created_at,
+        }
+        store.upsert_prompt_version(row)
+        return PromptVersionView(
+            version_id=body.version_id,
+            trace_id=trace_id,
+            cursor_index=body.cursor_index,
+            base_messages=body.base_messages,
+            messages=body.messages,
+            base_model=body.base_model,
+            model=body.model,
+            branch_id=body.branch_id,
+            parent_version_id=body.parent_version_id,
+            parameters=body.parameters,
+            author_note=body.author_note,
+            updated_at=body.updated_at or body.created_at,
+            assertions=body.assertions,
+            evaluator_names=body.evaluator_names,
+            status="running",
+            created_at=body.created_at,
+        )
+
+    @app.get(
+        "/api/v1/traces/{trace_id}/prompt-versions",
+        tags=["timeline", "prompt-versions"],
+    )
+    def list_prompt_versions(
+        request: Request,
+        trace_id: str,
+        cursor: int | None = Query(None, ge=0, description="Optional step cursor."),
+    ) -> list[PromptVersionView]:
+        """List all prompt-variant experiments for a step, hydrated with results."""
+        store: TraceStore = request.app.state.store
+        _ensure_trace_exists(store, trace_id)
+        rows = store.list_prompt_versions(trace_id, cursor)
+        return [PromptVersionView(**r) for r in rows]
+
+    @app.put(
+        "/api/v1/prompt-versions/{version_id}/result",
+        tags=["timeline", "prompt-versions"],
+    )
+    def put_prompt_version_result(
+        request: Request,
+        version_id: str,
+        body: PromptVersionResultView,
+    ) -> PromptVersionView:
+        """Persist a completed variant's result + usage, marking it ``completed``."""
+        store: TraceStore = request.app.state.store
+        # Re-read to confirm the version exists.
+        existing = store.get_prompt_version(version_id)
+        if existing is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"prompt version {version_id} not found",
+            )
+        store.set_prompt_version_result(
+            {
+                "version_id": version_id,
+                "result": body.result,
+                "usage": body.usage,
+                "latency_ms": body.latency_ms,
+                "completed_at": body.completed_at,
+                "reasoning": body.reasoning,
+                "pricing": body.pricing,
+                "assertion_result": body.assertion_result,
+                "review_verdict": body.review_verdict,
+                "review_note": body.review_note,
+                "evaluator_results": body.evaluator_results,
+            }
+        )
+        refreshed = store.get_prompt_version(version_id)
+        return PromptVersionView(**refreshed)  # type: ignore[arg-type]
+
+    @app.get(
+        "/api/v1/assertion-profiles",
+        tags=["timeline", "assertion-profiles"],
+    )
+    def list_assertion_profiles(request: Request) -> list[AssertionProfileView]:
+        """List all reusable assertion profiles, newest-first."""
+        store: TraceStore = request.app.state.store
+        return [AssertionProfileView(**r) for r in store.list_assertion_profiles()]
+
+    @app.post(
+        "/api/v1/assertion-profiles",
+        tags=["timeline", "assertion-profiles"],
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_assertion_profile(
+        request: Request,
+        body: AssertionProfileView,
+    ) -> AssertionProfileView:
+        """Create or update a reusable assertion profile (upsert by profile_id)."""
+        store: TraceStore = request.app.state.store
+        store.upsert_assertion_profile(body.model_dump())
+        return body
+
+    @app.post(
+        "/api/v1/traces/{trace_id}/reviews",
+        tags=["timeline", "reviews"],
+        status_code=status.HTTP_201_CREATED,
+    )
+    def upsert_review(
+        request: Request,
+        trace_id: str,
+        body: StepReviewView,
+    ) -> StepReviewView:
+        """Create or update a developer review for a step (note + verdict)."""
+        store: TraceStore = request.app.state.store
+        _ensure_trace_exists(store, trace_id)
+        if body.trace_id != trace_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="body trace_id must match the URL trace_id",
+            )
+        store.upsert_step_review(body.model_dump())
+        return body
+
+    @app.get(
+        "/api/v1/traces/{trace_id}/reviews",
+        tags=["timeline", "reviews"],
+    )
+    def list_reviews(
+        request: Request,
+        trace_id: str,
+    ) -> list[StepReviewView]:
+        """List all developer reviews for a trace, ordered by cursor."""
+        store: TraceStore = request.app.state.store
+        _ensure_trace_exists(store, trace_id)
+        return [StepReviewView(**r) for r in store.list_step_reviews(trace_id)]
+
 
 BranchNodeView.model_rebuild()
+DAGNodeView.model_rebuild()
 
 
 # --- Phase 5 helpers ------------------------------------------------------
@@ -817,6 +1199,25 @@ def _branch_node_view(node: BranchNode) -> BranchNodeView:
         label=node.label,
         created_at=node.created_at,
         children=[_branch_node_view(child) for child in node.children],
+    )
+
+
+def _dag_node_view(node: Any) -> Any:  # noqa: ANN401
+    """Recursively project a :class:`rewind.dag.DAGNode` into the wire shape.
+
+    Typed ``Any`` to avoid importing :class:`DAGNode` at module top (the dag
+    module is tiny and the projection is structural). The runtime shape is
+    guaranteed by :func:`rewind.dag.build_dag`.
+    """
+    cls = DAGNodeView
+    return cls(
+        span_id=node.span_id,
+        name=node.name,
+        kind=node.kind,
+        status=node.status,
+        parent_span_id=node.parent_span_id,
+        start_time=node.start_time,
+        children=[_dag_node_view(c) for c in node.children],
     )
 
 
@@ -932,16 +1333,23 @@ def _extract_choice_content(payload: object) -> str | None:
 
 
 __all__ = [
+    "AssertionProfileView",
     "BranchNodeView",
+    "CheckpointView",
     "CreateBranchRequest",
     "CreateBranchResponse",
+    "CreatePromptVersionRequest",
+    "DAGNodeView",
     "MessageDiffView",
     "MessageFragmentView",
+    "PromptVersionResultView",
+    "PromptVersionView",
     "SearchResponse",
     "SpanDiffView",
     "SpanPairView",
     "SpanSearchHit",
     "SpanView",
+    "StepReviewView",
     "TraceDetail",
     "TraceListResponse",
     "TraceSummary",

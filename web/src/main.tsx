@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
-import "./styles.css";
+import "./globals.css";
 
 // Read-only timeline UI mount point. StrictMode is on to catch asymmetry in
 // effects early — important because the timeline refetches on trace change

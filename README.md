@@ -132,6 +132,40 @@ rewind eval suite.yaml --db ./rewind.db --suite-name my-suite
 # exit 0 = PASS, 1 = FAIL, 2 = ERROR/validation
 ```
 
+### Step through an agent interactively (Phase 9)
+
+Pause an agent at every LLM/tool call, inspect the pending step, edit the
+prompt or tool args, and approve / stop / step-once — all from the browser
+UI. Then rewind to any prior step and re-run from there with different
+edits. This is the capability LangSmith and Langfuse lack: they observe;
+Rewind lets you **steer**.
+
+```python
+# 1. Write your agent as an async runner and register it.
+from rewind.replay import ReplaySession
+from rewind.stepping_api import register_runner
+
+async def my_runner(session: ReplaySession) -> None:
+    await agent.run()   # pauses at each LLM call automatically
+
+register_runner("my-agent", my_runner)
+
+# 2. Start the server (runs the registered runner behind the UI).
+#    python examples/interactive_stepping.py --db ~/.rewind/rewind.db
+
+# 3. Open http://127.0.0.1:8484/ui, click "sessions", start a session with
+#    your trace id + runner ref. The agent pauses at each step; approve,
+#    edit, or stop from the browser.
+```
+
+See [`examples/interactive_stepping.py`](examples/interactive_stepping.py)
+for a complete worked example, and [`docs/phases/phase-9.md`](docs/phases/phase-9.md)
+for the full design, threat model, and the runner contract.
+
+For the seeded live-workbench walkthrough, including prompt variants,
+token/cost checks, saved-step navigation, and browser-refresh validation, see
+[`docs/interactive-workbench-testing.md`](docs/interactive-workbench-testing.md).
+
 ## Development
 
 ```bash
@@ -152,9 +186,10 @@ python scripts/security_scan.py --phase <N>
 cd web && pnpm dev   # or:  node_modules/.bin/vite --host 127.0.0.1
 ```
 
-Per-phase quality gates (291 passing tests, 12 skipped = framework-gated
-adapter suites; pylint 10.00/10; mypy --strict clean across 28 source
-files). See `docs/phases/phase-6.md §4.4` for the latest snapshot.
+Latest local quality gate: 486 passing tests, 12 skipped framework-gated
+adapter tests, and 48 deselected integration tests; mypy --strict is clean
+across 35 source files. See `docs/interactive-workbench-testing.md` for the
+interactive debugger checks.
 
 ## Layout
 
@@ -169,7 +204,7 @@ rewind/
     diff.py            Trace diff (Phase 5)
     eval_api.py        Suite runner + baseline diff (Phase 5.5)
     cli.py             Click-based CLI: serve / ui / replay / eval / version
-  tests/               pytest suites (per-phase, 291 passing)
+  tests/               pytest suites (per-phase, 486 passing locally)
   web/                 React + Vite + TypeScript timeline UI (P2)
   docs/
     phases/            Per-phase: QA, security, dev-handoff, design

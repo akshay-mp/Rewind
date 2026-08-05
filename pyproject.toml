@@ -203,6 +203,15 @@ disable = [
     "duplicate-code",  # view models mirror dataclasses by design
 ]
 
+# Phase 9 added four interactive-session CRUD methods (upsert/get/list/delete)
+# to TraceStore, pushing the public-method count over pylint's default of 20.
+# The store is intentionally one class — splitting per-table facades would
+# fragment the connection/transaction discipline (see storage.py:184 _execute).
+[tool.pylint."src/rewind/storage.py"]
+disable = [
+    "too-many-public-methods",  # one store, many tables — see _execute invariant
+]
+
 # Phase 6 — every framework adapter follows the same factory pattern: lazy
 # import inside the factory, subclass upstream's Base LLM class (which has
 # no public composition API), and reuse extract_signature + the Responder

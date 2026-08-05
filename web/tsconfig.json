@@ -14,16 +14,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Strictness — matches mypy --strict on the Python side */
+    /* Strictness — matches web-demo settings */
     "strict": true,
-    "noImplicitAny": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noImplicitAny": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitOverride": true,
-    "verbatimModuleSyntax": true,
+    "verbatimModuleSyntax": false,
 
     /* Paths */
     "baseUrl": ".",

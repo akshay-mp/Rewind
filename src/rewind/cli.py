@@ -8,7 +8,7 @@ adds ``eval``; Phase 7 adds ``enrich`` and ``render-template``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -756,6 +756,269 @@ def render_template(
         model_name=model_override or span.model_name,
     )
     click.echo(rendered)
+
+
+# ----------------------------------------------------------------------
+# Phase 4.3 — regression command group
+# ----------------------------------------------------------------------
+@cli.group()
+def regression() -> None:
+    """Executable regression suite management (Phase 4).
+
+    Create regression cases from golden traces, run them deterministically
+    (frozen replay), and surface pass/fail for CI.
+    """
+
+
+@regression.command("create")
+@click.option("--name", required=True, help="Human-readable case name.")
+@click.option(
+    "--trace-id",
+    "seed_trace_id",
+    required=True,
+    help="The golden trace id to freeze as the regression baseline.",
+)
+@click.option(
+    "--expect-span-count",
+    type=int,
+    default=None,
+    help="Expected span count (optional assertion).",
+)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+)
+def regression_create(
+    name: str,
+    seed_trace_id: str,
+    expect_span_count: int | None,
+    db_path: Path,
+) -> None:
+    """Create a regression case from a golden trace."""
+    # pylint: disable=import-outside-toplevel
+    from uuid import uuid4
+
+    from rewind.storage import TraceStore
+    # pylint: enable=import-outside-toplevel
+
+    db_path = _ensure_default_db_path(db_path)
+    store = TraceStore(db_path=str(db_path))
+    if store.get_trace(seed_trace_id) is None:
+        click.echo(f"rewind: seed trace {seed_trace_id!r} not found", err=True)
+        raise click.exceptions.Exit(1)
+
+    expected: dict[str, Any] = {}
+    if expect_span_count is not None:
+        expected["span_count"] = expect_span_count
+
+    case_id = str(uuid4())
+    store.upsert_regression_case(
+        {
+            "case_id": case_id,
+            "name": name,
+            "seed_trace_id": seed_trace_id,
+            "expected": expected,
+        }
+    )
+    click.echo(f"created regression case {case_id} ({name})")
+
+
+@regression.command("run")
+@click.argument("case_ids", nargs=-1, required=True)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+)
+@click.option(
+    "--concurrency",
+    type=int,
+    default=4,
+    show_default=True,
+    help="Max parallel cases.",
+)
+def regression_run(
+    case_ids: tuple[str, ...],
+    db_path: Path,
+    concurrency: int,
+) -> None:
+    """Run one or more regression cases and exit 1 on any failure.
+
+    \b
+    CASE_IDS is one or more regression-case ids (as created by
+    ``rewind regression create``). Pass ``all`` to run every case.
+
+    \b
+    Exit codes:
+      0  all cases passed
+      1  at least one case failed
+      2  no cases found / error
+    """
+    # pylint: disable=import-outside-toplevel
+    import asyncio
+
+    from rewind.storage import TraceStore
+    from rewind.suite_runner import SuiteRunner
+    # pylint: enable=import-outside-toplevel
+
+    db_path = _ensure_default_db_path(db_path)
+    store = TraceStore(db_path=str(db_path))
+
+    if len(case_ids) == 1 and case_ids[0] == "all":
+        all_cases = store.list_regression_cases()
+        ids = [c["case_id"] for c in all_cases]
+    else:
+        ids = list(case_ids)
+
+    if not ids:
+        click.echo("rewind: no regression cases to run", err=True)
+        raise click.exceptions.Exit(2)
+
+    runner = SuiteRunner(store, case_ids=ids, concurrency=concurrency)
+
+    async def _drive() -> bool:
+        async for event in runner.run():
+            if event["type"] == "case_done":
+                verdict = "PASS" if event["passed"] else "FAIL"
+                click.echo(f"  [{verdict}] {event['case_id']}: {event['detail']}")
+            elif event["type"] == "suite_finished":
+                return bool(event["passed"])
+        return False
+
+    passed = asyncio.run(_drive())
+    s = runner.summary
+    click.echo(
+        f"regression suite: {s['passed']} passed, {s['failed']} failed, "
+        f"{s['errored']} errored (total {s['total']})"
+    )
+    if passed:
+        return
+    raise click.exceptions.Exit(1)
+
+
+@regression.command("list")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+)
+def regression_list(db_path: Path) -> None:
+    """List all regression cases."""
+    # pylint: disable=import-outside-toplevel
+    from rewind.storage import TraceStore
+    # pylint: enable=import-outside-toplevel
+
+    store = TraceStore(db_path=str(db_path))
+    cases = store.list_regression_cases()
+    if not cases:
+        click.echo("(no regression cases)")
+        return
+    for c in cases:
+        click.echo(f"  {c['case_id']}  {c['name']}  trace={c['seed_trace_id']}")
+
+
+# ----------------------------------------------------------------------
+# Phase 5.4 — export with configurable redaction
+# ----------------------------------------------------------------------
+@cli.command()
+@click.argument("trace_id")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Output file (JSON). Defaults to stdout.",
+)
+@click.option(
+    "--redact-field",
+    "redact_fields",
+    multiple=True,
+    help="raw_attributes key to drop entirely (repeatable).",
+)
+@click.option(
+    "--redact-pattern",
+    "redact_patterns",
+    multiple=True,
+    help="Regex pattern to mask in string values (repeatable).",
+)
+@click.option(
+    "--preview",
+    is_flag=True,
+    default=False,
+    help="Show what would be redacted without exporting.",
+)
+def export(
+    trace_id: str,
+    db_path: Path,
+    output: Path | None,
+    redact_fields: tuple[str, ...],
+    redact_patterns: tuple[str, ...],
+    preview: bool,
+) -> None:
+    """Export a trace as JSON with optional field/pattern redaction (Phase 5.4).
+
+    \b
+    Examples:
+      rewind export <trace_id> -o trace.json
+      rewind export <trace_id> --redact-field gen_ai.response
+      rewind export <trace_id> --redact-pattern '\\b\\d{3}-\\d{2}-\\d{4}\\b'
+      rewind export <trace_id> --preview --redact-pattern '[A-Z]{4}'
+    """
+    # pylint: disable=import-outside-toplevel
+    import json
+
+    from rewind.redaction import RedactionPolicy, apply_redaction, preview_redaction
+    from rewind.storage import TraceStore
+    # pylint: enable=import-outside-toplevel
+
+    db_path = _ensure_default_db_path(db_path)
+    store = TraceStore(db_path=str(db_path))
+    trace = store.get_trace(trace_id)
+    if trace is None:
+        click.echo(f"rewind: trace {trace_id!r} not found", err=True)
+        raise click.exceptions.Exit(1)
+
+    policy = RedactionPolicy.from_cli(
+        redact_fields=list(redact_fields) or None,
+        redact_patterns=list(redact_patterns) or None,
+    )
+
+    if preview:
+        counts = preview_redaction(trace.spans, policy)
+        click.echo(
+            f"redaction preview: {counts['fields_dropped']} fields dropped, "
+            f"{counts['pattern_matches']} pattern matches across "
+            f"{len(trace.spans)} spans"
+        )
+        return
+
+    spans = apply_redaction(trace.spans, policy)
+    payload = {
+        "trace_id": trace.trace_id,
+        "root_branch_id": str(trace.root_branch_id),
+        "created_at": trace.created_at,
+        "spans": [s.model_dump(mode="json") for s in spans],
+    }
+    text = json.dumps(payload, indent=2, default=str)
+    if output is not None:
+        output.write_text(text, encoding="utf-8")
+        click.echo(f"exported {len(spans)} spans to {output}")
+    else:
+        click.echo(text)
 
 
 if __name__ == "__main__":

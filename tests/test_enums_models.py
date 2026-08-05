@@ -11,7 +11,7 @@ from rewind.models import Branch, Span, hash_payload
 
 def test_replay_modes_are_unique() -> None:
     values = {m.value for m in ReplayMode}
-    assert values == {"frozen", "branch", "full"}
+    assert values == {"frozen", "branch", "full", "interactive"}
 
 
 def test_span_kind_enum_values_match_semconv() -> None:

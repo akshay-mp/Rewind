@@ -17,10 +17,24 @@
 "use client";
 
 import { create } from "zustand";
-import type { BranchDiff, LiveRun, SpanKind, Trace } from "./types";
+import type {
+  BranchDiff,
+  LiveRun,
+  LiveSession,
+  PausedStep,
+  SpanKind,
+  Trace,
+} from "./types";
 import { diffBranches } from "./diff";
 
 export type UIMode = "inspect" | "branch";
+
+/**
+ * Top-level view discriminator (separate from UIMode). The "demo" view is the
+ * bundled-agent trace/branch experience; "session" is the Phase 9 interactive
+ * stepping view driven by the Python stepping server.
+ */
+export type UIView = "demo" | "session";
 
 interface RewindState {
   traces: Record<string, Trace>;
@@ -43,6 +57,17 @@ interface RewindState {
    * StreamEvents arrive, and cleared by finishLiveRun once the Trace commits.
    */
   liveRun: LiveRun | null;
+
+  /**
+   * Top-level view: "demo" (bundled agent) or "session" (stepping server).
+   * Defaults to "demo" so the existing experience is unchanged.
+   */
+  uiView: UIView;
+  /**
+   * A stepping session in progress, parallel to liveRun. null when no session
+   * is active. Mutated by the session-client as SSE events arrive.
+   */
+  liveSession: LiveSession | null;
 
   // actions
   setRunning: (v: boolean) => void;
@@ -74,6 +99,22 @@ interface RewindState {
   /** Commit the finished trace and dismiss the live view. */
   finishLiveRun: (trace: Trace) => void;
   clearLiveRun: () => void;
+
+  // session (stepping) actions — additive, do not touch liveRun/traces/mode
+  setUIView: (v: UIView) => void;
+  startLiveSession: (
+    sessionId: string,
+    traceId: string,
+    branchId: string,
+    runnerRef: string,
+  ) => void;
+  pauseAtStep: (step: PausedStep) => void;
+  /** Attach the model's response text to the current paused step (verify loop). */
+  completeStep: (cursor: number, result: string) => void;
+  resumeAfterStep: (decision: string) => void;
+  finishSession: () => void;
+  failSession: (message: string) => void;
+  clearLiveSession: () => void;
 }
 
 export const useRewindStore = create<RewindState>((set, get) => ({
@@ -92,6 +133,8 @@ export const useRewindStore = create<RewindState>((set, get) => ({
   diffRightBranchId: null,
   lastEvent: null,
   liveRun: null,
+  uiView: "demo",
+  liveSession: null,
 
   setRunning: (v) => set({ isRunning: v }),
   setRunError: (e) => set({ runError: e }),
@@ -328,4 +371,88 @@ export const useRewindStore = create<RewindState>((set, get) => ({
     }),
 
   clearLiveRun: () => set({ liveRun: null, isRunning: false }),
+
+  // --- session (stepping) actions ----------------------------------------
+  // All additive: none of these touch liveRun, traces, mode, or cursor.
+  // They mutate only liveSession, the parallel state object for the Phase 9
+  // interactive stepping view. session-client.ts drives these as SSE events
+  // arrive from the Python stepping server.
+  setUIView: (v) => set({ uiView: v }),
+
+  startLiveSession: (sessionId, traceId, branchId, runnerRef) =>
+    set({
+      liveSession: {
+        sessionId,
+        traceId,
+        branchId,
+        runnerRef,
+        status: "running",
+        error: null,
+        pausedStep: null,
+        history: [],
+        startedAt: Date.now(),
+      },
+    }),
+
+  pauseAtStep: (step) =>
+    set((s) => {
+      if (!s.liveSession) return s;
+      return {
+        liveSession: {
+          ...s.liveSession,
+          status: "paused",
+          pausedStep: step,
+        },
+      };
+    }),
+
+  completeStep: (cursor, result) =>
+    set((s) => {
+      if (!s.liveSession || !s.liveSession.pausedStep) return s;
+      if (s.liveSession.pausedStep.cursor !== cursor) return s;
+      return {
+        liveSession: {
+          ...s.liveSession,
+          pausedStep: { ...s.liveSession.pausedStep, result },
+        },
+      };
+    }),
+
+  resumeAfterStep: (decision) =>
+    set((s) => {
+      if (!s.liveSession || !s.liveSession.pausedStep) return s;
+      const paused = s.liveSession.pausedStep;
+      const entry = {
+        cursor: paused.cursor,
+        kind: paused.kind,
+        decision,
+        payload: paused.payload,
+        result: paused.result,
+        resolvedAt: Date.now(),
+      };
+      return {
+        liveSession: {
+          ...s.liveSession,
+          status: "running",
+          pausedStep: null,
+          history: [...s.liveSession.history, entry],
+        },
+      };
+    }),
+
+  finishSession: () =>
+    set((s) => ({
+      liveSession: s.liveSession
+        ? { ...s.liveSession, status: "done", pausedStep: null }
+        : null,
+    })),
+
+  failSession: (message) =>
+    set((s) => ({
+      liveSession: s.liveSession
+        ? { ...s.liveSession, status: "errored", error: message, pausedStep: null }
+        : null,
+    })),
+
+  clearLiveSession: () => set({ liveSession: null }),
 }));

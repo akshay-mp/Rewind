@@ -9,13 +9,19 @@ import type {
   BranchNodeView,
   CreateBranchRequest,
   CreateBranchResponse,
+  DecisionRequest,
   EvalBaselineDiffView,
   EvalRunDetailView,
   EvalRunListResponse,
   MessageDiffView,
   SearchResponse,
+  SessionDetailView,
+  SessionListResponse,
   SpanDiffView,
   SpanView,
+  StartSessionRequest,
+  StartSessionResponse,
+  StepEvent,
   TraceDetail,
   TraceListResponse,
 } from "./types";
@@ -185,5 +191,164 @@ export const api = {
     return deleteJson<{ deleted: string }>(
       `/api/v1/evals/${encodeURIComponent(runId)}`,
     );
+  },
+
+  // ----- Phase 9: interactive stepping -------------------------------------
+  //
+  // Sessions are the server-side step-through debug runs. ``startSession``
+  // spawns a background task; progress flows out via ``streamSession``.
+  // ``decide`` posts a Decision to resume the blocked agent. ``deleteSession``
+  // cancels the task and removes the row (captured spans are preserved).
+
+  listSessions(params: ListTracesParams = {}): Promise<SessionListResponse> {
+    const search = new URLSearchParams();
+    if (params.limit !== undefined) search.set("limit", String(params.limit));
+    if (params.offset !== undefined) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    return getJson<SessionListResponse>(`/api/v1/sessions${qs ? "?" + qs : ""}`);
+  },
+
+  getSession(sessionId: string): Promise<SessionDetailView> {
+    return getJson<SessionDetailView>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
+    );
+  },
+
+  startSession(body: StartSessionRequest): Promise<StartSessionResponse> {
+    return postJson<StartSessionResponse>("/api/v1/sessions", body);
+  },
+
+  decide(sessionId: string, body: DecisionRequest): Promise<{ status: string; decision: string }> {
+    return postJson<{ status: string; decision: string }>(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/decide`,
+      body,
+    );
+  },
+
+  deleteSession(sessionId: string): Promise<void> {
+    return deleteJson<void>(`/api/v1/sessions/${encodeURIComponent(sessionId)}`);
+  },
+
+  /** Phase 5.1 — execution DAG. */
+  getDag(traceId: string): Promise<unknown[]> {
+    return getJson(`/api/v1/traces/${encodeURIComponent(traceId)}/dag`);
+  },
+
+  /** Phase 1.2 — server-owned run-control intent. */
+  getRunControl(
+    sessionId: string,
+  ): Promise<{ pause_after_current: boolean; run_until_breakpoint: boolean; breakpoints: unknown[] }> {
+    return getJson(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/run-control`,
+    );
+  },
+
+  patchRunControl(
+    sessionId: string,
+    body: { pause_after_current: boolean; run_until_breakpoint: boolean; breakpoints?: unknown[] },
+  ): Promise<{ pause_after_current: boolean; run_until_breakpoint: boolean; breakpoints: unknown[] }> {
+    return request(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/run-control`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  },
+
+  /** Phase 2.1 — durable prompt-version experiment records. */
+  listPromptVersions(traceId: string, cursor: number): Promise<unknown[]> {
+    return getJson(
+      `/api/v1/traces/${encodeURIComponent(traceId)}/prompt-versions?cursor=${cursor}`,
+    );
+  },
+
+  createPromptVersion(traceId: string, body: Record<string, unknown>): Promise<unknown> {
+    return postJson(
+      `/api/v1/traces/${encodeURIComponent(traceId)}/prompt-versions`,
+      body,
+    );
+  },
+
+  savePromptVersionResult(
+    versionId: string,
+    body: { result: string; usage?: Record<string, number>; latency_ms?: number },
+  ): Promise<unknown> {
+    return request(
+      `/api/v1/prompt-versions/${encodeURIComponent(versionId)}/result`,
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  },
+
+  /** Phase 2.1 — reusable assertion profiles. */
+  listAssertionProfiles(): Promise<unknown[]> {
+    return getJson(`/api/v1/assertion-profiles`);
+  },
+
+  createAssertionProfile(body: Record<string, unknown>): Promise<unknown> {
+    return postJson(`/api/v1/assertion-profiles`, body);
+  },
+
+  /** Phase 2.1 — durable step reviews. */
+  listReviews(traceId: string): Promise<unknown[]> {
+    return getJson(`/api/v1/traces/${encodeURIComponent(traceId)}/reviews`);
+  },
+
+  saveReview(
+    traceId: string,
+    body: {
+      trace_id: string;
+      cursor_index: number;
+      review_note?: string;
+      review_verdict?: string;
+    },
+  ): Promise<unknown> {
+    return postJson(
+      `/api/v1/traces/${encodeURIComponent(traceId)}/reviews`,
+      body,
+    );
+  },
+
+  /**
+   * Subscribe to a session's SSE event stream.
+   *
+   * Returns an unsubscribe function. The browser's ``EventSource`` API opens
+   * the connection and invokes ``onEvent`` for each parsed event. We do NOT
+   * use the existing ``request()`` wrapper — that's JSON-only and consumes
+   * the whole body; SSE needs incremental parsing.
+   *
+   * EventSource auto-reconnects on connection loss; the server replays the
+   * current state on reconnect because each event is self-contained (the
+   * session row's status is the source of truth, queryable via
+   * ``getSession``).
+   */
+  streamSession(
+    sessionId: string,
+    onEvent: (event: StepEvent) => void,
+    onError?: (err: Event) => void,
+  ): () => void {
+    const es = new EventSource(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/stream`,
+    );
+    es.onmessage = (e: MessageEvent<string>) => {
+      try {
+        const parsed = JSON.parse(e.data) as StepEvent;
+        onEvent(parsed);
+      } catch {
+        // Malformed event — ignore rather than kill the whole stream. The
+        // next well-formed event will re-sync the UI.
+      }
+    };
+    if (onError !== undefined) {
+      es.onerror = onError;
+    }
+    return () => {
+      es.close();
+    };
   },
 };

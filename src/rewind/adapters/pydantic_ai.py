@@ -122,6 +122,11 @@ def replay_model(
                     model_settings=model_settings,
                     model_request_parameters=model_request_parameters,
                 )
+            # Interactive stepping gate: surface the pending call before the
+            # dispatch decision. An EDIT decision rewrites the outbound
+            # messages in place; STOP raises SteppingStopped. A no-op when no
+            # approval channel is attached (see stepping.gate_async).
+            messages = await self._step(messages, session)
             signature = self._signature(messages)
             recorded = session.respond_or_forward(signature)
             if recorded is None:
@@ -167,6 +172,51 @@ def replay_model(
                 messages=payload,
                 tools=_extract_tools(messages),
             )
+
+        async def _step(
+            self,
+            messages: list[ModelMessage],
+            session: ReplaySession,
+        ) -> list[ModelMessage]:
+            """Interactive stepping gate for the async ``request`` path.
+
+            Returns the (possibly edited) message list. Raises
+            :class:`~rewind.stepping.SteppingStopped` on STOP. A pure no-op
+            when no approval channel is attached — the common path stays
+            unchanged.
+            """
+            # pylint: disable=import-outside-toplevel
+            from rewind.stepping import (
+                DecisionKind,
+                Step,
+                StepKind,
+                SteppingStopped,
+                gate_async,
+            )
+            # pylint: enable=import-outside-toplevel
+
+            step = Step(
+                kind=StepKind.LLM,
+                payload={
+                    "model": str(self.model_name),
+                    "messages": _messages_to_jsonable(messages),
+                    "tools": _extract_tools(messages),
+                },
+                cursor=session.cursor,
+            )
+            decision = await gate_async(session, step)
+            if decision is None:
+                return messages
+            if decision.kind is DecisionKind.STOP:
+                raise SteppingStopped(step)
+            if decision.kind is DecisionKind.EDIT and decision.messages is not None:
+                # Edited messages arrive as plain dicts; PydanticAI's
+                # ModelMessage coercion accepts dict payloads, so we hand
+                # them straight through. The signature is recomputed below
+                # on the edited list, so a divergent edit naturally falls
+                # into the live-forward branch.
+                return decision.messages
+            return messages
 
         def _materialise(self, recorded: Any) -> ModelResponse:
             payload = recorded.payload or {}

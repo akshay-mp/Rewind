@@ -147,3 +147,97 @@ export type StreamEvent =
   | { type: "span_end"; index: number; span: Span }
   | { type: "trace_end"; trace: Trace }
   | { type: "error"; message: string };
+
+// ---------------------------------------------------------------------------
+// Interactive stepping sessions (Phase 9)
+//
+// A stepping session runs an agent server-side under mode=INTERACTIVE; the
+// agent pauses at every LLM/tool call and surfaces the pending step to the
+// browser via an SSE stream. The browser posts a Decision to resume it.
+// These types mirror the Python view models in stepping_api.py and the
+// Step/Decision dataclasses in stepping.py.
+// ---------------------------------------------------------------------------
+
+/** The payload of a paused LLM or tool step, mirroring stepping.Step.payload. */
+export interface StepPayload {
+  model?: string;
+  messages?: unknown[];
+  tools?: unknown[];
+  params?: Record<string, unknown>;
+  /** For tool steps only. */
+  name?: string;
+  args?: unknown[];
+  kwargs?: Record<string, unknown>;
+}
+
+/** One SSE event from GET /api/v1/sessions/{id}/stream (one data: <json> per event). */
+export type StepEvent =
+  | { type: "paused"; cursor: number; kind: string; step: StepPayload }
+  | { type: "resumed"; decision: string }
+  | { type: "step_completed"; cursor: number; kind: string; result: string }
+  | { type: "done"; reason?: string; cursor?: number }
+  | { type: "errored"; message: string };
+
+/** The step currently awaiting a Decision, held in the store. */
+export interface PausedStep {
+  cursor: number;
+  /** "llm" | "tool" | "mcp" — drives the kind tint in the UI. */
+  kind: string;
+  payload: StepPayload;
+  /** Date.now() when the pause arrived — drives the live elapsed timer. */
+  pausedAt: number;
+  /** The model's response text, once the step has executed (verify loop). */
+  result: string | null;
+}
+
+/** A consumed step in the history rail. */
+export interface StepHistoryEntry {
+  cursor: number;
+  kind: string;
+  /** "approve" | "edit" | "stop" | "step_once". */
+  decision: string;
+  payload?: StepPayload;
+  /** What the model returned for this step (the verify-loop result). */
+  result?: string | null;
+  resolvedAt: number;
+}
+
+/** One stepping session's live state, parallel to LiveRun. */
+export interface LiveSession {
+  sessionId: string;
+  traceId: string;
+  branchId: string;
+  runnerRef: string;
+  status: "running" | "paused" | "done" | "errored";
+  error: string | null;
+  pausedStep: PausedStep | null;
+  history: StepHistoryEntry[];
+  startedAt: number;
+}
+
+/** POST body for POST /api/v1/sessions. */
+export interface StartSessionBody {
+  trace_id: string;
+  runner_ref: string;
+  mode?: string;
+  branch_at?: number | null;
+  label?: string;
+}
+
+/** Response from POST /api/v1/sessions. */
+export interface StartSessionResponse {
+  session_id: string;
+  trace_id: string;
+  branch_id: string;
+  status: string;
+}
+
+/** POST body for POST /api/v1/sessions/{id}/decide. */
+export interface DecisionBody {
+  kind: "approve" | "edit" | "stop" | "step_once";
+  messages?: unknown[];
+  params?: Record<string, unknown>;
+  args?: unknown[];
+  kwargs?: Record<string, unknown>;
+  model?: string;
+}

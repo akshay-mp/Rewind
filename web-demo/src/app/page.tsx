@@ -13,10 +13,12 @@ import {
 import { useRewindStore } from "@/lib/rewind/store";
 import { spanCost } from "@/lib/rewind/diff";
 import { streamRewind } from "@/lib/rewind/stream-client";
+import { startSession } from "@/lib/rewind/session-client";
 import { SpanTimeline } from "@/components/rewind/span-timeline";
 import { SpanDetail } from "@/components/rewind/span-detail";
 import { DiffView } from "@/components/rewind/diff-view";
 import { ThinkingPanel } from "@/components/rewind/thinking-panel";
+import { SessionView } from "@/components/rewind/session-view";
 import { DEFAULT_QUERY, PROMPT_SUGGESTIONS } from "@/lib/deep-research/prompts";
 import {
   ChevronDown,
@@ -28,6 +30,8 @@ import {
   Sparkles,
   Zap,
   Database,
+  GitBranch,
+  PauseCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -47,9 +51,18 @@ function TopBar() {
     setDiff,
     mode,
     exitBranchMode,
+    uiView,
+    setUIView,
+    liveSession,
+    clearLiveSession,
   } = useRewindStore();
 
   const [query, setQuery] = useState(DEFAULT_QUERY);
+  // Session-start form state.
+  const [sessTraceId, setSessTraceId] = useState("");
+  const [sessRunner, setSessRunner] = useState("");
+  const [sessStarting, setSessStarting] = useState(false);
+  const [sessError, setSessError] = useState<string | null>(null);
 
   const selected = selectedBranchId ? traces[selectedBranchId] : null;
   const canStep = !!selected && mode === "inspect";
@@ -64,6 +77,22 @@ function TopBar() {
       return;
     setDiff(rootBranchId, selectedBranchId);
   }, [rootBranchId, selectedBranchId, setDiff]);
+
+  const startSteppingSession = useCallback(async () => {
+    if (!sessTraceId.trim() || !sessRunner.trim()) return;
+    setSessStarting(true);
+    setSessError(null);
+    try {
+      await startSession({
+        trace_id: sessTraceId.trim(),
+        runner_ref: sessRunner.trim(),
+      });
+    } catch (e) {
+      setSessError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSessStarting(false);
+    }
+  }, [sessTraceId, sessRunner]);
 
   const totalCost = selected ? spanCost(selected.spans) : null;
 
@@ -89,59 +118,135 @@ function TopBar() {
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Research query…"
-                className="h-8 w-72 text-xs"
-                disabled={isRunning}
-              />
-              <Button
-                size="sm"
-                onClick={runDemo}
-                disabled={isRunning || !query.trim()}
-              >
-                {isRunning && !selectedBranchId ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Play className="size-4" />
+            {/* View toggle: Demo vs Sessions */}
+            <div className="flex items-center rounded-md border bg-muted/40 p-0.5">
+              <button
+                type="button"
+                onClick={() => setUIView("demo")}
+                className={cn(
+                  "flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors",
+                  uiView === "demo"
+                    ? "bg-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
-                {selectedBranchId ? "Re-run" : "Run demo"}
-              </Button>
+              >
+                <Play className="size-3" /> Demo
+              </button>
+              <button
+                type="button"
+                onClick={() => setUIView("session")}
+                className={cn(
+                  "flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors",
+                  uiView === "session"
+                    ? "bg-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <PauseCircle className="size-3" /> Sessions
+              </button>
             </div>
 
-            {selectedBranchId && selectedBranchId !== rootBranchId && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={compareWithOriginal}
-                title="Diff this branch against the original run"
-              >
-                <GitCompare className="size-4" /> Compare
-              </Button>
+            {/* Demo-mode actions */}
+            {uiView === "demo" && (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Research query…"
+                    className="h-8 w-72 text-xs"
+                    disabled={isRunning}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={runDemo}
+                    disabled={isRunning || !query.trim()}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-sm"
+                  >
+                    {isRunning && !selectedBranchId ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Play className="size-4 fill-current" />
+                    )}
+                    {selectedBranchId ? "Re-run Agent" : "Start Agent"}
+                  </Button>
+                </div>
+
+                {selectedBranchId && selectedBranchId !== rootBranchId && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={compareWithOriginal}
+                    title="Diff this branch against the original run"
+                  >
+                    <GitCompare className="size-4" /> Compare
+                  </Button>
+                )}
+
+                {selectedBranchId && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (
+                        confirm("Reset the session? All traces will be discarded.")
+                      ) {
+                        reset();
+                      }
+                    }}
+                  >
+                    <RotateCcw className="size-4" /> Reset
+                  </Button>
+                )}
+              </>
             )}
 
-            {selectedBranchId && (
+            {/* Session-mode actions: new-session form */}
+            {uiView === "session" && !liveSession && (
+              <div className="flex items-center gap-1.5">
+                <Input
+                  value={sessTraceId}
+                  onChange={(e) => setSessTraceId(e.target.value)}
+                  placeholder="trace id"
+                  className="h-8 w-44 font-mono text-xs"
+                />
+                <Input
+                  value={sessRunner}
+                  onChange={(e) => setSessRunner(e.target.value)}
+                  placeholder="runner ref"
+                  className="h-8 w-32 text-xs"
+                />
+                <Button
+                  size="sm"
+                  onClick={startSteppingSession}
+                  disabled={sessStarting || !sessTraceId.trim() || !sessRunner.trim()}
+                >
+                  {sessStarting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <PauseCircle className="size-4" />
+                  )}
+                  Start session
+                </Button>
+              </div>
+            )}
+
+            {/* Session active: clear button */}
+            {uiView === "session" && liveSession && (
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  if (
-                    confirm("Reset the session? All traces will be discarded.")
-                  ) {
-                    reset();
-                  }
-                }}
+                onClick={() => clearLiveSession()}
+                title="Clear the session view"
               >
-                <RotateCcw className="size-4" /> Reset
+                <RotateCcw className="size-4" /> New session
               </Button>
             )}
           </div>
         </div>
 
-        {/* row 2 — step controls + cost + status */}
-        {selectedBranchId && (
+        {/* row 2 — step controls + cost + status (demo mode only) */}
+        {uiView === "demo" && selectedBranchId && (
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1">
               <Button
@@ -213,6 +318,13 @@ function TopBar() {
           </div>
         )}
       </div>
+
+      {/* Session-mode error strip */}
+      {uiView === "session" && sessError && (
+        <div className="border-t border-destructive/30 bg-destructive/5 px-4 py-1.5 text-xs text-destructive">
+          {sessError}
+        </div>
+      )}
     </header>
   );
 }
@@ -335,7 +447,36 @@ function EmptyState() {
 }
 
 export default function Home() {
-  const { selectedBranchId, diff, liveRun } = useRewindStore();
+  const { selectedBranchId, diff, liveRun, uiView, liveSession } = useRewindStore();
+
+  // Session view takes over the whole body when active. Sits alongside the
+  // demo's liveRun/inspect/diff branches — completely additive.
+  if (uiView === "session") {
+    return (
+      <main className="flex min-h-screen flex-col bg-muted/30">
+        <TopBar />
+        <div className="flex-1 overflow-hidden p-3">
+          {liveSession ? (
+            <div className="h-[calc(100vh-7rem)]">
+              <SessionView />
+            </div>
+          ) : (
+            <Card className="flex h-[calc(100vh-7rem)] items-center justify-center">
+              <CardContent>
+                <div className="text-center">
+                  <PauseCircle className="mx-auto mb-3 size-10 text-muted-foreground/50" />
+                  <p className="text-sm font-medium">Interactive stepping</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Enter a trace id + runner ref above to start a session.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   // While a run is streaming, the live ThinkingPanel is the focus — the trace
   // isn't committed yet so the timeline would be empty. The panel dismisses
@@ -358,8 +499,11 @@ export default function Home() {
 
   if (!selectedBranchId) {
     return (
-      <main className="min-h-screen bg-muted/30">
-        <EmptyState />
+      <main className="flex min-h-screen flex-col bg-muted/30">
+        <TopBar />
+        <div className="flex-1 overflow-y-auto p-3">
+          <EmptyState />
+        </div>
       </main>
     );
   }

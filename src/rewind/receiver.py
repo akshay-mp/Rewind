@@ -34,6 +34,7 @@ from rewind.ingest import (
     spans_from_request,
 )
 from rewind.models import Span, Trace
+from rewind.stepping_api import mount_stepping
 from rewind.storage import TraceStore
 from rewind.timeline import mount_timeline
 from rewind.ui_assets import ui_dist_path
@@ -85,6 +86,11 @@ def create_app(store: TraceStore) -> FastAPI:
 
     # Phase 5.5: eval harness API lives at /api/v1/evals* and shares the store.
     mount_eval(app)
+
+    # Phase 9: interactive stepping server lives at /api/v1/sessions* and
+    # shares the store. Mounted after eval so all read APIs are available
+    # before the (potentially long-running) stepping surface.
+    mount_stepping(app)
 
     # Phase 2: static UI artifact at /ui. Mounted last so /api and /v1 win.
     _mount_ui(app)

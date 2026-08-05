@@ -238,3 +238,95 @@ export interface EvalBaselineDiffView {
   overall_changed: boolean;
   scenarios: BaselineScenarioDiffView[];
 }
+
+// ----- Phase 9: interactive stepping ---------------------------------------
+//
+// Wire shape mirrors the pydantic view models in ``src/rewind/stepping_api.py``
+// and the Step/Decision dataclasses in ``src/rewind/stepping.py``. The SSE
+// stream emits the StepEvent union below as one ``data: <json>`` block per
+// event.
+
+export type SessionStatus = "running" | "paused" | "done" | "errored";
+
+export interface SessionDetailView {
+  session_id: string;
+  trace_id: string;
+  branch_id: string;
+  runner_ref: string;
+  status: SessionStatus;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionListResponse {
+  items: SessionDetailView[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface StartSessionRequest {
+  trace_id: string;
+  runner_ref: string;
+  mode?: string;
+  branch_at?: number | null;
+  label?: string;
+}
+
+export interface StartSessionResponse {
+  session_id: string;
+  trace_id: string;
+  branch_id: string;
+  status: string;
+}
+
+export type DecisionKind =
+  | "approve"
+  | "edit"
+  | "stop"
+  | "step_once"
+  | "mock"
+  | "skip"
+  | "reject"
+  | "run_until_breakpoint";
+
+export interface DecisionRequest {
+  kind: DecisionKind;
+  messages?: unknown[] | null;
+  params?: Record<string, unknown> | null;
+  args?: unknown[] | null;
+  kwargs?: Record<string, unknown> | null;
+  model?: string | null;
+  mock_result?: unknown;
+  reason?: string | null;
+}
+
+/** Server-owned run-control intent (Phase 1.2). */
+export interface RunControl {
+  pause_after_current: boolean;
+  run_until_breakpoint: boolean;
+  breakpoints: unknown[];
+}
+
+/** One SSE event from ``GET /sessions/{id}/stream``. */
+export type StepEvent =
+  | { type: "paused"; cursor: number; kind: string; step?: StepPayload; pause_reason?: "pause_after_current" | "breakpoint" | null }
+  | { type: "dispatching"; cursor: number; decision: string }
+  | { type: "resumed"; decision: string }
+  | { type: "step_completed"; cursor: number; kind: string; result: string }
+  | { type: "done"; reason?: string; cursor?: number }
+  | { type: "errored"; message: string };
+
+/** The payload of a paused LLM or tool step, mirroring stepping.Step.payload. */
+export interface StepPayload {
+  model?: string;
+  messages?: unknown[];
+  tools?: unknown[];
+  params?: Record<string, unknown>;
+  /** Phase 3.1: curated sampling parameters (temperature, seed, etc.). */
+  sampling?: Record<string, unknown>;
+  name?: string; // for tool steps
+  args?: unknown[];
+  kwargs?: Record<string, unknown>;
+}

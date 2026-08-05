@@ -1,0 +1,70 @@
+flowchart TB
+    %% Phase 9 (B–E) — the stepping server + browser UI architecture.
+    %% Complements phase9-architecture.mmd (the Phase A primitive). This diagram
+    %% adds the HTTP/SSE transport, the background runner task, the SQLite
+    ;; session table, and the React control surface.
+    %% Reading order: browser (top) → FastAPI endpoints → runner task → gate.
+
+    subgraph Browser["Browser — web/ React app"]
+        SessionList["SessionList.tsx<br/>list + new-session form"]
+        SessionDetail["SessionDetail.tsx<br/>step panel + edit + 4 buttons<br/>+ history sidebar"]
+        EventSource["EventSource<br/>/sessions/&#123;id&#125;/stream"]
+    end
+
+    subgraph Server["FastAPI app — stepping_api.mount_stepping"]
+        PostSessions["POST /sessions<br/>+ POST /sessions/&#123;id&#125;/restart-from"]
+        PostDecide["POST /sessions/&#123;id&#125;/decide"]
+        GetStream["GET /sessions/&#123;id&#125;/stream<br/>(SSE)"]
+        Registry["_RUNNERS registry<br/>register_runner"]
+        SessionMgr["_SESSIONS manager<br/>LiveSession&#123;task, channel&#125;"]
+        Spawn["_spawn_runner_task<br/>asyncio.create_task"]
+    end
+
+    subgraph RunnerTask["Background asyncio.Task per session"]
+        Wrapper["_runner_wrapper<br/>replay ctx + runner"]
+        Runner["developer's runner<br/>await agent.run()"]
+        StatusTr["_set_status<br/>running→paused→done/errored"]
+    end
+
+    subgraph Gate["Stepping gate (Phase A primitive)"]
+        SSEChannel["SSEApprovalChannel<br/>3 queues: pending, decisions, events"]
+        GateAsync["gate_async / gate_sync"]
+    end
+
+    DB[("rewind.db<br/>interactive_sessions table<br/>+ spans under branch_id")]
+
+    %% Browser → server
+    SessionList -->|POST /sessions| PostSessions
+    SessionDetail -->|POST /decide| PostDecide
+    EventSource -.SSE.-> GetStream
+
+    %% Server internals
+    PostSessions --> Registry
+    PostSessions --> Spawn
+    PostSessions -.restart-from.-> Spawn
+    Spawn --> SessionMgr
+    Spawn --> Wrapper
+
+    %% Runner task
+    Wrapper --> Runner
+    Wrapper --> StatusTr
+    Runner -.pauses at each call.-> GateAsync
+
+    %% Gate + channel
+    GateAsync -.await submit.-> SSEChannel
+    PostDecide -.channel.decide.-> SSEChannel
+    SSEChannel -.next_event.-> GetStream
+    StatusTr --> DB
+
+    %% Styling
+    classDef browser fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
+    classDef server fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#000
+    classDef runner fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#000
+    classDef gate fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#000
+    classDef db fill:#fff3cd,stroke:#ffc107,stroke-width:2px,color:#000
+
+    class SessionList,SessionDetail,EventSource browser
+    class PostSessions,PostDecide,GetStream,Registry,SessionMgr,Spawn server
+    class Wrapper,Runner,StatusTr runner
+    class SSEChannel,GateAsync gate
+    class DB db

@@ -1002,6 +1002,12 @@ textarea {
   border-color: color-mix(in srgb, var(--rewind-status-unset) 45%, transparent);
 }
 
+.pill--info {
+  background: color-mix(in srgb, var(--rewind-accent) 18%, transparent);
+  color: var(--rewind-accent);
+  border-color: color-mix(in srgb, var(--rewind-accent) 45%, transparent);
+}
+
 .eval-list__table,
 .eval-detail__scenarios {
   width: 100%;
@@ -1055,4 +1061,110 @@ textarea {
   padding: 2px 8px;
   font-size: 11px;
   cursor: pointer;
+}
+
+/* ----- Phase 9: interactive sessions ------------------------------------- */
+
+.session-list__form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.session-list__input {
+  background: var(--rewind-surface-2);
+  border: 1px solid var(--rewind-border);
+  border-radius: 3px;
+  color: var(--rewind-text);
+  padding: 6px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  min-width: 200px;
+}
+
+.session-list__input:focus {
+  outline: none;
+  border-color: var(--rewind-accent);
+}
+
+.session-detail__body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 24px;
+  align-items: start;
+}
+
+.session-detail__history {
+  border-left: 1px solid var(--rewind-border);
+  padding-left: 16px;
+  font-size: 13px;
+}
+
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+
+.history-item {
+  padding: 4px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--rewind-border) 50%, transparent);
+}
+
+.step-panel {
+  background: var(--rewind-surface);
+  border: 1px solid var(--rewind-border);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.step-panel__header {
+  margin-bottom: 12px;
+}
+
+.step-panel__actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rewind-border);
+  flex-wrap: wrap;
+}
+
+.step-panel__edit-textarea {
+  width: 100%;
+  background: var(--rewind-surface-2);
+  border: 1px solid var(--rewind-border);
+  border-radius: 3px;
+  color: var(--rewind-text);
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.step-panel__edit-textarea:focus {
+  outline: none;
+  border-color: var(--rewind-accent);
+}
+
+.fields {
+  display: flex;
+  gap: 24px;
+  margin: 8px 0 16px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 800px) {
+  .session-detail__body {
+    grid-template-columns: 1fr;
+  }
+  .session-detail__history {
+    border-left: none;
+    border-top: 1px solid var(--rewind-border);
+    padding-left: 0;
+    padding-top: 16px;
+  }
 }

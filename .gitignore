@@ -17,6 +17,11 @@ build/
 .venv/
 venv/
 
+# Local credentials and endpoint configuration
+.env
+.env.*
+!.env.example
+
 # Rewind runtime artifacts
 *.db
 *.db-wal

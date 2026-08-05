@@ -39,6 +39,7 @@ from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
     from rewind.replay import RecordedResponse, ReplaySession
+    from rewind.stepping import Step
 
 __all__ = ["ToolCacheMiss", "tool"]
 
@@ -135,15 +136,57 @@ def _dispatch_sync_tool(
     * FROZEN  : must hit recorded span or raise (no live call permitted).
     * BRANCH  : hit if available, else forward + capture.
     * FULL    : always forward + capture (cursor still advances on hit).
+    * INTERACTIVE : pause at the stepping gate before any of the above; the
+      developer can APPROVE, EDIT the tool args, STOP, or STEP_ONCE. An EDIT
+      rewrites ``args``/``kwargs`` before the cache lookup so a divergent
+      edit naturally falls into the live-forward path. Requires a
+      :class:`~rewind.stepping.ThreadBridgeChannel` (sync blocking) — an
+      async-only channel raises ``SteppingStopped`` with an actionable hint.
     """
     # pylint: disable=import-outside-toplevel
     from rewind.enums import ReplayMode
     # pylint: enable=import-outside-toplevel
 
+    # Interactive stepping gate — fires before the cache lookup so an EDIT
+    # can rewrite the inputs. No-op when mode isn't INTERACTIVE or no
+    # channel is attached (the documented zero-regression invariant).
+    args, kwargs, step, decision = _step_tool(session, tool_name, tool_kind, args, kwargs)
+
+    # Mock, skip, and reject are resolved before cache lookup and before the
+    # wrapped function is entered, so side effects cannot occur accidentally.
+    if decision is not None:
+        from rewind.stepping import DecisionKind
+        if decision.kind is DecisionKind.MOCK:
+            output = decision.mock_result
+            _complete_tool_step(session, step, output)
+            return output
+        if decision.kind is DecisionKind.SKIP:
+            output = {"rewind": "tool skipped", "tool": tool_name}
+            _complete_tool_step(session, step, output)
+            return output
+        if decision.kind is DecisionKind.REJECT:
+            # The developer vetoed the tool call. Return a structured reject
+            # result to the agent (no live call) so the agent can react to the
+            # refusal — e.g. choose a different tool or ask the user. The
+            # optional ``reason`` is surfaced back to the agent verbatim.
+            output = {
+                "rewind": "tool rejected",
+                "tool": tool_name,
+                "reason": (
+                    decision.reason
+                    if decision.reason is not None
+                    else "rejected by developer"
+                ),
+            }
+            _complete_tool_step(session, step, output)
+            return output
+
     args_hash = _tool_args_hash(args, kwargs)
     recorded = _find_tool_span(session, name=tool_name, kind=tool_kind, args_hash=args_hash)
     if recorded is not None:
-        return _materialise_tool_output(recorded.payload)
+        output = _materialise_tool_output(recorded.payload)
+        _complete_tool_step(session, step, output)
+        return output
 
     # Cache miss — only legalise in non-frozen modes.
     if session.mode is ReplayMode.FROZEN:
@@ -163,7 +206,68 @@ def _dispatch_sync_tool(
         args_hash=args_hash,
         output=output,
     )
+    _complete_tool_step(session, step, output)
     return output
+
+
+def _step_tool(
+    session: ReplaySession,
+    tool_name: str,
+    tool_kind: str,
+    args: tuple[Any, ...],
+    kwargs: dict[Any, Any],
+) -> tuple[tuple[Any, ...], dict[Any, Any], Step, Any]:
+    """Interactive stepping gate for the sync tool path.
+
+    Returns the (possibly edited) args/kwargs. Raises
+    :class:`~rewind.stepping.SteppingStopped` on STOP. A no-op when no
+    approval channel is attached.
+    """
+    # pylint: disable=import-outside-toplevel
+    from rewind.stepping import (
+        DecisionKind,
+        Step,
+        StepKind,
+        SteppingStopped,
+        gate_sync,
+    )
+    # pylint: enable=import-outside-toplevel
+
+    kind_enum = StepKind.TOOL if tool_kind == "gen_ai.tool" else StepKind.MCP
+    step = Step(
+        kind=kind_enum,
+        payload={
+            "name": tool_name,
+            "args": list(args),
+            "kwargs": dict(kwargs),
+        },
+        cursor=session.cursor,
+    )
+    decision = gate_sync(session, step)
+    if decision is None:
+        return args, kwargs, step, None
+    if decision.kind is DecisionKind.STOP:
+        raise SteppingStopped(step)
+    if decision.kind is DecisionKind.EDIT:
+        new_args = tuple(decision.args) if decision.args is not None else args
+        new_kwargs = decision.kwargs if decision.kwargs is not None else kwargs
+        return new_args, new_kwargs, step, None
+    return args, kwargs, step, decision
+
+
+def _complete_tool_step(session: ReplaySession, step: Step, output: Any) -> None:
+    """Publish the exact tool result for the browser's post-tool review."""
+    # pylint: disable=import-outside-toplevel
+    import json
+
+    from rewind.stepping import complete_step_sync
+    # pylint: enable=import-outside-toplevel
+
+    try:
+        result = json.dumps(output, ensure_ascii=False, indent=2, default=str)
+    except (TypeError, ValueError):
+        result = repr(output)
+    complete_step_sync(session, step, result)
 
 
 # ----------------------------------------------------------------------

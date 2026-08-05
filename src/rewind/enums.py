@@ -46,11 +46,20 @@ class ReplayMode(StrEnum):
     ``FULL_RERUN``
         Re-execute everything live. Answers "is this run reproducible?"
         Explicitly non-deterministic.
+    ``INTERACTIVE``
+        Pause at every LLM/tool call and surface the pending step to an
+        :class:`~rewind.stepping.ApprovalChannel` for a human to inspect,
+        edit, approve, or stop. The blocking lives in the channel, not here —
+        this value is purely a selector the dispatchers consult to decide
+        whether to consult the channel at all. Requires an approval channel
+        attached to the :class:`~rewind.replay.ReplaySession`; without one it
+        behaves like ``BRANCH`` (forward live + capture).
     """
 
     FROZEN = "frozen"
     BRANCH = "branch"
     FULL_RERUN = "full"
+    INTERACTIVE = "interactive"
 
 
 @verify(UNIQUE)

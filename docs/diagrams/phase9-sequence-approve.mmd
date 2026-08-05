@@ -1,0 +1,43 @@
+sequenceDiagram
+    autonumber
+    participant A as Agent code
+    participant P as pydantic_ai._step / openai _step_async
+    participant G as gate_async
+    participant C as AsyncioChannel
+    participant App as Approver (test / future UI)
+    participant Cursor as respond_or_forward
+
+    Note over A,Cursor: Setup: replay(mode=INTERACTIVE, approval=channel). Session active via ContextVar.
+
+    Note over A,Cursor: Stage 1 gate fires before the dispatch decision
+    A->>P: await model.request(messages)
+    P->>P: build Step(kind=LLM, payload, cursor)
+    P->>G: await gate_async(session, step)
+    alt no channel OR mode is not INTERACTIVE
+        G-->>P: None
+        Note right of G: zero-cost no-op — existing 291 tests unaffected
+        P->>Cursor: respond_or_forward as today
+    else INTERACTIVE + channel attached
+        G->>C: await channel.submit(step)
+        C->>App: channel.next_step() yields the pending step
+        Note right of App: developer inspects messages / model / params
+        App->>C: channel.decide(APPROVE)
+        C-->>G: Decision(kind=APPROVE)
+        G-->>P: Decision(kind=APPROVE)
+        Note right of G: mode unchanged — next call pauses again
+        P->>Cursor: respond_or_forward(signature)
+    end
+
+    Note over A,Cursor: Stage 2 dispatch proceeds exactly as Phase 3
+    alt signature matches recorded span at cursor
+        Cursor->>Cursor: advance_cursor
+        Cursor-->>P: RecordedResponse (cached)
+        P-->>A: materialised cached response
+        Note right of Cursor: zero outbound HTTP
+    else divergence (BRANCH-like behaviour post-approve)
+        Cursor-->>P: None (authorise forward)
+        P->>P: forward live + capture span
+        P-->>A: live response
+    end
+
+    Note over A,Cursor: Outcome: call paused, developer approved, dispatch proceeded unchanged from Phase 3.

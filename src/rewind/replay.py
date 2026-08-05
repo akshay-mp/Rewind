@@ -41,6 +41,7 @@ from rewind.enums import ReplayMode
 from rewind.models import Span, Trace
 
 if TYPE_CHECKING:
+    from rewind.stepping import ApprovalChannel
     from rewind.storage import TraceStore
 
 __all__ = [
@@ -51,6 +52,18 @@ __all__ = [
     "Responder",
     "replay",
 ]
+
+
+#: Sentinel for "argument not supplied" — distinct from ``None`` which is a
+#: valid explicit value for ``approval`` (drop the channel on a fork). We keep
+#: it module-private rather than reusing ``dataclasses.MISSING`` so the type
+#: annotation can be a plain union without dragging ``dataclasses`` into the
+#: public signature.
+class _Unset:
+    """Type marker for the :data:`_UNSET` sentinel."""
+
+
+_UNSET: _Unset = _Unset()
 
 
 #: Contextvar holding the active :class:`ReplaySession` for the current task.
@@ -147,11 +160,19 @@ class ReplaySession:
       ``[0, cursor)`` have been consumed; the next call signature is matched
       against ``spans[cursor]``.
     * ``mode`` — how to handle call divergences (see :class:`ReplayMode`).
+    * ``approval`` — optional :class:`~rewind.stepping.ApprovalChannel`.
+      When ``mode is INTERACTIVE`` and this is non-``None``, every
+      intercepted LLM/tool call pauses at the stepping gate and awaits a
+      :class:`~rewind.stepping.Decision` from the channel. ``None`` for
+      FROZEN/BRANCH/FULL — stepping is a no-op there.
 
     The session is **reentrant and isolated by branch_id** — the Phase 5.5
     eval harness relies on this. Two concurrent sessions in the same Python
     process never share mutable cursor state because the cursor lives on the
-    dataclass instance, not on the store.
+    dataclass instance, not on the store. The same isolation covers the
+    approval channel: it rides on the session, which rides on the
+    :data:`_active_session` ContextVar, so concurrent interactive sessions
+    don't cross-talk.
     """
 
     # pylint: disable=too-many-instance-attributes
@@ -161,6 +182,7 @@ class ReplaySession:
     branch_id: UUID
     mode: ReplayMode = ReplayMode.FROZEN
     label: str = ""
+    approval: ApprovalChannel | None = None
     _spans_cache: list[Span] = field(default_factory=list, repr=False)
     _cursor: int = field(default=0)
     _forked_at: int | None = field(default=None)
@@ -176,12 +198,16 @@ class ReplaySession:
         *,
         mode: ReplayMode = ReplayMode.FROZEN,
         label: str = "",
+        approval: ApprovalChannel | None = None,
     ) -> ReplaySession:
         """Open a session against a seed trace with no branching.
 
         Loads the recorded spans eagerly. The seed must exist; otherwise
         :class:`ReplayError` is raised (replay cannot proceed without a
         fixture set).
+
+        ``approval`` attaches a stepping channel; see
+        :func:`~rewind.stepping.gate_async` for the pause semantics.
         """
         trace = store.get_trace(trace_id)
         if trace is None:
@@ -192,11 +218,19 @@ class ReplaySession:
             branch_id=trace.root_branch_id,
             mode=mode,
             label=label,
+            approval=approval,
         )
         session._spans_cache = list(trace.spans)
         return session
 
-    def fork(self, *, branch_at: int, mode: ReplayMode, label: str = "") -> ReplaySession:
+    def fork(
+        self,
+        *,
+        branch_at: int,
+        mode: ReplayMode,
+        label: str = "",
+        approval: ApprovalChannel | _Unset | None = _UNSET,
+    ) -> ReplaySession:
         """Branch this session at ``branch_at``.
 
         Returns a *new* session positioned at ``cursor = branch_at`` whose
@@ -220,6 +254,10 @@ class ReplaySession:
           for diffing two replays of the same trace).
         * ``FULL_RERUN`` — the new session re-executes every span live,
           ignoring fixtures.
+
+        ``approval`` defaults to inheriting the parent's channel (a fork of
+        an interactive session stays interactive). Pass ``None`` explicitly
+        to drop the channel on the fork.
         """
         if branch_at < 0 or branch_at > len(self._spans_cache):
             raise ReplayError(
@@ -239,12 +277,16 @@ class ReplaySession:
             label=label or f"fork-at-{branch_at}",
         )
         self.store.insert_branch(branch)
+        inherited_approval: ApprovalChannel | None = (
+            self.approval if isinstance(approval, _Unset) else approval
+        )
         new_session = ReplaySession(
             store=self.store,
             trace_id=self.trace_id,
             branch_id=new_branch_id,
             mode=mode,
             label=label,
+            approval=inherited_approval,
         )
         # The cache is shared in-memory: cloned prefix + inherited parent tail.
         # No DB writes here — see docstring for rationale.
@@ -385,6 +427,7 @@ def replay(
     branch_at: int | None = None,
     mode: ReplayMode = ReplayMode.FROZEN,
     label: str = "",
+    approval: ApprovalChannel | None = None,
 ) -> Iterator[ReplaySession]:
     """Bind a :class:`ReplaySession` for the duration of the ``with`` block.
 
@@ -397,13 +440,21 @@ def replay(
     * ``branch_at = N`` — fork a branch from span ``N`` (spans ``[0, N)``
       are cloned). The new session's ``branch_id`` differs from the seed
       trace's ``root_branch_id``.
+    * ``approval`` — attach a stepping channel. Combined with
+      ``mode=INTERACTIVE`` this pauses every intercepted LLM/tool call at
+      :func:`~rewind.stepping.gate_async` until the channel yields a
+      :class:`~rewind.stepping.Decision`. Ignored for non-INTERACTIVE modes.
 
     Sessions are stored in a :class:`contextvars.ContextVar`, so nested or
     concurrent ``with replay(...)`` blocks are isolated per task. The Phase
     5.5 eval harness depends on this.
     """
-    root = ReplaySession.for_root(store, trace_id, mode=mode, label=label)
-    session = root if branch_at is None else root.fork(branch_at=branch_at, mode=mode, label=label)
+    root = ReplaySession.for_root(store, trace_id, mode=mode, label=label, approval=approval)
+    session = (
+        root
+        if branch_at is None
+        else root.fork(branch_at=branch_at, mode=mode, label=label, approval=approval)
+    )
 
     token = _active_session.set(session)
     try:
