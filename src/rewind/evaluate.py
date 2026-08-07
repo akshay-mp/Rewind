@@ -53,6 +53,7 @@ What this module does NOT do
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
@@ -1486,6 +1487,36 @@ async def run_frozen_verification(
             for needle in want:
                 if needle not in blob:
                     failures.append(f"missing required text: {needle!r}")
+        elif key == "forbidden_text":
+            blob = " ".join(_span_text(s) for s in spans)
+            for needle in want:
+                if needle in blob:
+                    failures.append(f"forbidden text present: {needle!r}")
+
+    # Saved interactive cases carry reviewed output and assertion profiles in
+    # addition to the seed trace. Frozen verification reads these snapshots
+    # only; it never calls a provider or tool.
+    captured_steps = expected.get("captured_steps", expected.get("checks", []))
+    pricing = expected.get("pricing") if isinstance(expected.get("pricing"), dict) else None
+    if isinstance(captured_steps, list):
+        for item in captured_steps:
+            if not isinstance(item, dict):
+                continue
+            raw_output = item.get("result")
+            output = raw_output if isinstance(raw_output, str) else ""
+            raw_usage = item.get("usage")
+            usage = raw_usage if isinstance(raw_usage, dict) else {}
+            assertions = item.get("assertions")
+            if isinstance(assertions, dict):
+                failures.extend(
+                    _check_captured_assertions(
+                        output,
+                        usage,
+                        assertions,
+                        pricing,
+                        f"step {item.get('cursor', '?')}",
+                    )
+                )
 
     passed = not failures
     detail = "all checks passed" if passed else "; ".join(failures)
@@ -1529,6 +1560,68 @@ def _span_text(span: Any) -> str:  # noqa: ANN401
     attrs = getattr(span, "raw_attributes", None) or {}
     _walk(attrs)
     return " ".join(parts)
+
+
+def _check_captured_assertions(
+    output: str,
+    usage: dict[str, Any],
+    assertions: dict[str, Any],
+    pricing: dict[str, Any] | None,
+    label: str,
+) -> list[str]:
+    """Evaluate the portable built-in assertions on one captured output."""
+    failures: list[str] = []
+    if assertions.get("requireJson", assertions.get("require_json", False)):
+        try:
+            json.loads(output)
+        except (TypeError, json.JSONDecodeError):
+            failures.append(f"{label}: response is not valid JSON")
+    for value in assertions.get("requiredText", assertions.get("required_text", [])) or []:
+        if str(value).lower() not in output.lower():
+            failures.append(f"{label}: missing required text {value!r}")
+    for value in assertions.get("forbiddenText", assertions.get("forbidden_text", [])) or []:
+        if str(value).lower() in output.lower():
+            failures.append(f"{label}: contains forbidden text {value!r}")
+    requires_citations = assertions.get(
+        "requireCitations", assertions.get("require_citations", False)
+    )
+    if requires_citations and not re.search(r"\[[^\]]+\]", output):
+        failures.append(f"{label}: missing citation")
+    max_tokens = assertions.get("maxTokens", assertions.get("max_tokens"))
+    if max_tokens is not None and int(usage.get("total_tokens", 0) or 0) > int(max_tokens):
+        failures.append(f"{label}: token budget exceeded")
+    max_cost = assertions.get("maxCostUsd", assertions.get("max_cost_usd"))
+    if max_cost is not None:
+        if pricing is None:
+            failures.append(f"{label}: saved pricing is required for cost assertion")
+        elif _usage_cost_usd(usage, pricing) > float(max_cost):
+            failures.append(f"{label}: cost budget exceeded")
+    return failures
+
+
+def _usage_cost_usd(usage: dict[str, Any], pricing: dict[str, Any]) -> float:
+    """Estimate saved output cost with the browser's pricing snapshot."""
+    input_total = max(0.0, float(usage.get("input_tokens", 0) or 0))
+    cached_input = min(
+        input_total,
+        max(0.0, float(usage.get("cached_input_tokens", 0) or 0)),
+    )
+    uncached_input = input_total - cached_input
+    final_tokens = max(
+        0.0,
+        float(usage.get("final_tokens", usage.get("output_tokens", 0)) or 0),
+    )
+    thinking_tokens = max(0.0, float(usage.get("thinking_tokens", 0) or 0))
+
+    def rate(camel: str, snake: str) -> float:
+        return float(pricing.get(camel, pricing.get(snake, 0)) or 0)
+
+    return (
+        uncached_input * rate("inputPerMillion", "input_per_million")
+        + cached_input * rate("cachedInputPerMillion", "cached_input_per_million")
+        + final_tokens * rate("outputPerMillion", "output_per_million")
+        + thinking_tokens * rate("thinkingPerMillion", "thinking_per_million")
+    ) / 1_000_000
 
 
 # ----------------------------------------------------------------------

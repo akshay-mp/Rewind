@@ -324,7 +324,11 @@ class TestRunControlEndpoints:
         get_resp = client.get(f"/api/v1/sessions/{sid}/run-control")
         assert get_resp.json()["pause_after_current"] is True
 
-    def test_patch_round_trips_server_breakpoints(self, client: TestClient, store: TraceStore) -> None:
+    def test_patch_round_trips_server_breakpoints(
+        self,
+        client: TestClient,
+        store: TraceStore,
+    ) -> None:
         sid = self._seed_session(store)
         rule = {
             "type": "token_limit",
@@ -438,10 +442,17 @@ class TestRunUntilBreakpoint:
         [
             (RunControlBreakpoint(type="tool_name", value="delete"), {"name": "delete_file"}),
             (RunControlBreakpoint(type="model_name", value="gemma"), {"model": "unsloth/gemma"}),
-            (RunControlBreakpoint(type="token_limit", value="1024"), {"params": {"max_tokens": 2048}}),
+            (
+                RunControlBreakpoint(type="token_limit", value="1024"),
+                {"params": {"max_tokens": 2048}},
+            ),
         ],
     )
-    def test_server_breakpoint_rule_types_match(self, rule: RunControlBreakpoint, payload: dict[str, Any]) -> None:
+    def test_server_breakpoint_rule_types_match(
+        self,
+        rule: RunControlBreakpoint,
+        payload: dict[str, Any],
+    ) -> None:
         ch = SSEApprovalChannel()
         ch.set_run_control(RunControlIntent(run_until_breakpoint=True, breakpoints=(rule,)))
         assert ch._maybe_auto_decide(Step(kind=StepKind.TOOL, payload=payload, cursor=3)) is None

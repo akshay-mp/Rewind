@@ -50,6 +50,16 @@ type StepAssertions = {
 const STEP_REVIEWS_STORAGE_KEY = "rewind-step-reviews";
 const STEP_ASSERTIONS_STORAGE_KEY = "rewind-step-assertions";
 const BREAKPOINTS_STORAGE_KEY = "rewind-breakpoints";
+const ACTIVE_SESSION_STORAGE_KEY = "rewind-active-session";
+
+function clearActiveSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(ACTIVE_SESSION_STORAGE_KEY);
+  } catch {
+    // Local persistence is optional; clearing the in-memory session still works.
+  }
+}
 
 function savedStepReview(traceId: string, cursor: number): StepReview {
   if (typeof window === "undefined") return {};
@@ -705,7 +715,10 @@ export const useRewindStore = create<RewindState>((set, get) => ({
         : null,
     })),
 
-  clearLiveSession: () => set({ liveSession: null }),
+  clearLiveSession: () => {
+    clearActiveSession();
+    set({ liveSession: null });
+  },
 
   openSavedSessionCase: (record) => set({
     uiView: "session",

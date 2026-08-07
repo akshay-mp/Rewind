@@ -27,6 +27,8 @@ import type {
   OutputAssertions,
   AssertionResult,
   PricingProfile,
+  SavedSessionCase,
+  StepHistoryEntry,
 } from "./types";
 
 /**
@@ -144,6 +146,133 @@ export async function persistPromptVersionResult(
       review_note: version.reviewNote ?? null,
       evaluator_results: version.evaluatorResults ?? {},
     }),
+  });
+}
+
+/** Persist a local pricing snapshot; callers may retain localStorage offline. */
+export async function persistPricingProfile(profile: PricingProfile): Promise<void> {
+  const now = new Date().toISOString();
+  const slug = profile.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "model";
+  const response = await fetch("/api/v1/pricing-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      profile_id: `local-${slug}-${Date.now()}`,
+      name: profile.name,
+      input_per_million: profile.inputPerMillion,
+      cached_input_per_million: profile.cachedInputPerMillion,
+      output_per_million: profile.outputPerMillion,
+      thinking_per_million: profile.thinkingPerMillion,
+      effective_at: now,
+      created_at: now,
+      updated_at: now,
+    }),
+  });
+  if (!response.ok) throw new Error(`pricing profile persistence failed: HTTP ${response.status}`);
+}
+
+/** Load durable pricing profiles when the backend is available. */
+export async function loadPricingProfiles(): Promise<PricingProfile[]> {
+  const response = await fetch("/api/v1/pricing-profiles");
+  if (!response.ok) throw new Error(`pricing profile load failed: HTTP ${response.status}`);
+  const records = (await response.json()) as Array<Record<string, unknown>>;
+  return records.map((record) => ({
+    name: String(record.name ?? "Local model"),
+    inputPerMillion: Number(record.input_per_million ?? 0),
+    cachedInputPerMillion: Number(record.cached_input_per_million ?? 0),
+    outputPerMillion: Number(record.output_per_million ?? 0),
+    thinkingPerMillion: Number(record.thinking_per_million ?? 0),
+  }));
+}
+
+/** Save a regression snapshot and its captured assertions on the server. */
+export async function persistRegressionCase(record: SavedSessionCase): Promise<void> {
+  const expected = {
+    captured_step_count: record.steps.length,
+    captured_steps: record.steps.map((step) => ({
+      cursor: step.cursor,
+      kind: step.kind,
+      decision: step.decision,
+      payload: step.payload ?? {},
+      result: step.result ?? "",
+      reasoning: step.reasoning ?? null,
+      usage: step.usage ?? {},
+      latency_ms: step.latencyMs ?? 0,
+      assertions: step.assertions ?? {},
+      assertion_result: step.assertionResult ?? {},
+      review_verdict: step.reviewVerdict ?? null,
+      review_note: step.reviewNote ?? null,
+    })),
+    prompt_versions: record.promptVersions,
+    checkpoints: record.checkpoints ?? [],
+    pricing: record.pricing ?? {},
+    summary: record.summary ?? {},
+  };
+  const response = await fetch("/api/v1/regression-cases", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      case_id: record.id,
+      name: `${record.runnerRef} · ${record.createdAt}`,
+      seed_trace_id: record.traceId,
+      expected,
+      created_at: record.createdAt,
+    }),
+  });
+  if (!response.ok) throw new Error(`regression persistence failed: HTTP ${response.status}`);
+}
+
+/** Run a persisted case using frozen output/checks; no live call is made. */
+export async function runPersistedRegressionCase(caseId: string): Promise<{ passed: boolean; detail?: string }> {
+  const response = await fetch(`/api/v1/regression-cases/${encodeURIComponent(caseId)}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) throw new Error(`regression run failed: HTTP ${response.status}`);
+  return (await response.json()) as { passed: boolean; detail?: string };
+}
+
+/** Load server-owned regression snapshots, if the local backend is online. */
+export async function loadRegressionCases(): Promise<SavedSessionCase[]> {
+  const response = await fetch("/api/v1/regression-cases");
+  if (!response.ok) throw new Error(`regression load failed: HTTP ${response.status}`);
+  const records = (await response.json()) as Array<Record<string, unknown>>;
+  return records.flatMap((record) => {
+    const expected = record.expected && typeof record.expected === "object"
+      ? record.expected as Record<string, unknown>
+      : {};
+    const captured = Array.isArray(expected.captured_steps) ? expected.captured_steps : [];
+    const steps = captured.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const entry = item as Record<string, unknown>;
+      return [{
+        cursor: Number(entry.cursor ?? 0),
+        kind: typeof entry.kind === "string" ? entry.kind : "llm",
+        decision: typeof entry.decision === "string" ? entry.decision : "saved",
+        payload: entry.payload && typeof entry.payload === "object" ? entry.payload as StepHistoryEntry["payload"] : {},
+        result: typeof entry.result === "string" ? entry.result : null,
+        reasoning: typeof entry.reasoning === "string" ? entry.reasoning : null,
+        usage: entry.usage && typeof entry.usage === "object" ? entry.usage as StepUsage : null,
+        latencyMs: Number(entry.latency_ms ?? 0),
+        assertions: entry.assertions && typeof entry.assertions === "object" ? entry.assertions as OutputAssertions : undefined,
+        assertionResult: entry.assertion_result && typeof entry.assertion_result === "object" ? entry.assertion_result as AssertionResult : undefined,
+        reviewVerdict: entry.review_verdict === "accepted" || entry.review_verdict === "rejected" ? entry.review_verdict : null,
+        reviewNote: typeof entry.review_note === "string" ? entry.review_note : undefined,
+        resolvedAt: Date.now(),
+      } satisfies SavedSessionCase["steps"][number]];
+    });
+    return [{
+      id: String(record.case_id ?? ""),
+      createdAt: String(record.created_at ?? ""),
+      traceId: String(record.seed_trace_id ?? ""),
+      runnerRef: String(record.name ?? "server regression"),
+      steps,
+      promptVersions: Array.isArray(expected.prompt_versions) ? expected.prompt_versions as PromptVersion[] : [],
+      checkpoints: Array.isArray(expected.checkpoints) ? expected.checkpoints as SavedSessionCase["checkpoints"] : [],
+      pricing: expected.pricing && typeof expected.pricing === "object" ? expected.pricing as PricingProfile : undefined,
+      summary: expected.summary && typeof expected.summary === "object" ? expected.summary as SavedSessionCase["summary"] : undefined,
+    }];
   });
 }
 

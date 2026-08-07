@@ -168,6 +168,8 @@ export interface StepPayload {
   name?: string;
   args?: unknown[];
   kwargs?: Record<string, unknown>;
+  /** Optional server/tool status marker used by the workbench graph. */
+  status?: string;
 }
 
 /** Token accounting reported by the provider for a completed LLM call. */

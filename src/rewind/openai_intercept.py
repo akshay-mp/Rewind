@@ -322,14 +322,18 @@ def _dispatch_sync(
             "frozen streaming replay not yet supported (Phase 5); "
             "use non-streaming calls or mode=branch"
         )
+    kwargs, step = _step_sync(session, kwargs)
     signature = extract_signature(**kwargs)
     recorded = session.respond_or_forward(signature)
     if recorded is not None:
-        return _materialise_chat_completion(recorded.payload, _chat_completion_module())
+        response = _materialise_chat_completion(recorded.payload, _chat_completion_module())
+        _complete_step_sync(session, recorded.payload, signature.model, step, kwargs)
+        return response
     response = orig_create(self, *args, **kwargs)
     _capture_live_span(
         session, kwargs=kwargs, response=response, signature_model=signature.model
     )
+    _complete_step_sync(session, _response_to_raw(response, kwargs), signature.model, step, kwargs)
     return response
 
 
@@ -386,6 +390,27 @@ async def _complete_step(
 
     result = _extract_response_text(payload, model)
     await complete_step(session, step, result, usage=_extract_usage(payload, request, result))
+
+
+def _complete_step_sync(
+    session: ReplaySession,
+    payload: dict[str, Any],
+    model: str,
+    step: Any,
+    request: dict[str, Any],
+) -> None:
+    """Publish a sync response to a channel that supports post-call review."""
+    # pylint: disable=import-outside-toplevel
+    from rewind.stepping import complete_step_sync
+    # pylint: enable=import-outside-toplevel
+
+    result = _extract_response_text(payload, model)
+    complete_step_sync(
+        session,
+        step,
+        result,
+        usage=_extract_usage(payload, request, result),
+    )
 
 
 def _extract_usage(
@@ -518,24 +543,10 @@ def _extract_response_text(payload: dict[str, Any], model: str) -> str:
     return ""
 
 
-async def _step_async(
-    session: ReplaySession,
-    kwargs: dict[str, Any],
-) -> tuple[dict[str, Any], Any]:
-    """Interactive stepping gate for the async Chat Completions path.
-
-    Returns the (possibly edited) kwargs. Raises
-    :class:`~rewind.stepping.SteppingStopped` on STOP. A no-op when no
-    approval channel is attached.
-    """
+def _build_llm_step(session: ReplaySession, kwargs: dict[str, Any]) -> Any:
+    """Build the shared transport-friendly LLM step payload."""
     # pylint: disable=import-outside-toplevel
-    from rewind.stepping import (
-        DecisionKind,
-        Step,
-        StepKind,
-        SteppingStopped,
-        gate_async,
-    )
+    from rewind.stepping import Step, StepKind
     # pylint: enable=import-outside-toplevel
 
     messages = _to_jsonable(kwargs.get("messages") or [])
@@ -571,7 +582,50 @@ async def _step_async(
         },
         cursor=session.cursor,
     )
+    return step
+
+
+async def _step_async(
+    session: ReplaySession,
+    kwargs: dict[str, Any],
+) -> tuple[dict[str, Any], Any]:
+    """Interactive stepping gate for the async Chat Completions path.
+
+    Returns the (possibly edited) kwargs. Raises
+    :class:`~rewind.stepping.SteppingStopped` on STOP. A no-op when no
+    approval channel is attached.
+    """
+    # pylint: disable=import-outside-toplevel
+    from rewind.stepping import DecisionKind, SteppingStopped, gate_async
+    # pylint: enable=import-outside-toplevel
+
+    step = _build_llm_step(session, kwargs)
     decision = await gate_async(session, step)
+    if decision is None:
+        return kwargs, step
+    if decision.kind is DecisionKind.STOP:
+        raise SteppingStopped(step)
+    if decision.kind is DecisionKind.EDIT:
+        if decision.messages is not None:
+            kwargs = {**kwargs, "messages": decision.messages}
+        if decision.model is not None:
+            kwargs = {**kwargs, "model": decision.model}
+        if decision.params is not None:
+            kwargs = {**kwargs, **decision.params}
+    return kwargs, step
+
+
+def _step_sync(
+    session: ReplaySession,
+    kwargs: dict[str, Any],
+) -> tuple[dict[str, Any], Any]:
+    """Interactive stepping gate for the sync Chat Completions path."""
+    # pylint: disable=import-outside-toplevel
+    from rewind.stepping import DecisionKind, SteppingStopped, gate_sync
+    # pylint: enable=import-outside-toplevel
+
+    step = _build_llm_step(session, kwargs)
+    decision = gate_sync(session, step)
     if decision is None:
         return kwargs, step
     if decision.kind is DecisionKind.STOP:

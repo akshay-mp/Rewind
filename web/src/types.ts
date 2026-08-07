@@ -117,12 +117,26 @@ export interface SpanDiffView {
   identical: boolean;
 }
 
-/** One fragment of a token-level message diff. */
-export interface MessageFragmentView {
+/** One unchanged/add/remove fragment of a token-level message diff. */
+export interface SimpleMessageFragmentView {
   text: string;
-  /** ``equal``/``added``/``removed``/``changed`` — same vocab as span status. */
-  kind: "equal" | "added" | "removed" | "changed";
+  kind: "equal" | "added" | "removed";
+  removed?: null;
+  added?: null;
 }
+
+/** A replacement fragment with lossless old/new content. */
+export interface ChangedMessageFragmentView {
+  text: string;
+  kind: "changed";
+  removed: string;
+  added: string;
+}
+
+/** One fragment of a token-level message diff. */
+export type MessageFragmentView =
+  | SimpleMessageFragmentView
+  | ChangedMessageFragmentView;
 
 export interface MessageDiffView {
   left: string;

@@ -248,6 +248,25 @@ class TestRedaction:
         # Unmutated.
         assert spans[0].raw_attributes == before
 
+    def test_default_cli_policy_preserves_usage_metrics_and_redacts_nested_secrets(self) -> None:
+        span = self._span_with_pii().model_copy(update={
+            "raw_attributes": {
+                "usage": {"input_tokens": 12, "total_tokens": 15},
+                "nested": {
+                    "email": "user@example.com",
+                    "authorization": "Bearer abc.def.ghi",
+                    "api_key": "sk-test-secret-value",
+                },
+            }
+        })
+        redacted = apply_redaction([span], RedactionPolicy.from_cli())[0].raw_attributes
+        assert redacted["usage"] == {"input_tokens": 12, "total_tokens": 15}
+        assert redacted["nested"] == {
+            "email": "[REDACTED]",
+            "authorization": "[REDACTED]",
+            "api_key": "[REDACTED]",
+        }
+
 
 class TestExportCli:
     def test_export_to_stdout(self, tmp_path: Path) -> None:
@@ -261,6 +280,40 @@ class TestExportCli:
         payload = json.loads(result.output)
         assert payload["trace_id"] == _TRACE_ID
         assert len(payload["spans"]) == 3
+
+
+class TestPricingProfiles:
+    def test_upsert_and_list_profile(self, store: TraceStore) -> None:
+        store.upsert_pricing_profile(
+            {
+                "profile_id": "local-qwen",
+                "name": "Qwen local",
+                "provider": "ollama",
+                "model": "qwen3",
+                "input_per_million": 0,
+                "output_per_million": 0,
+                "effective_at": "2026-08-05T00:00:00Z",
+            }
+        )
+        profile = store.get_pricing_profile("local-qwen")
+        assert profile is not None
+        assert profile["model"] == "qwen3"
+        assert profile["output_per_million"] == 0
+        assert store.list_pricing_profiles()[0]["profile_id"] == "local-qwen"
+
+    def test_http_profile_api(self, store: TraceStore) -> None:
+        app = FastAPI()
+        app.state.store = store
+        mount_timeline(app)
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/pricing-profiles",
+            json={"profile_id": "http-local", "name": "HTTP local"},
+        )
+        assert response.status_code == 201
+        listed = client.get("/api/v1/pricing-profiles")
+        assert listed.status_code == 200
+        assert any(item["profile_id"] == "http-local" for item in listed.json())
 
     def test_export_to_file(self, tmp_path: Path) -> None:
         db = tmp_path / "export_file.db"

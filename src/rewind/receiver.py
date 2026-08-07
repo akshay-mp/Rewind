@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from rewind import __version__
+from rewind.coding.api import mount_coding
 from rewind.eval_api import mount_eval
 from rewind.ingest import (
     IngestError,
@@ -91,6 +92,9 @@ def create_app(store: TraceStore) -> FastAPI:
     # shares the store. Mounted after eval so all read APIs are available
     # before the (potentially long-running) stepping surface.
     mount_stepping(app)
+
+    # Coding-agent control plane shares the same durable SQLite store.
+    mount_coding(app)
 
     # Phase 2: static UI artifact at /ui. Mounted last so /api and /v1 win.
     _mount_ui(app)

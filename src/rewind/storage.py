@@ -13,6 +13,11 @@ Design notes
   boundary, and it serializes via Pydantic.
 """
 
+# Existing storage SQL and compatibility mappings intentionally use readable
+# multiline chunks; the repository's formatter historically permits these.
+# New coding APIs keep their own modules at the configured 100-column limit.
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import contextlib
@@ -23,6 +28,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 from uuid import UUID
 
+from rewind.coding.domain import (
+    CheckSpec,
+    CodingAttempt,
+    CodingEvent,
+    CodingRun,
+    ControlLease,
+    EvaluationResult,
+    GoalProfile,
+    RunStatus,
+    Verdict,
+    WorkspaceChange,
+    WorkspaceSnapshot,
+)
 from rewind.enums import SpanKind, SpanStatus
 from rewind.models import Branch, Checkpoint, Span, Trace
 
@@ -53,7 +71,9 @@ if TYPE_CHECKING:
 #: * v8 - adds ``run_environment`` table for reproducibility manifests (Phase 5.3).
 #: * v9 - expands prompt experiment records with reproducibility and review
 #:   snapshots (Phase 2 completion).
-SCHEMA_VERSION = 9
+#: * v10 - adds versioned local pricing profiles.
+#: * v11 - adds the coding-agent control-plane tables.
+SCHEMA_VERSION = 11
 
 #: Generic return type for ``TraceStore._execute``.
 _T = TypeVar("_T")
@@ -311,6 +331,86 @@ CREATE TABLE IF NOT EXISTS run_environment (
 );
 """
 
+#: Phase 4 pricing profiles. Rates are intentionally stored as a JSON
+#: snapshot so adding a provider-specific rate later does not require a schema
+#: migration. New client-generated IDs retain snapshots; repeating an ID is
+#: an explicit upsert of that snapshot.
+_PRICING_MIGRATION_SQL = """
+CREATE TABLE IF NOT EXISTS pricing_profiles (
+    profile_id              TEXT PRIMARY KEY,
+    name                    TEXT NOT NULL,
+    provider                TEXT NOT NULL DEFAULT '',
+    model                   TEXT NOT NULL DEFAULT '',
+    input_per_million       REAL NOT NULL DEFAULT 0,
+    cached_input_per_million REAL NOT NULL DEFAULT 0,
+    output_per_million      REAL NOT NULL DEFAULT 0,
+    thinking_per_million    REAL NOT NULL DEFAULT 0,
+    effective_at            TEXT NOT NULL DEFAULT '',
+    created_at              TEXT NOT NULL DEFAULT '',
+    updated_at              TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_pricing_profiles_model
+    ON pricing_profiles(provider, model, updated_at);
+"""
+
+#: Phase 11 — coding-agent control-plane records. Payloads remain JSON so the
+#: domain can evolve additively while indexed lifecycle fields stay queryable.
+_CODING_MIGRATION_SQL = """
+CREATE TABLE IF NOT EXISTS coding_runs (
+    run_id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL, goal_profile_id TEXT NOT NULL,
+    status TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, attempt_limit INTEGER NOT NULL,
+    time_budget_seconds INTEGER NOT NULL, token_budget INTEGER NOT NULL,
+    active_attempt_id TEXT, metadata TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_coding_runs_status ON coding_runs(status, updated_at);
+CREATE TABLE IF NOT EXISTS coding_attempts (
+    attempt_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES coding_runs(run_id) ON DELETE CASCADE,
+    number INTEGER NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
+    before_snapshot_id TEXT, after_snapshot_id TEXT, repair_of_attempt_id TEXT,
+    output TEXT NOT NULL DEFAULT '', tokens INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0,
+    duration_seconds REAL NOT NULL DEFAULT 0, error TEXT, metadata TEXT NOT NULL DEFAULT '{}',
+    UNIQUE(run_id, number)
+);
+CREATE INDEX IF NOT EXISTS idx_coding_attempts_run ON coding_attempts(run_id, number);
+CREATE TABLE IF NOT EXISTS coding_events (
+    event_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES coding_runs(run_id) ON DELETE CASCADE,
+    attempt_id TEXT, sequence INTEGER NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}',
+    idempotency_key TEXT, created_at TEXT NOT NULL, UNIQUE(run_id, sequence),
+    UNIQUE(run_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_coding_events_run_seq ON coding_events(run_id, sequence);
+CREATE TABLE IF NOT EXISTS control_leases (
+    lease_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES coding_runs(run_id) ON DELETE CASCADE,
+    owner TEXT NOT NULL, mode TEXT NOT NULL, expires_at TEXT NOT NULL, heartbeat_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_control_leases_run ON control_leases(run_id, active, expires_at);
+CREATE TABLE IF NOT EXISTS workspace_snapshots (
+    snapshot_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES coding_runs(run_id) ON DELETE CASCADE,
+    attempt_id TEXT, tree_hash TEXT NOT NULL, path TEXT NOT NULL, metadata TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_snapshots_run ON workspace_snapshots(run_id, created_at);
+CREATE TABLE IF NOT EXISTS workspace_changes (
+    change_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES coding_runs(run_id) ON DELETE CASCADE,
+    attempt_id TEXT, path TEXT NOT NULL, change_type TEXT NOT NULL, before_text TEXT NOT NULL DEFAULT '',
+    after_text TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workspace_changes_run ON workspace_changes(run_id, path);
+CREATE TABLE IF NOT EXISTS goal_profiles (
+    profile_id TEXT PRIMARY KEY, name TEXT NOT NULL, version INTEGER NOT NULL,
+    checks TEXT NOT NULL DEFAULT '[]', immutable INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
+    UNIQUE(name, version)
+);
+CREATE TABLE IF NOT EXISTS coding_evaluations (
+    evaluation_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES coding_runs(run_id) ON DELETE CASCADE,
+    attempt_id TEXT, profile_id TEXT NOT NULL, verdict TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '{}',
+    metrics TEXT NOT NULL DEFAULT '{}', error TEXT, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_coding_evaluations_attempt ON coding_evaluations(run_id, attempt_id, created_at);
+"""
+
 
 class TraceStore:
     """A SQLite-backed store for traces, spans, and branches.
@@ -384,6 +484,8 @@ class TraceStore:
             conn.executescript(_PROMPT_VERSION_MIGRATION_SQL)
             conn.executescript(_REGRESSION_MIGRATION_SQL)
             conn.executescript(_REPRODUCIBILITY_MIGRATION_SQL)
+            conn.executescript(_PRICING_MIGRATION_SQL)
+            conn.executescript(_CODING_MIGRATION_SQL)
             # Phase 1.2: ``ALTER TABLE ... ADD COLUMN`` has no IF NOT EXISTS in
             # SQLite, so guard on ``PRAGMA table_info``. Fresh DBs already get
             # the column from the DDL above; this branch only patches DBs
@@ -1582,6 +1684,66 @@ class TraceStore:
 
         return self._execute(_select)
 
+    # -- pricing profiles (Phase 4 local persistence) ----------------------
+    def upsert_pricing_profile(self, row: dict[str, Any]) -> None:
+        """Persist a named pricing profile without losing older snapshots."""
+        def _upsert(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """
+                INSERT INTO pricing_profiles
+                    (profile_id, name, provider, model, input_per_million,
+                     cached_input_per_million, output_per_million,
+                     thinking_per_million, effective_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(profile_id) DO UPDATE SET
+                    name = excluded.name,
+                    provider = excluded.provider,
+                    model = excluded.model,
+                    input_per_million = excluded.input_per_million,
+                    cached_input_per_million = excluded.cached_input_per_million,
+                    output_per_million = excluded.output_per_million,
+                    thinking_per_million = excluded.thinking_per_million,
+                    effective_at = excluded.effective_at,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    row["profile_id"],
+                    row.get("name", "Local model"),
+                    row.get("provider", ""),
+                    row.get("model", ""),
+                    float(row.get("input_per_million", 0) or 0),
+                    float(row.get("cached_input_per_million", 0) or 0),
+                    float(row.get("output_per_million", 0) or 0),
+                    float(row.get("thinking_per_million", 0) or 0),
+                    row.get("effective_at", ""),
+                    row.get("created_at", ""),
+                    row.get("updated_at", row.get("created_at", "")),
+                ),
+            )
+
+        self._execute(_upsert)
+
+    def list_pricing_profiles(self) -> list[dict[str, Any]]:
+        """List pricing profiles newest-first."""
+        def _select(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+            rows = conn.execute(
+                "SELECT * FROM pricing_profiles ORDER BY updated_at DESC, name"
+            ).fetchall()
+            return [_pricing_profile_row_to_dict(row) for row in rows]
+
+        return self._execute(_select)
+
+    def get_pricing_profile(self, profile_id: str) -> dict[str, Any] | None:
+        """Return a pricing profile by stable id."""
+        def _select(conn: sqlite3.Connection) -> dict[str, Any] | None:
+            row = conn.execute(
+                "SELECT * FROM pricing_profiles WHERE profile_id = ?",
+                (profile_id,),
+            ).fetchone()
+            return _pricing_profile_row_to_dict(row) if row else None
+
+        return self._execute(_select)
+
     # -- run environment / reproducibility (Phase 5.3) ----------------------
     def upsert_run_environment(self, manifest: dict[str, Any]) -> None:
         """Persist a reproducibility manifest (upsert by content hash)."""
@@ -1615,6 +1777,344 @@ class TraceStore:
             return loaded if isinstance(loaded, dict) else {}
 
         return self._execute(_select)
+
+    # -- coding control plane (schema v11) ----------------------------------
+    def upsert_coding_run(self, run: CodingRun) -> None:
+        """Insert or update a coding run without changing its event history."""
+        if not isinstance(run, CodingRun):
+            raise TypeError("run must be a CodingRun")
+
+        def _upsert(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """
+                INSERT INTO coding_runs
+                    (run_id, workspace_path, goal_profile_id, status, revision, attempt_limit,
+                     time_budget_seconds, token_budget, active_attempt_id, metadata, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET workspace_path=excluded.workspace_path,
+                    goal_profile_id=excluded.goal_profile_id, status=excluded.status,
+                    revision=excluded.revision, attempt_limit=excluded.attempt_limit,
+                    time_budget_seconds=excluded.time_budget_seconds, token_budget=excluded.token_budget,
+                    active_attempt_id=excluded.active_attempt_id, metadata=excluded.metadata,
+                    updated_at=excluded.updated_at
+                """,
+                (run.run_id, run.workspace_path, run.goal_profile_id, run.status.value, run.revision,
+                 run.attempt_limit, run.time_budget_seconds, run.token_budget, run.active_attempt_id,
+                 json.dumps(run.metadata, sort_keys=True), run.created_at, run.updated_at),
+            )
+
+        self._execute(_upsert)
+
+    def get_coding_run(self, run_id: str) -> CodingRun | None:
+        """Load a coding run."""
+        def _get(conn: sqlite3.Connection) -> CodingRun | None:
+            row = conn.execute("SELECT * FROM coding_runs WHERE run_id = ?", (run_id,)).fetchone()
+            return _coding_run_from_row(row) if row else None
+
+        return self._execute(_get)
+
+    def list_coding_runs(self) -> list[CodingRun]:
+        """List coding runs newest-first."""
+        def _list(conn: sqlite3.Connection) -> list[CodingRun]:
+            return [_coding_run_from_row(row) for row in conn.execute(
+                "SELECT * FROM coding_runs ORDER BY updated_at DESC"
+            )]
+
+        return self._execute(_list)
+
+    insert_coding_run = upsert_coding_run
+
+    def upsert_coding_attempt(self, attempt: CodingAttempt) -> None:
+        """Insert or update an attempt."""
+        if not isinstance(attempt, CodingAttempt):
+            raise TypeError("attempt must be a CodingAttempt")
+
+        def _upsert(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """INSERT INTO coding_attempts
+                (attempt_id, run_id, number, status, started_at, finished_at, before_snapshot_id,
+                 after_snapshot_id, repair_of_attempt_id, output, tokens, cost_usd, duration_seconds,
+                 error, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(attempt_id) DO UPDATE SET status=excluded.status, finished_at=excluded.finished_at,
+                 after_snapshot_id=excluded.after_snapshot_id, output=excluded.output, tokens=excluded.tokens,
+                 cost_usd=excluded.cost_usd, duration_seconds=excluded.duration_seconds, error=excluded.error,
+                 metadata=excluded.metadata""",
+                (attempt.attempt_id, attempt.run_id, attempt.number, attempt.status, attempt.started_at,
+                 attempt.finished_at, attempt.before_snapshot_id, attempt.after_snapshot_id,
+                 attempt.repair_of_attempt_id, attempt.output, attempt.tokens, attempt.cost_usd,
+                 attempt.duration_seconds, attempt.error, json.dumps(attempt.metadata, sort_keys=True)),
+            )
+        self._execute(_upsert)
+
+    def get_coding_attempt(self, attempt_id: str) -> CodingAttempt | None:
+        """Load an attempt by id."""
+        return self._execute(lambda conn: _coding_attempt_from_row(
+            conn.execute("SELECT * FROM coding_attempts WHERE attempt_id = ?", (attempt_id,)).fetchone(),
+        ))
+
+    def list_coding_attempts(self, run_id: str) -> list[CodingAttempt]:
+        """List attempts in execution order."""
+        return self._execute(lambda conn: [
+            _coding_attempt_from_row(row) for row in conn.execute(
+                "SELECT * FROM coding_attempts WHERE run_id = ? ORDER BY number", (run_id,)
+            )
+        ])
+
+    insert_coding_attempt = upsert_coding_attempt
+
+    def append_coding_event(self, event: CodingEvent, idempotency_key: str | None = None) -> CodingEvent:
+        """Append an event with a monotonic per-run sequence."""
+        from dataclasses import replace
+        if not isinstance(event, CodingEvent):
+            raise TypeError("event must be a CodingEvent")
+
+        def _append(conn: sqlite3.Connection) -> CodingEvent:
+            if idempotency_key:
+                duplicate = conn.execute(
+                    "SELECT * FROM coding_events WHERE run_id = ? AND idempotency_key = ?",
+                    (event.run_id, idempotency_key),
+                ).fetchone()
+                if duplicate:
+                    return _coding_event_from_row(duplicate)
+            sequence = conn.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM coding_events WHERE run_id = ?",
+                (event.run_id,),
+            ).fetchone()[0]
+            stored = replace(event, sequence=int(sequence))
+            conn.execute(
+                "INSERT INTO coding_events (event_id, run_id, attempt_id, sequence, kind, payload, idempotency_key, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (stored.event_id, stored.run_id, stored.attempt_id, stored.sequence, stored.kind,
+                 json.dumps(stored.payload, sort_keys=True), idempotency_key, stored.created_at),
+            )
+            return stored
+        return self._execute(_append)
+
+    insert_coding_event = append_coding_event
+
+    def list_coding_events(self, run_id: str, after_sequence: int = 0) -> list[CodingEvent]:
+        """Replay durable events after a sequence number."""
+        return self._execute(lambda conn: [
+            _coding_event_from_row(row) for row in conn.execute(
+                "SELECT * FROM coding_events WHERE run_id = ? AND sequence > ? ORDER BY sequence",
+                (run_id, after_sequence),
+            )
+        ])
+
+    def get_coding_event(self, event_id: str) -> CodingEvent | None:
+        """Load one event, useful for idempotent control responses."""
+        return self._execute(lambda conn: _coding_event_from_row(
+            conn.execute("SELECT * FROM coding_events WHERE event_id = ?", (event_id,)).fetchone(),
+        ))
+
+    def acquire_control_lease(self, lease: ControlLease, *, preempt: bool = False) -> ControlLease:
+        """Acquire a lease, allowing a human lease to preempt automation."""
+        if not isinstance(lease, ControlLease):
+            raise TypeError("lease must be a ControlLease")
+
+        def _acquire(conn: sqlite3.Connection) -> ControlLease:
+            if preempt and lease.mode == "human":
+                conn.execute("UPDATE control_leases SET active = 0 WHERE run_id = ? AND active = 1", (lease.run_id,))
+            current = conn.execute(
+                "SELECT * FROM control_leases WHERE run_id = ? AND active = 1 AND expires_at > ?",
+                (lease.run_id, lease.heartbeat_at),
+            ).fetchone()
+            if current and current["owner"] != lease.owner:
+                raise ValueError("control lease is held")
+            conn.execute(
+                "INSERT OR REPLACE INTO control_leases (lease_id, run_id, owner, mode, expires_at, heartbeat_at, active)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (lease.lease_id, lease.run_id, lease.owner, lease.mode, lease.expires_at, lease.heartbeat_at, int(lease.active)),
+            )
+            return lease
+        return self._execute(_acquire)
+
+    def get_control_lease(self, lease_id: str) -> ControlLease | None:
+        """Load one lease."""
+        return self._execute(lambda conn: _control_lease_from_row(
+            conn.execute("SELECT * FROM control_leases WHERE lease_id = ?", (lease_id,)).fetchone()
+        ))
+
+    def update_control_lease(self, lease: ControlLease) -> None:
+        """Persist heartbeat or release state."""
+        if not isinstance(lease, ControlLease):
+            raise TypeError("lease must be a ControlLease")
+        self._execute(lambda conn: conn.execute(
+            "UPDATE control_leases SET expires_at = ?, heartbeat_at = ?, active = ? WHERE lease_id = ?",
+            (lease.expires_at, lease.heartbeat_at, int(lease.active), lease.lease_id),
+        ))
+
+    def upsert_workspace_snapshot(self, snapshot: WorkspaceSnapshot) -> None:
+        """Persist a workspace snapshot."""
+        if not isinstance(snapshot, WorkspaceSnapshot):
+            raise TypeError("snapshot must be a WorkspaceSnapshot")
+        self._execute(lambda conn: conn.execute(
+            "INSERT OR REPLACE INTO workspace_snapshots (snapshot_id, run_id, attempt_id, tree_hash, path, metadata, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (snapshot.snapshot_id, snapshot.run_id, snapshot.attempt_id, snapshot.tree_hash, snapshot.path,
+             json.dumps(snapshot.metadata, sort_keys=True), snapshot.created_at),
+        ))
+
+    def list_workspace_snapshots(self, run_id: str) -> list[WorkspaceSnapshot]:
+        """List snapshots in creation order."""
+        def _list(conn: sqlite3.Connection) -> list[WorkspaceSnapshot]:
+            rows = conn.execute(
+                "SELECT * FROM workspace_snapshots WHERE run_id = ? ORDER BY created_at",
+                (run_id,),
+            ).fetchall()
+            return [
+                WorkspaceSnapshot(
+                    snapshot_id=row["snapshot_id"], run_id=row["run_id"], attempt_id=row["attempt_id"],
+                    tree_hash=row["tree_hash"], path=row["path"],
+                    metadata=json.loads(row["metadata"] or "{}"), created_at=row["created_at"],
+                )
+                for row in rows
+            ]
+        return self._execute(_list)
+
+    def insert_workspace_change(self, change: WorkspaceChange) -> None:
+        """Persist one workspace change."""
+        if not isinstance(change, WorkspaceChange):
+            raise TypeError("change must be a WorkspaceChange")
+        self._execute(lambda conn: conn.execute(
+            "INSERT OR REPLACE INTO workspace_changes (change_id, run_id, attempt_id, path, change_type, before_text, after_text, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (change.change_id, change.run_id, change.attempt_id, change.path, change.change_type,
+             change.before, change.after, change.created_at),
+        ))
+
+    def list_workspace_changes(self, run_id: str, attempt_id: str | None = None) -> list[WorkspaceChange]:
+        """List recorded workspace changes."""
+        def _list(conn: sqlite3.Connection) -> list[WorkspaceChange]:
+            query = "SELECT * FROM workspace_changes WHERE run_id = ?"
+            args: list[object] = [run_id]
+            if attempt_id is not None:
+                query += " AND attempt_id = ?"
+                args.append(attempt_id)
+            query += " ORDER BY created_at"
+            return [
+                WorkspaceChange(
+                    change_id=row["change_id"], run_id=row["run_id"], attempt_id=row["attempt_id"],
+                    path=row["path"], change_type=row["change_type"], before=row["before_text"],
+                    after=row["after_text"], created_at=row["created_at"],
+                )
+                for row in conn.execute(query, args)
+            ]
+        return self._execute(_list)
+
+    def upsert_goal_profile(self, profile: GoalProfile) -> None:
+        """Persist an immutable goal profile; duplicate versions are unchanged."""
+        if not isinstance(profile, GoalProfile):
+            raise TypeError("profile must be a GoalProfile")
+        self._execute(lambda conn: conn.execute(
+            "INSERT OR IGNORE INTO goal_profiles (profile_id, name, version, checks, immutable, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (profile.profile_id, profile.name, profile.version, json.dumps([c.to_dict() for c in profile.checks], sort_keys=True),
+             int(profile.immutable), profile.created_at),
+        ))
+
+    def get_goal_profile(self, profile_id: str) -> GoalProfile | None:
+        """Load a goal profile."""
+        return self._execute(lambda conn: _goal_profile_from_row(
+            conn.execute("SELECT * FROM goal_profiles WHERE profile_id = ?", (profile_id,)).fetchone()
+        ))
+
+    def list_goal_profiles(self) -> list[GoalProfile]:
+        """List immutable goal profile versions."""
+        return self._execute(lambda conn: [_goal_profile_from_row(row) for row in conn.execute(
+            "SELECT * FROM goal_profiles ORDER BY name, version DESC"
+        )])
+
+    insert_goal_profile = upsert_goal_profile
+
+    def insert_coding_evaluation(self, result: EvaluationResult) -> None:
+        """Persist evaluation evidence and metrics."""
+        if not isinstance(result, EvaluationResult):
+            raise TypeError("result must be an EvaluationResult")
+        self._execute(lambda conn: conn.execute(
+            "INSERT OR REPLACE INTO coding_evaluations (evaluation_id, run_id, attempt_id, profile_id, verdict, evidence, metrics, error, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (result.evaluation_id, result.run_id, result.attempt_id, result.profile_id, result.verdict.value,
+             json.dumps(result.evidence, sort_keys=True), json.dumps(result.metrics, sort_keys=True), result.error, result.created_at),
+        ))
+
+    def list_coding_evaluations(
+        self, run_id: str, attempt_id: str | None = None
+    ) -> list[EvaluationResult]:
+        """List persisted evaluations."""
+        def _list(conn: sqlite3.Connection) -> list[EvaluationResult]:
+            query = "SELECT * FROM coding_evaluations WHERE run_id = ?"
+            args: list[Any] = [run_id]
+            if attempt_id is not None:
+                query += " AND attempt_id = ?"
+                args.append(attempt_id)
+            query += " ORDER BY created_at"
+            return [_evaluation_from_row(row) for row in conn.execute(query, args)]
+        return self._execute(_list)
+
+    def get_coding_evaluation(self, evaluation_id: str) -> EvaluationResult | None:
+        """Load one persisted evaluation."""
+        return self._execute(lambda conn: _evaluation_from_row(row) if (row := conn.execute(
+            "SELECT * FROM coding_evaluations WHERE evaluation_id = ?", (evaluation_id,)
+        ).fetchone()) else None)
+
+    insert_evaluation = insert_coding_evaluation
+
+
+# -- coding row mappers ------------------------------------------------------
+
+def _coding_run_from_row(row: sqlite3.Row | None) -> CodingRun | None:
+    if row is None:
+        return None
+    return CodingRun(
+        run_id=row["run_id"], workspace_path=row["workspace_path"], goal_profile_id=row["goal_profile_id"],
+        status=RunStatus(row["status"]), revision=row["revision"], attempt_limit=row["attempt_limit"],
+        time_budget_seconds=row["time_budget_seconds"], token_budget=row["token_budget"],
+        active_attempt_id=row["active_attempt_id"], metadata=json.loads(row["metadata"] or "{}"),
+        created_at=row["created_at"], updated_at=row["updated_at"],
+    )
+
+
+def _coding_attempt_from_row(row: sqlite3.Row | None) -> CodingAttempt | None:
+    if row is None:
+        return None
+    return CodingAttempt(
+        attempt_id=row["attempt_id"], run_id=row["run_id"], number=row["number"], status=row["status"],
+        started_at=row["started_at"], finished_at=row["finished_at"], before_snapshot_id=row["before_snapshot_id"],
+        after_snapshot_id=row["after_snapshot_id"], repair_of_attempt_id=row["repair_of_attempt_id"],
+        output=row["output"], tokens=row["tokens"], cost_usd=row["cost_usd"],
+        duration_seconds=row["duration_seconds"], error=row["error"], metadata=json.loads(row["metadata"] or "{}"),
+    )
+
+
+def _coding_event_from_row(row: sqlite3.Row | None) -> CodingEvent | None:
+    if row is None:
+        return None
+    return CodingEvent(
+        run_id=row["run_id"], kind=row["kind"], payload=json.loads(row["payload"] or "{}"),
+        sequence=row["sequence"], event_id=row["event_id"], attempt_id=row["attempt_id"], created_at=row["created_at"],
+    )
+
+
+def _control_lease_from_row(row: sqlite3.Row | None) -> ControlLease | None:
+    if row is None:
+        return None
+    return ControlLease(run_id=row["run_id"], owner=row["owner"], lease_id=row["lease_id"], mode=row["mode"],
+               expires_at=row["expires_at"], heartbeat_at=row["heartbeat_at"], active=bool(row["active"]))
+
+
+def _goal_profile_from_row(row: sqlite3.Row | None) -> GoalProfile | None:
+    if row is None:
+        return None
+    checks = tuple(CheckSpec(**item) for item in json.loads(row["checks"] or "[]"))
+    return GoalProfile(profile_id=row["profile_id"], name=row["name"], version=row["version"], checks=checks,
+                       immutable=bool(row["immutable"]), created_at=row["created_at"])
+
+
+def _evaluation_from_row(row: sqlite3.Row) -> EvaluationResult:
+    return EvaluationResult(evaluation_id=row["evaluation_id"], run_id=row["run_id"], attempt_id=row["attempt_id"],
+               profile_id=row["profile_id"], verdict=Verdict(row["verdict"]),
+               evidence=json.loads(row["evidence"] or "{}"), metrics=json.loads(row["metrics"] or "{}"),
+               error=row["error"], created_at=row["created_at"])
 
 
 # -- row mappers (Phase 2.1) ------------------------------------------------
@@ -1664,6 +2164,23 @@ def _assertion_profile_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "max_tokens": row["max_tokens"],
         "max_cost_usd": row["max_cost_usd"],
         "created_at": row["created_at"],
+    }
+
+
+def _pricing_profile_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """Reconstruct a pricing profile from a DB row."""
+    return {
+        "profile_id": row["profile_id"],
+        "name": row["name"],
+        "provider": row["provider"],
+        "model": row["model"],
+        "input_per_million": row["input_per_million"],
+        "cached_input_per_million": row["cached_input_per_million"],
+        "output_per_million": row["output_per_million"],
+        "thinking_per_million": row["thinking_per_million"],
+        "effective_at": row["effective_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
     }
 
 

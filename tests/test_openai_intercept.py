@@ -31,11 +31,14 @@ from rewind.openai_intercept import (
     InterceptError,
     _dispatch_async,
     _dispatch_sync,
+    _step_async,
+    _step_sync,
     extract_signature,
     patch,
 )
 from rewind.replay import ReplayError, ReplaySession, active_session
 from rewind.replay import replay as replay_ctx
+from rewind.stepping import Decision, DecisionKind, SteppingStopped
 from rewind.storage import TraceStore
 
 
@@ -124,6 +127,18 @@ def _fake_chat_completion(model: str, content: str) -> dict[str, Any]:
     }
 
 
+class _SyncApproval:
+    """Small synchronous approval channel for direct interceptor tests."""
+
+    def __init__(self, decision: Decision) -> None:
+        self.decision = decision
+        self.steps: list[Any] = []
+
+    def submit_sync(self, step: Any) -> Decision:
+        self.steps.append(step)
+        return self.decision
+
+
 # ----------------------------------------------------------------------
 # extract_signature
 # ----------------------------------------------------------------------
@@ -148,6 +163,159 @@ def test_extract_signature_empty_messages_yields_stable_hash() -> None:
     """Missing or empty messages produce a stable hash (not a crash)."""
     sig = extract_signature(model="x", messages=[])
     assert sig.messages_hash == hash_payload([])
+
+
+def test_step_async_captures_structured_sampling_snapshot(
+    seeded_store: tuple[TraceStore, list[Span], list[dict[str, str]]],
+    trace_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase 3.1 keeps reproducibility-critical sampling fields on the step."""
+    store, _spans, _messages = seeded_store
+    session = ReplaySession.for_root(store, trace_id, mode=ReplayMode.BRANCH)
+    captured: list[Any] = []
+
+    async def capture_gate(_session: Any, step: Any) -> None:
+        captured.append(step)
+        return None
+
+    monkeypatch.setattr("rewind.stepping.gate_async", capture_gate)
+
+    kwargs: dict[str, Any] = {
+        "model": "unsloth/gemma-4-12b-it-GGUF",
+        "messages": [{"role": "user", "content": "compare RLHF and DPO"}],
+        "temperature": 0.2,
+        "seed": 42,
+        "max_tokens": 512,
+        "response_format": {"type": "json_object"},
+        "tool_choice": "auto",
+        "top_p": 0.9,
+        "stream": True,
+    }
+
+    returned, step = asyncio.run(_step_async(session, kwargs))
+
+    assert returned is kwargs
+    assert captured == [step]
+    assert step.payload["sampling"] == {
+        "temperature": 0.2,
+        "seed": 42,
+        "max_tokens": 512,
+        "response_format": {"type": "json_object"},
+        "tool_choice": "auto",
+        "top_p": 0.9,
+    }
+    assert step.payload["params"]["stream"] is True
+
+
+def test_step_sync_captures_sampling_and_applies_edit(
+    seeded_store: tuple[TraceStore, list[Span], list[dict[str, str]]],
+    trace_id: str,
+) -> None:
+    """Sync OpenAI calls expose the same payload and honor gate edits."""
+    store, _spans, _messages = seeded_store
+    approval = _SyncApproval(
+        Decision(
+            kind=DecisionKind.EDIT,
+            messages=[{"role": "user", "content": "edited prompt"}],
+            model="edited-model",
+            params={"temperature": 0.7},
+        )
+    )
+    session = ReplaySession.for_root(
+        store, trace_id, mode=ReplayMode.INTERACTIVE, approval=approval
+    )
+    kwargs: dict[str, Any] = {
+        "model": "original-model",
+        "messages": [{"role": "user", "content": "original prompt"}],
+        "temperature": 0.2,
+        "seed": 42,
+        "max_tokens": 512,
+        "response_format": {"type": "json_object"},
+        "tool_choice": "auto",
+    }
+
+    returned, step = _step_sync(session, kwargs)
+
+    assert approval.steps == [step]
+    assert step.payload["sampling"] == {
+        "temperature": 0.2,
+        "seed": 42,
+        "max_tokens": 512,
+        "response_format": {"type": "json_object"},
+        "tool_choice": "auto",
+    }
+    assert returned["messages"] == [{"role": "user", "content": "edited prompt"}]
+    assert returned["model"] == "edited-model"
+    assert returned["temperature"] == 0.7
+
+
+def test_step_sync_honors_stop_decision(
+    seeded_store: tuple[TraceStore, list[Span], list[dict[str, str]]],
+    trace_id: str,
+) -> None:
+    """A sync STOP decision prevents the OpenAI call from proceeding."""
+    store, _spans, _messages = seeded_store
+    approval = _SyncApproval(Decision(kind=DecisionKind.STOP))
+    session = ReplaySession.for_root(
+        store, trace_id, mode=ReplayMode.INTERACTIVE, approval=approval
+    )
+
+    with pytest.raises(SteppingStopped):
+        _step_sync(session, {"model": "model", "messages": []})
+
+
+@pytest.mark.asyncio
+async def test_dispatch_sync_worker_publishes_sse_review_usage(
+    seeded_store: tuple[TraceStore, list[Span], list[dict[str, str]]],
+    trace_id: str,
+) -> None:
+    """A worker-thread sync call completes through the browser channel."""
+    from rewind.stepping_api import SSEApprovalChannel
+
+    store, _spans, _messages = seeded_store
+    channel = SSEApprovalChannel()
+    channel.bind_loop(asyncio.get_running_loop())
+    session = ReplaySession.for_root(
+        store,
+        trace_id,
+        mode=ReplayMode.INTERACTIVE,
+        approval=channel,
+    )
+
+    def orig_create(_self: Any, *args: Any, **kwargs: Any) -> Any:
+        return _fake_chat_completion("live-model", "worker result")
+
+    call = asyncio.create_task(
+        asyncio.to_thread(
+            _dispatch_sync,
+            object(),
+            session,
+            orig_create,
+            (),
+            {"model": "qwen3:32b", "messages": [{"role": "user", "content": "new prompt"}]},
+        )
+    )
+
+    paused = await channel.next_event()
+    assert paused["type"] == "paused"
+    channel.decide(Decision(kind=DecisionKind.APPROVE))
+    assert (await channel.next_event())["type"] == "dispatching"
+
+    completed = await channel.next_event()
+    assert completed["type"] == "step_completed"
+    assert completed["usage"] == {
+        "input_tokens": 9,
+        "output_tokens": 3,
+        "thinking_tokens": 0,
+        "final_tokens": 3,
+        "total_tokens": 12,
+        "estimated": False,
+    }
+    channel.decide(Decision(kind=DecisionKind.APPROVE))
+    response = await call
+    body = response.model_dump() if hasattr(response, "model_dump") else response
+    assert body["choices"][0]["message"]["content"] == "worker result"
 
 
 # ----------------------------------------------------------------------
