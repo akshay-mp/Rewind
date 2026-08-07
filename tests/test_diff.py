@@ -387,10 +387,21 @@ def test_message_diff_preserves_whitespace_between_tokens() -> None:
 
     # First fragment is the common prefix "a " (word 'a' + whitespace ' ').
     assert diff.fragments[0].text == "a "
-    # The changed fragment carries the arrow separator.
+    # Replacements carry their two sides as separate structured fields.
     changed_frags = [f for f in diff.fragments if f.kind == "changed"]
     assert len(changed_frags) == 1
-    assert "\u2192" in changed_frags[0].text
+    assert changed_frags[0].removed == "b"
+    assert changed_frags[0].added == "c"
+
+
+def test_message_diff_preserves_arrows_in_changed_sides() -> None:
+    """An arrow inside either replacement side is not treated as a delimiter."""
+    diff = message_diff("prefix old→left suffix", "prefix new→right suffix")
+
+    changed = [fragment for fragment in diff.fragments if fragment.kind == "changed"]
+    assert len(changed) == 1
+    assert changed[0].removed == "old→left"
+    assert changed[0].added == "new→right"
 
 
 def test_message_diff_handles_completely_disjoint_inputs() -> None:

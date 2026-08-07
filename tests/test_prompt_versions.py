@@ -151,9 +151,22 @@ class TestPromptVersions:
             "model": "model-a",
             "parameters": {"seed": 1},
         }
-        assert client.post(f"/api/v1/traces/{_TRACE_ID}/prompt-versions", json=payload).status_code == 201
-        changed = {**payload, "messages": [{"role": "user", "content": "changed"}], "model": "model-b", "parameters": {"seed": 2}}
-        assert client.post(f"/api/v1/traces/{_TRACE_ID}/prompt-versions", json=changed).status_code == 201
+        response = client.post(
+            f"/api/v1/traces/{_TRACE_ID}/prompt-versions",
+            json=payload,
+        )
+        assert response.status_code == 201
+        changed = {
+            **payload,
+            "messages": [{"role": "user", "content": "changed"}],
+            "model": "model-b",
+            "parameters": {"seed": 2},
+        }
+        response = client.post(
+            f"/api/v1/traces/{_TRACE_ID}/prompt-versions",
+            json=changed,
+        )
+        assert response.status_code == 201
         item = client.get(f"/api/v1/traces/{_TRACE_ID}/prompt-versions").json()[0]
         assert item["messages"] == payload["messages"]
         assert item["model"] == "model-a"

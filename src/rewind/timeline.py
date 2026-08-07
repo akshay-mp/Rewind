@@ -223,6 +223,8 @@ class MessageFragmentView(BaseModel):
 
     text: str
     kind: str
+    removed: str | None = None
+    added: str | None = None
 
 
 class MessageDiffView(BaseModel):
@@ -381,6 +383,22 @@ class AssertionProfileView(BaseModel):
     max_tokens: int | None = None
     max_cost_usd: float | None = None
     created_at: str = ""
+
+
+class PricingProfileView(BaseModel):
+    """A versioned local provider/model price snapshot."""
+
+    profile_id: str
+    name: str = "Local model"
+    provider: str = ""
+    model: str = ""
+    input_per_million: float = 0
+    cached_input_per_million: float = 0
+    output_per_million: float = 0
+    thinking_per_million: float = 0
+    effective_at: str = ""
+    created_at: str = ""
+    updated_at: str = ""
 
 
 class StepReviewView(BaseModel):
@@ -1126,6 +1144,29 @@ def _register_routes(app: FastAPI) -> None:  # pylint: disable=too-many-statemen
         store.upsert_assertion_profile(body.model_dump())
         return body
 
+    @app.get(
+        "/api/v1/pricing-profiles",
+        tags=["timeline", "pricing"],
+    )
+    def list_pricing_profiles(request: Request) -> list[PricingProfileView]:
+        """List durable local pricing snapshots, newest-first."""
+        store: TraceStore = request.app.state.store
+        return [PricingProfileView(**row) for row in store.list_pricing_profiles()]
+
+    @app.post(
+        "/api/v1/pricing-profiles",
+        tags=["timeline", "pricing"],
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_pricing_profile(
+        request: Request,
+        body: PricingProfileView,
+    ) -> PricingProfileView:
+        """Create or update a named pricing snapshot."""
+        store: TraceStore = request.app.state.store
+        store.upsert_pricing_profile(body.model_dump())
+        return body
+
     @app.post(
         "/api/v1/traces/{trace_id}/reviews",
         tags=["timeline", "reviews"],
@@ -1277,7 +1318,13 @@ def _message_diff_view(diff: MessageDiff) -> MessageDiffView:
         left=diff.left,
         right=diff.right,
         fragments=[
-            MessageFragmentView(text=f.text, kind=f.kind) for f in diff.fragments
+            MessageFragmentView(
+                text=f.text,
+                kind=f.kind,
+                removed=f.removed,
+                added=f.added,
+            )
+            for f in diff.fragments
         ],
         added_tokens=diff.added_tokens,
         removed_tokens=diff.removed_tokens,
@@ -1342,6 +1389,7 @@ __all__ = [
     "DAGNodeView",
     "MessageDiffView",
     "MessageFragmentView",
+    "PricingProfileView",
     "PromptVersionResultView",
     "PromptVersionView",
     "SearchResponse",

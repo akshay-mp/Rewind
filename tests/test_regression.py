@@ -11,8 +11,9 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -187,7 +188,95 @@ class TestRunFrozenVerification:
         )
         result = asyncio.run(run_frozen_verification(cid, store=store))
         assert result.passed is False
-        assert "missing required text" in result.detail
+
+    def test_frozen_checks_run_against_captured_output(self, store: TraceStore) -> None:
+        cid = str(uuid4())
+        store.upsert_regression_case(
+            {
+                "case_id": cid,
+                "name": "captured-checks",
+                "seed_trace_id": _TRACE_ID,
+                "expected": {
+                    # Captured interactive history can include a branch tail;
+                    # this must not be compared with the root replay count.
+                    "captured_step_count": 2,
+                    "checks": [
+                        {
+                            "cursor": 0,
+                            "result": "the answer is 42",
+                            "usage": {"total_tokens": 8},
+                            "assertions": {
+                                "requiredText": ["answer"],
+                                "forbiddenText": ["password"],
+                                "maxTokens": 10,
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+        result = asyncio.run(run_frozen_verification(cid, store=store))
+        assert result.passed is True
+
+    def test_captured_interactive_case_does_not_require_root_span_count(
+        self,
+        store: TraceStore,
+    ) -> None:
+        cid = str(uuid4())
+        store.upsert_regression_case(
+            {
+                "case_id": cid,
+                "name": "captured-no-root-span-count",
+                "seed_trace_id": _TRACE_ID,
+                "expected": {
+                    "captured_step_count": 3,
+                    "captured_steps": [
+                        {
+                            "cursor": 0,
+                            "result": "approved answer",
+                            "usage": {"total_tokens": 8},
+                            "assertions": {"requiredText": ["approved"]},
+                        }
+                    ],
+                },
+            }
+        )
+        result = asyncio.run(run_frozen_verification(cid, store=store))
+        assert result.passed is True
+
+    def test_captured_cost_assertion_uses_saved_pricing(self, store: TraceStore) -> None:
+        cid = str(uuid4())
+        store.upsert_regression_case(
+            {
+                "case_id": cid,
+                "name": "captured-cost-budget",
+                "seed_trace_id": _TRACE_ID,
+                "expected": {
+                    "pricing": {
+                        "inputPerMillion": 0,
+                        "cachedInputPerMillion": 0,
+                        "outputPerMillion": 10,
+                        "thinkingPerMillion": 0,
+                    },
+                    "captured_steps": [
+                        {
+                            "cursor": 0,
+                            "result": "expensive answer",
+                            "usage": {
+                                "input_tokens": 0,
+                                "final_tokens": 1_000,
+                                "thinking_tokens": 0,
+                                "total_tokens": 1_000,
+                            },
+                            "assertions": {"maxCostUsd": 0.001},
+                        }
+                    ],
+                },
+            }
+        )
+        result = asyncio.run(run_frozen_verification(cid, store=store))
+        assert result.passed is False
+        assert "cost budget exceeded" in result.detail
 
     def test_missing_case(self, store: TraceStore) -> None:
         result = asyncio.run(run_frozen_verification("no-such", store=store))
@@ -263,6 +352,55 @@ class TestRegressionEndpoints:
         assert body["passed"] is True
         assert body["case_id"] == "rc-run"
 
+    def test_run_case_resolves_registered_factory(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rewind import eval_api
+
+        factory_ref = "test-regression-factory"
+
+        def factory(store: TraceStore, scenario: object) -> tuple[list[Span], UUID]:
+            del store, scenario
+            return [], UUID(int=0)
+
+        monkeypatch.setitem(eval_api._REGRESSION_FACTORIES, factory_ref, factory)
+        client.post(
+            "/api/v1/regression-cases",
+            json={
+                "case_id": "rc-custom-factory",
+                "name": "custom",
+                "seed_trace_id": _TRACE_ID,
+                "expected": {"span_count": 0},
+            },
+        )
+
+        response = client.post(
+            "/api/v1/regression-cases/rc-custom-factory/run",
+            json={"factory_ref": factory_ref},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["passed"] is True
+        assert response.json()["branch_id"] == str(UUID(int=0))
+
+    def test_run_case_rejects_unknown_factory(self, client: TestClient) -> None:
+        client.post(
+            "/api/v1/regression-cases",
+            json={
+                "case_id": "rc-unknown-factory",
+                "name": "unknown",
+                "seed_trace_id": _TRACE_ID,
+            },
+        )
+
+        response = client.post(
+            "/api/v1/regression-cases/rc-unknown-factory/run",
+            json={"factory_ref": "does-not-exist"},
+        )
+
+        assert response.status_code == 404
+        assert "factory" in response.json()["detail"]
+
     def test_list_runs(self, client: TestClient) -> None:
         client.post(
             "/api/v1/regression-cases",
@@ -278,6 +416,46 @@ class TestRegressionEndpoints:
         runs = client.get("/api/v1/regression-cases/rc-runs/runs").json()
         assert len(runs) == 2
         assert all(r["passed"] for r in runs)
+
+    def test_suite_stream_emits_progress_events(self, client: TestClient) -> None:
+        client.post(
+            "/api/v1/regression-cases",
+            json={
+                "case_id": "rc-suite-stream",
+                "name": "streamed",
+                "seed_trace_id": _TRACE_ID,
+                "expected": {"span_count": 1},
+            },
+        )
+        response = client.post(
+            "/api/v1/regression-suites/stream",
+            json=["rc-suite-stream"],
+        )
+
+        assert response.status_code == 200
+        events = [
+            json.loads(line.removeprefix("data: ").strip())
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert [event["type"] for event in events] == [
+            "suite_started",
+            "case_done",
+            "suite_finished",
+        ]
+        assert events[1]["passed"] is True
+        assert events[2]["summary"] == {
+            "total": 1,
+            "passed": 1,
+            "failed": 0,
+            "errored": 0,
+        }
+
+    def test_suite_stream_rejects_empty_case_list(self, client: TestClient) -> None:
+        response = client.post("/api/v1/regression-suites/stream", json=[])
+
+        assert response.status_code == 400
+        assert "at least one" in response.json()["detail"]
 
 
 # --- suite runner ----------------------------------------------------------

@@ -48,6 +48,7 @@ from rewind.evaluate import (
     EvaluatorRequest,
     GoalCheckExpectation,
     NoHallucinationExpectation,
+    ReplaySessionFactory,
     ScenarioResult,
     SuiteValidationError,
     TokenBudgetExpectation,
@@ -65,6 +66,22 @@ _MAX_SUITE_YAML_BYTES = 256 * 1024
 #: constant-size, but we want the UI to render the first page quickly.
 _DEFAULT_LIST_LIMIT = 50
 _MAX_LIST_LIMIT = 500
+
+# Optional server-side factories let a local integration register a custom
+# materialisation policy while keeping the default frozen runner available.
+_REGRESSION_FACTORIES: dict[str, ReplaySessionFactory] = {}
+
+
+def register_regression_factory(ref: str, factory: ReplaySessionFactory) -> None:
+    """Register a regression materialisation factory for ``factory_ref``."""
+    if not ref:
+        raise ValueError("regression factory ref must be non-empty")
+    _REGRESSION_FACTORIES[ref] = factory
+
+
+def get_regression_factory(ref: str) -> ReplaySessionFactory | None:
+    """Resolve a registered regression factory, if present."""
+    return _REGRESSION_FACTORIES.get(ref)
 
 #: Closed union of expectation types. We use a TypeAlias (not ``Any``) so the
 #: YAML loader stays type-safe and mypy can narrow on the dispatcher.
@@ -741,7 +758,15 @@ def mount_eval(app: FastAPI) -> None:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"regression case {case_id} not found",
             )
-        await run_frozen_verification(case_id, store=store)
+        factory = None
+        if body.factory_ref is not None:
+            factory = get_regression_factory(body.factory_ref)
+            if factory is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"regression factory {body.factory_ref!r} not found",
+                )
+        await run_frozen_verification(case_id, store=store, factory=factory)
         runs = store.list_regression_runs(case_id)
         latest = runs[0] if runs else None
         if latest is None:  # pragma: no cover - insert always lands a row
@@ -785,6 +810,12 @@ def mount_eval(app: FastAPI) -> None:
         from rewind.suite_runner import SuiteRunner
         # pylint: enable=import-outside-toplevel
 
+        if not case_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="case_ids must contain at least one regression case",
+            )
+
         store: TraceStore = request.app.state.store
 
         async def _stream() -> AsyncIterator[str]:
@@ -820,6 +851,8 @@ __all__ = [
     "ScenarioLatencyView",
     "ScenarioResultView",
     "TokenRollupView",
+    "get_regression_factory",
     "mount_eval",
     "parse_suite_from_yaml",
+    "register_regression_factory",
 ]

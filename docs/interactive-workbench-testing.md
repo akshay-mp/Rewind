@@ -57,6 +57,16 @@ Open <http://127.0.0.1:5174/ui/> and click **Start Agent**.
    **Skip**, and **Reject**. Mock, skip, and reject must not invoke the live
    tool. Use the integration suite to verify exactly-once behavior.
 
+### Synchronous OpenAI Calls
+
+Synchronous OpenAI calls can be stepped through when they run in a worker
+thread, for example with `await asyncio.to_thread(sync_agent_call)`. A sync
+call cannot wait for browser approval while it is executing on the same
+asyncio event loop that serves the SSE connection; Rewind fails fast with a
+clear error in that case. Prefer the async OpenAI client in an async runner,
+or move the synchronous call to a worker thread. Sync and async responses both
+publish the response usage used by the token and cost panels.
+
 ## Automated Checks
 
 Run the focused backend contract tests:

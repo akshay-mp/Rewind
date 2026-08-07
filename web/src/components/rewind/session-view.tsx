@@ -13,7 +13,7 @@
  * live elapsed timer + a Progress bar — adapted from thinking-panel.tsx.
  */
 
-import { type ChangeEvent, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ResizablePanel,
   ResizableHandle,
@@ -31,15 +31,25 @@ import {
   CheckCircle2,
   Bot,
   ListTree,
+  Pencil,
+  Wrench,
 } from "lucide-react";
 import { useRewindStore } from "@/lib/rewind/store";
-import { restartSessionFrom } from "@/lib/rewind/session-client";
+import {
+  loadPricingProfiles,
+  loadRegressionCases,
+  persistPricingProfile,
+  persistRegressionCase,
+  restartSessionFrom,
+  runPersistedRegressionCase,
+} from "@/lib/rewind/session-client";
 import { StepPanel } from "./step-panel";
-import type { BreakpointRule, PausedStep, PricingProfile, PromptVersion, SavedSessionCase, StepHistoryEntry, StepUsage } from "@/lib/rewind/types";
+import type { BreakpointRule, LiveSession, PausedStep, PricingProfile, PromptVersion, SavedSessionCase, StepHistoryEntry, StepUsage } from "@/lib/rewind/types";
 import { wordDiff } from "@/lib/rewind/diff";
 
 const SAVED_SESSIONS_STORAGE_KEY = "rewind-regression-cases";
 const PRICING_PROFILE_STORAGE_KEY = "rewind-pricing-profile";
+const MAX_COMPARISON_VARIANTS = 10;
 const DEFAULT_PRICING: PricingProfile = {
   name: "Local model",
   inputPerMillion: 0,
@@ -89,12 +99,31 @@ function decisionBadge(decision: string, reviewVerdict?: "accepted" | "rejected"
   }
 }
 
+function completedSiblingGroups(versions: PromptVersion[]): Array<{ cursor: number; versions: PromptVersion[] }> {
+  const groups = new Map<number, PromptVersion[]>();
+  for (const version of versions) {
+    if (version.status !== "completed") continue;
+    const group = groups.get(version.cursor) ?? [];
+    group.push(version);
+    groups.set(version.cursor, group);
+  }
+  return [...groups.entries()]
+    .filter(([, group]) => group.length >= 2)
+    .sort(([left], [right]) => left - right)
+    .map(([cursor, group]) => ({ cursor, versions: group }));
+}
+
 
 export function SessionView() {
   const { liveSession, clearLiveSession, breakpoints, addBreakpoint, removeBreakpoint } = useRewindStore();
   const [pricing, setPricing] = useState<PricingProfile>(readPricingProfile);
+  const [pricingHydrated, setPricingHydrated] = useState(false);
+  const [pricingDirty, setPricingDirty] = useState(false);
+  const pricingDirtyRef = useRef(false);
+  const initialPricingRef = useRef(pricing);
   const [selectedHistoryIndex, setSelectedHistoryIndex] = useState<number | null>(null);
   const [comparisonIds, setComparisonIds] = useState<string[] | null>(null);
+  const [comparisonCursor, setComparisonCursor] = useState<number | null>(null);
   const [matrixCursor, setMatrixCursor] = useState<number | null>(null);
   const [regressionSaved, setRegressionSaved] = useState(false);
   const [checkpointRestarting, setCheckpointRestarting] = useState<string | null>(null);
@@ -104,8 +133,34 @@ export function SessionView() {
   const [breakpointValue, setBreakpointValue] = useState("");
 
   useEffect(() => {
+    if (!pricingHydrated || !pricingDirty) return;
     window.localStorage.setItem(PRICING_PROFILE_STORAGE_KEY, JSON.stringify(pricing));
-  }, [pricing]);
+    void persistPricingProfile(pricing).catch(() => {
+      // Keep the local cache as the offline fallback.
+    });
+  }, [pricing, pricingDirty, pricingHydrated]);
+
+  useEffect(() => {
+    void loadPricingProfiles()
+      .then((profiles) => {
+        const hasLocalRates = Object.values(initialPricingRef.current).some(
+          (rate) => typeof rate === "number" && rate > 0,
+        );
+        const serverProfile = profiles.find((profile) => Object.values(profile).some(
+          (rate) => typeof rate === "number" && rate > 0,
+        ));
+        // Do not replace durable local rates with a stale zero-rate default
+        // profile left by an earlier first-mount write.
+        if (!pricingDirtyRef.current && profiles[0] && (!hasLocalRates || serverProfile)) {
+          setPricing(serverProfile ?? profiles[0]);
+        }
+        setPricingHydrated(true);
+      })
+      .catch(() => {
+        // The local profile is used until the backend becomes available.
+        setPricingHydrated(true);
+      });
+  }, []);
 
   if (!liveSession) {
     return <SavedSessionLibrary />;
@@ -121,7 +176,7 @@ export function SessionView() {
   const acceptedCount = reviewedSteps.filter((step) => step.reviewVerdict === "accepted").length;
   const rejectedCount = reviewedSteps.filter((step) => step.reviewVerdict === "rejected").length;
   const latency = sessionLatency(liveSession.history);
-  const saveRegressionCase = () => {
+  const saveRegressionCase = async () => {
     const record: SavedSessionCase = {
       id: `rewind-regression-${Date.now()}`,
       createdAt: new Date().toISOString(),
@@ -135,6 +190,11 @@ export function SessionView() {
     };
     const existing = readSavedSessions();
     localStorage.setItem("rewind-regression-cases", JSON.stringify([...existing, record]));
+    try {
+      await persistRegressionCase(record);
+    } catch {
+      // Local storage remains the offline fallback; backend sync can be retried later.
+    }
     setRegressionSaved(true);
   };
   const restartFromCheckpoint = async (checkpoint: { name: string; label: string; cursor: number }) => {
@@ -206,19 +266,18 @@ export function SessionView() {
   const comparisonVersions = comparisonIds === null
     ? []
     : comparisonIds.map((id) => liveSession.promptVersions.find((version) => version.id === id)).filter((version): version is PromptVersion => Boolean(version));
+  const siblingGroups = completedSiblingGroups(liveSession.promptVersions);
   const matrixVersions = matrixCursor === null
     ? []
-    : liveSession.promptVersions.filter((version) => version.cursor === matrixCursor && version.status === "completed").slice(0, 10);
-  const selectComparison = (version: PromptVersion) => {
-    const selected = comparisonIds?.map((id) => liveSession.promptVersions.find((candidate) => candidate.id === id)).filter((item): item is PromptVersion => Boolean(item)) ?? [];
-    const anchor = selected[0];
-    if (anchor && anchor.cursor !== version.cursor) {
-      setComparisonIds([version.id]);
-      return;
-    }
-    const current = comparisonIds?.filter((id) => id !== version.id) ?? [];
-    const next = [...current, version.id].slice(-2);
-    setComparisonIds(next.length > 0 ? next : null);
+    : liveSession.promptVersions.filter((version) => version.cursor === matrixCursor && version.status === "completed");
+  const selectedSiblingGroup = siblingGroups.find((group) => group.cursor === comparisonCursor);
+  const selectedComparisonIds = comparisonIds ?? [];
+  const setComparisonSlot = (slot: 0 | 1, id: string) => {
+    const next = [selectedComparisonIds[0] ?? "", selectedComparisonIds[1] ?? ""];
+    next[slot] = id;
+    if (next[0] === next[1]) next[1 - slot] = "";
+    const selected = next.filter(Boolean);
+    setComparisonIds(selected.length > 0 ? selected : null);
   };
 
   return (
@@ -249,14 +308,18 @@ export function SessionView() {
                 min="0"
                 step="0.01"
                 value={pricing.inputPerMillion}
-                onChange={(event) => setPricing((current) => ({ ...current, inputPerMillion: Math.max(0, Number(event.target.value) || 0) }))}
+                onChange={(event) => {
+                  pricingDirtyRef.current = true;
+                  setPricingDirty(true);
+                  setPricing((current) => ({ ...current, inputPerMillion: Math.max(0, Number(event.target.value) || 0) }));
+                }}
                 className="h-7 w-16 border-slate-600 bg-slate-950/60 px-2 font-mono text-xs text-slate-100"
                 aria-label="Input cost per one million tokens in US dollars"
               />
             </label>
-            <label className="flex items-center gap-1.5 text-slate-400" htmlFor="cached-token-rate">Cache $/1M<Input id="cached-token-rate" type="number" min="0" step="0.01" value={pricing.cachedInputPerMillion} onChange={(event) => setPricing((current) => ({ ...current, cachedInputPerMillion: Math.max(0, Number(event.target.value) || 0) }))} className="h-7 w-16 border-slate-600 bg-slate-950/60 px-2 font-mono text-xs text-slate-100" aria-label="Cached input cost per one million tokens in US dollars" /></label>
-            <label className="flex items-center gap-1.5 text-slate-400" htmlFor="output-token-rate">Out $/1M<Input id="output-token-rate" type="number" min="0" step="0.01" value={pricing.outputPerMillion} onChange={(event) => setPricing((current) => ({ ...current, outputPerMillion: Math.max(0, Number(event.target.value) || 0) }))} className="h-7 w-16 border-slate-600 bg-slate-950/60 px-2 font-mono text-xs text-slate-100" aria-label="Output cost per one million tokens in US dollars" /></label>
-            <label className="flex items-center gap-1.5 text-slate-400" htmlFor="thinking-token-rate">Think $/1M<Input id="thinking-token-rate" type="number" min="0" step="0.01" value={pricing.thinkingPerMillion} onChange={(event) => setPricing((current) => ({ ...current, thinkingPerMillion: Math.max(0, Number(event.target.value) || 0) }))} className="h-7 w-16 border-slate-600 bg-slate-950/60 px-2 font-mono text-xs text-slate-100" aria-label="Thinking cost per one million tokens in US dollars" /></label>
+            <label className="flex items-center gap-1.5 text-slate-400" htmlFor="cached-token-rate">Cache $/1M<Input id="cached-token-rate" type="number" min="0" step="0.01" value={pricing.cachedInputPerMillion} onChange={(event) => { pricingDirtyRef.current = true; setPricingDirty(true); setPricing((current) => ({ ...current, cachedInputPerMillion: Math.max(0, Number(event.target.value) || 0) })); }} className="h-7 w-16 border-slate-600 bg-slate-950/60 px-2 font-mono text-xs text-slate-100" aria-label="Cached input cost per one million tokens in US dollars" /></label>
+            <label className="flex items-center gap-1.5 text-slate-400" htmlFor="output-token-rate">Out $/1M<Input id="output-token-rate" type="number" min="0" step="0.01" value={pricing.outputPerMillion} onChange={(event) => { pricingDirtyRef.current = true; setPricingDirty(true); setPricing((current) => ({ ...current, outputPerMillion: Math.max(0, Number(event.target.value) || 0) })); }} className="h-7 w-16 border-slate-600 bg-slate-950/60 px-2 font-mono text-xs text-slate-100" aria-label="Output cost per one million tokens in US dollars" /></label>
+            <label className="flex items-center gap-1.5 text-slate-400" htmlFor="thinking-token-rate">Think $/1M<Input id="thinking-token-rate" type="number" min="0" step="0.01" value={pricing.thinkingPerMillion} onChange={(event) => { pricingDirtyRef.current = true; setPricingDirty(true); setPricing((current) => ({ ...current, thinkingPerMillion: Math.max(0, Number(event.target.value) || 0) })); }} className="h-7 w-16 border-slate-600 bg-slate-950/60 px-2 font-mono text-xs text-slate-100" aria-label="Thinking cost per one million tokens in US dollars" /></label>
           </div>
         </div>
         <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
@@ -408,14 +471,60 @@ export function SessionView() {
                     <div key={version.id} className="mt-2 rounded-md border border-amber-400/20 bg-amber-500/[0.05] px-3 py-2 text-xs">
                       <div className="flex items-center gap-2">
                         <p className="min-w-0 flex-1 truncate font-medium text-amber-200">Step {version.cursor + 1} · {version.status}</p>
-                        {version.status === "completed" && <button type="button" onClick={() => selectComparison(version)} className="shrink-0 rounded border border-amber-300/30 px-2 py-1 text-[10px] text-amber-100 hover:bg-amber-300/20">Select pair</button>}
                       </div>
                       <p className="mt-1 line-clamp-2 text-slate-400">{JSON.stringify(version.messages)}</p>
                     </div>
                   ))}
-                  {comparisonIds && <button type="button" onClick={() => setComparisonIds(null)} className="mt-2 w-full rounded-md border border-slate-600 px-3 py-2 text-xs text-slate-300">Clear pair selection</button>}
-                  {liveSession.promptVersions.some((version) => liveSession.promptVersions.filter((candidate) => candidate.cursor === version.cursor && candidate.status === "completed").length >= 2) && (
-                    <button type="button" onClick={() => setMatrixCursor(liveSession.promptVersions.find((version) => liveSession.promptVersions.filter((candidate) => candidate.cursor === version.cursor && candidate.status === "completed").length >= 2)?.cursor ?? null)} className="mt-2 w-full rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 hover:bg-cyan-300/20">Open comparison matrix (max 10)</button>
+                  {siblingGroups.length > 0 && (
+                    <div className="mt-3 rounded-md border border-cyan-300/20 bg-cyan-300/[0.04] p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-200">Compare sibling variants</p>
+                      <p className="mt-1 text-[11px] text-slate-400">Choose two completed variants created at the same step.</p>
+                      <select
+                        aria-label="Comparison step"
+                        value={comparisonCursor ?? ""}
+                        onChange={(event) => {
+                          const cursor = event.target.value === "" ? null : Number(event.target.value);
+                          setComparisonCursor(cursor);
+                          setComparisonIds(null);
+                        }}
+                        className="mt-2 h-8 w-full rounded-md border border-slate-600 bg-slate-950/70 px-2 text-xs text-slate-200"
+                      >
+                        <option value="">Choose a step</option>
+                        {siblingGroups.map((group) => (
+                          <option key={group.cursor} value={group.cursor}>
+                            Step {group.cursor + 1} · {group.versions.length} completed variants
+                          </option>
+                        ))}
+                      </select>
+                      {selectedSiblingGroup && (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          <select
+                            aria-label="Left prompt variant"
+                            value={selectedComparisonIds[0] ?? ""}
+                            onChange={(event) => setComparisonSlot(0, event.target.value)}
+                            className="h-8 min-w-0 rounded-md border border-slate-600 bg-slate-950/70 px-2 text-xs text-slate-200"
+                          >
+                            <option value="">Choose left variant</option>
+                            {selectedSiblingGroup.versions.map((version, index) => (
+                              <option key={version.id} value={version.id}>Variant {index + 1} · {version.model || "default model"}</option>
+                            ))}
+                          </select>
+                          <select
+                            aria-label="Right prompt variant"
+                            value={selectedComparisonIds[1] ?? ""}
+                            onChange={(event) => setComparisonSlot(1, event.target.value)}
+                            className="h-8 min-w-0 rounded-md border border-slate-600 bg-slate-950/70 px-2 text-xs text-slate-200"
+                          >
+                            <option value="">Choose right variant</option>
+                            {selectedSiblingGroup.versions.map((version, index) => (
+                              <option key={version.id} value={version.id}>Variant {index + 1} · {version.model || "default model"}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {comparisonIds && <button type="button" onClick={() => setComparisonIds(null)} className="mt-2 w-full rounded-md border border-slate-600 px-3 py-2 text-xs text-slate-300">Clear pair selection</button>}
+                      {selectedSiblingGroup && <button type="button" onClick={() => setMatrixCursor(selectedSiblingGroup.cursor)} className="mt-2 w-full rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 hover:bg-cyan-300/20">Open comparison matrix (max 10)</button>}
+                    </div>
                   )}
                 </div>
               )}
@@ -423,6 +532,7 @@ export function SessionView() {
                 history={liveSession.history}
                 pausedStep={liveSession.pausedStep}
                 checkpoints={liveSession.checkpoints}
+                sessionError={liveSession.status === "errored" ? liveSession.error : null}
                 onSelectHistory={setSelectedHistoryIndex}
               />
             </div>
@@ -480,8 +590,8 @@ export function SessionView() {
                   Start another session from the top bar.
                 </p>
                 <div className="rounded-md border border-slate-700 bg-slate-950/40 px-4 py-3 text-xs text-slate-300">Evaluation summary · {acceptedCount} accepted · {rejectedCount} rejected · {formatTokens(usage.total_tokens)} tokens · {formatCost(estimatedCost)} · {formatDuration(latency.totalMs)} execution <span className="text-slate-500">(LLM {formatDuration(latency.llmMs)} · tools {formatDuration(latency.toolMs)})</span></div>
-                <div className="rounded-md border border-slate-700 bg-slate-950/40 px-4 py-3 text-left text-xs text-slate-300"><p className="font-medium text-slate-100">Reproducibility</p><p className="mt-1">{reproducibilityMetadata(liveSession).models.join(", ") || "No model metadata reported"} · {liveSession.checkpoints.length} checkpoints · {liveSession.promptVersions.length} prompt variants · {reproducibilityMetadata(liveSession).toolSchemas} tool schema{reproducibilityMetadata(liveSession).toolSchemas === 1 ? "" : "s"}</p></div>
-                <div className="flex flex-wrap justify-center gap-2"><button type="button" onClick={saveRegressionCase} className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400">Save regression case</button><button type="button" onClick={exportBundle} className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-300/20">Export redacted bundle</button><button type="button" onClick={clearLiveSession} className="rounded-md border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800">Saved sessions</button></div>
+                <ReproducibilitySummary session={liveSession} />
+                <div className="flex flex-wrap justify-center gap-2"><button type="button" onClick={() => void saveRegressionCase()} className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400">Save regression case</button><button type="button" onClick={exportBundle} className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-300/20">Export redacted bundle</button><button type="button" onClick={clearLiveSession} className="rounded-md border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800">Saved sessions</button></div>
                 {regressionSaved && <p className="text-xs text-emerald-300">Saved locally as a reusable regression case.</p>}
               </div>
             ) : isErrored ? (
@@ -568,6 +678,7 @@ function formatDuration(durationMs: number): string {
 function reproducibilityMetadata(session: { history: StepHistoryEntry[]; checkpoints: Array<{ name: string }>; promptVersions: PromptVersion[]; startedAt: number }) {
   const models = [...new Set(session.history.map((step) => step.payload?.model).filter((model): model is string => Boolean(model)))];
   const toolSchemas = session.history.reduce((count, step) => count + (step.payload?.tools?.length ?? 0), 0);
+  const toolSchemaHashes = [...new Set(session.history.flatMap((step) => (step.payload?.tools ?? []).map((tool) => stableHash(JSON.stringify(tool)))))];
   const parameterSets = [...new Set(session.history.map((step) => JSON.stringify(step.payload?.params ?? {})))].filter((value) => value !== "{}").length;
   const seeds = [...new Set(session.history.map((step) => step.payload?.params?.seed).filter((seed): seed is string | number => typeof seed === "string" || typeof seed === "number"))];
   return {
@@ -576,10 +687,43 @@ function reproducibilityMetadata(session: { history: StepHistoryEntry[]; checkpo
     checkpoints: session.checkpoints.map((checkpoint) => checkpoint.name),
     parameterSets,
     toolSchemas,
+    toolSchemaHashes,
     seeds,
     environment: typeof navigator === "undefined" ? "local client" : navigator.userAgent,
     client: "Rewind local debugger",
+    queueTime: "unavailable",
+    timeToFirstToken: "unavailable",
+    generationTime: "unavailable",
+    providerRevision: "unavailable",
   };
+}
+
+function ReproducibilitySummary({ session }: { session: LiveSession }) {
+  const metadata = reproducibilityMetadata(session);
+  return (
+    <div className="max-w-2xl rounded-md border border-slate-700 bg-slate-950/40 px-4 py-3 text-left text-xs text-slate-300">
+      <p className="font-medium text-slate-100">Reproducibility</p>
+      <p className="mt-1">{metadata.models.join(", ") || "No model metadata reported"} · {session.checkpoints.length} checkpoints · {session.promptVersions.length} prompt variants · {metadata.toolSchemas} tool schema{metadata.toolSchemas === 1 ? "" : "s"}</p>
+      <p className="mt-1 text-slate-500">Parameters {metadata.parameterSets || "none"} · Seeds {metadata.seeds.join(", ") || "not reported"} · Provider revision unavailable · Queue/TTFT/generation unavailable from current provider events.</p>
+      {metadata.toolSchemaHashes.length > 0 && <p className="mt-1 truncate font-mono text-[10px] text-slate-500">Tool hashes {metadata.toolSchemaHashes.join(" ")}</p>}
+    </div>
+  );
+}
+
+function stableHash(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function mergeSavedCases(localRecords: SavedSessionCase[], backendRecords: SavedSessionCase[]): SavedSessionCase[] {
+  const byId = new Map<string, SavedSessionCase>();
+  for (const record of localRecords) byId.set(record.id, record);
+  for (const record of backendRecords) byId.set(record.id, { ...byId.get(record.id), ...record });
+  return [...byId.values()].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
 }
 
 function readSavedSessions(): SavedSessionCase[] {
@@ -623,26 +767,72 @@ function ExecutionGraph({
   history,
   pausedStep,
   checkpoints,
+  sessionError,
   onSelectHistory,
 }: {
   history: StepHistoryEntry[];
   pausedStep: PausedStep | null;
   checkpoints: Array<{ cursor: number; label: string }>;
+  sessionError: string | null;
   onSelectHistory: (index: number) => void;
 }) {
+  const [filter, setFilter] = useState<"all" | "llm" | "tool" | "error" | "edited" | "checkpoint">("all");
   const nodes = [...history.map((step, index) => ({ step, index, current: false })), ...(pausedStep ? [{ step: pausedStep, index: history.length, current: true }] : [])];
-  if (nodes.length === 0) return null;
+  const decorated = nodes.map((node) => {
+    const checkpoint = checkpoints.find((item) => item.cursor === node.step.cursor);
+    const decision = "decision" in node.step ? node.step.decision : "";
+    const edited = decision === "edit";
+    const error = node.step.payload?.status === "error";
+    return { ...node, checkpoint, edited, error };
+  });
+  const visible = decorated.filter((node) => {
+    if (filter === "all") return true;
+    if (filter === "checkpoint") return Boolean(node.checkpoint);
+    if (filter === "edited") return node.edited;
+    if (filter === "error") return node.error;
+    return node.step.kind === filter;
+  });
+  const errorNode = sessionError
+    ? { index: history.length + (pausedStep ? 1 : 0), message: sessionError }
+    : null;
+  const visibleErrorNode = errorNode && (filter === "all" || filter === "error");
+  if (nodes.length === 0 && !errorNode) return null;
+  const filters: Array<{ id: typeof filter; label: string }> = [
+    { id: "all", label: "All" },
+    { id: "llm", label: "LLM" },
+    { id: "tool", label: "Tool" },
+    { id: "checkpoint", label: "Checkpoint" },
+    { id: "edited", label: "Edited" },
+    { id: "error", label: "Error" },
+  ];
   return (
     <div className="mt-5 border-t border-slate-700/60 pt-4">
-      <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Run graph</p>
+      <div className="flex items-center gap-2 px-1">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Run graph</p>
+        <span className="ml-auto text-[10px] text-slate-500">{visible.length}/{nodes.length}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5 px-1">
+        {filters.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setFilter(item.id)}
+            className={`rounded border px-2 py-1 text-[10px] ${filter === item.id ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-100" : "border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-500"}`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
       <div className="mt-3 space-y-1.5 px-1">
-        {nodes.map(({ step, index, current }) => {
-          const checkpoint = checkpoints.find((item) => item.cursor === step.cursor);
+        {visible.map(({ step, index, current, checkpoint, edited, error }) => {
           return (
             <div key={`${step.cursor}-${index}`}>
               <button type="button" onClick={() => !current && onSelectHistory(index)} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left text-[11px] ${current ? "border-cyan-300/50 bg-cyan-400/[0.08] text-cyan-100" : "border-slate-700 bg-slate-900/70 text-slate-300 hover:border-slate-500"}`}>
                 <span className={`size-2 rounded-full ${kindTint(step.kind)}`} />
                 <span className="font-mono text-slate-500">{index + 1}</span>
+                {step.kind === "tool" && <Wrench className="size-3 text-emerald-300" />}
+                {edited && <Pencil className="size-3 text-violet-300" />}
+                {error && <AlertCircle className="size-3 text-rose-300" />}
                 <span className="truncate">{step.kind === "tool" ? step.payload?.name ?? "tool call" : step.payload?.model ?? "LLM call"}</span>
                 {current && <span className="ml-auto text-cyan-300">current</span>}
               </button>
@@ -650,6 +840,17 @@ function ExecutionGraph({
             </div>
           );
         })}
+        {visibleErrorNode && (
+          <div className="rounded-md border border-rose-400/30 bg-rose-500/[0.06] px-2.5 py-2 text-[11px] text-rose-100">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="size-3 text-rose-300" />
+              <span className="font-mono text-rose-300">{errorNode.index + 1}</span>
+              <span className="truncate">Session error</span>
+            </div>
+            <p className="mt-1 line-clamp-2 text-rose-200/80">{errorNode.message}</p>
+          </div>
+        )}
+        {visible.length === 0 && !visibleErrorNode && <p className="rounded-md border border-slate-800 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-500">No graph nodes match this filter.</p>}
       </div>
     </div>
   );
@@ -659,22 +860,65 @@ function SavedSessionLibrary() {
   const [records, setRecords] = useState<SavedSessionCase[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<SavedSessionCase | null>(null);
+  const [backendAvailable, setBackendAvailable] = useState(true);
+  const [busyCaseId, setBusyCaseId] = useState<string | null>(null);
   const openSavedSessionCase = useRewindStore((state) => state.openSavedSessionCase);
 
-  useEffect(() => setRecords(readSavedSessions()), []);
+  useEffect(() => {
+    const localRecords = readSavedSessions();
+    setRecords(localRecords);
+    void loadRegressionCases()
+      .then((backendRecords) => {
+        const merged = mergeSavedCases(localRecords, backendRecords);
+        setRecords(merged);
+        window.localStorage.setItem(SAVED_SESSIONS_STORAGE_KEY, JSON.stringify(merged));
+        setBackendAvailable(true);
+      })
+      .catch(() => setBackendAvailable(false));
+  }, []);
   const visibleRecords = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return records;
     return records.filter((record) => [record.traceId, record.runnerRef, record.createdAt].join(" ").toLowerCase().includes(needle));
   }, [query, records]);
-  const removeRecord = (id: string) => {
+  const removeRecord = async (id: string) => {
+    setBusyCaseId(id);
+    let canRemoveLocal = true;
+    try {
+      const response = await fetch(`/api/v1/regression-cases/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!response.ok) {
+        canRemoveLocal = response.status === 404;
+        if (!canRemoveLocal) setBackendAvailable(true);
+      }
+    } catch {
+      setBackendAvailable(false);
+    } finally {
+      setBusyCaseId(null);
+    }
+    if (!canRemoveLocal) return;
     const next = records.filter((record) => record.id !== id);
     window.localStorage.setItem(SAVED_SESSIONS_STORAGE_KEY, JSON.stringify(next));
     setRecords(next);
     if (selected?.id === id) setSelected(null);
   };
-  const runSavedChecks = (record: SavedSessionCase) => {
-    const regression = evaluateSavedCase(record);
+  const runSavedChecks = async (record: SavedSessionCase) => {
+    setBusyCaseId(record.id);
+    let regression: NonNullable<SavedSessionCase["regression"]>;
+    try {
+      const result = await runPersistedRegressionCase(record.id);
+      regression = {
+        passed: result.passed,
+        checkedAt: new Date().toISOString(),
+        total: 1,
+        failures: result.passed ? [] : [result.detail ?? "Regression failed."],
+      };
+      setBackendAvailable(true);
+    } catch {
+      regression = evaluateSavedCase(record);
+      setBackendAvailable(false);
+    } finally {
+      setBusyCaseId(null);
+    }
     const next = records.map((candidate) => candidate.id === record.id ? { ...candidate, regression } : candidate);
     window.localStorage.setItem(SAVED_SESSIONS_STORAGE_KEY, JSON.stringify(next));
     setRecords(next);
@@ -711,12 +955,12 @@ function SavedSessionLibrary() {
     <div className="h-full overflow-auto bg-[#080d17] p-5">
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-700/60 pb-4">
-          <div><p className="text-base font-semibold text-slate-100">Saved sessions</p><p className="mt-1 text-xs text-slate-400">Local regression cases and portable run records.</p></div>
+          <div><p className="text-base font-semibold text-slate-100">Saved sessions</p><p className="mt-1 text-xs text-slate-400">Backend regression cases with local snapshot fallback. {backendAvailable ? "Backend sync active." : "Using local fallback."}</p></div>
           <label className="ml-auto cursor-pointer rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-xs font-medium text-cyan-100 hover:bg-cyan-300/20">Import bundle<input type="file" accept="application/json,.json" className="hidden" onChange={importBundle} /></label>
           <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search trace, runner, or date" className="h-8 w-64 border-slate-600 bg-slate-950/60 text-xs" />
         </div>
         {visibleRecords.length === 0 ? <p className="py-12 text-center text-sm text-slate-500">No saved regression cases yet. Complete a session, then save it from the summary.</p> : <div className="mt-4 grid gap-3 md:grid-cols-2">{visibleRecords.map((record) => <button key={record.id} type="button" onClick={() => setSelected(record)} className={`rounded-md border p-4 text-left text-xs ${selected?.id === record.id ? "border-cyan-300/60 bg-cyan-400/[0.08]" : "border-slate-700 bg-slate-900/60 hover:border-slate-500"}`}><p className="font-mono text-slate-200">{record.traceId.slice(0, 12)}</p><p className="mt-1 text-slate-400">{record.runnerRef} · {new Date(record.createdAt).toLocaleString()}</p><p className="mt-3 text-slate-300">{record.steps.length} steps · {record.summary?.accepted ?? 0} accepted · {record.summary?.rejected ?? 0} rejected</p></button>)}</div>}
-        {selected && <div className="mt-5 rounded-md border border-slate-700 bg-slate-950/50 p-4 text-xs text-slate-300"><div className="flex items-center gap-2"><p className="font-medium text-slate-100">Saved run details</p><button type="button" onClick={() => removeRecord(selected.id)} className="ml-auto text-rose-300 hover:text-rose-200">Delete</button></div><p className="mt-2">{selected.steps.length} steps · {formatTokens(selected.summary?.totalTokens ?? 0)} tokens · {formatDuration(selected.summary?.totalLatencyMs ?? 0)} execution</p><p className="mt-1 text-slate-400">{selected.checkpoints?.length ?? 0} checkpoints · {selected.promptVersions.length} prompt variants</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => runSavedChecks(selected)} className="rounded-md bg-emerald-500 px-3 py-2 font-medium text-emerald-950 hover:bg-emerald-400">Run saved checks</button><button type="button" onClick={() => openSavedSessionCase(selected)} className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 font-medium text-cyan-100 hover:bg-cyan-300/20">Open saved trace</button></div>{selected.regression && <p className={`mt-3 rounded-md px-3 py-2 ${selected.regression.passed ? "bg-emerald-500/10 text-emerald-300" : "bg-rose-500/10 text-rose-200"}`}>{selected.regression.passed ? `All ${selected.regression.total} saved checks passed.` : `${selected.regression.failures.length} of ${selected.regression.total} checks failed: ${selected.regression.failures.join(" ")}`}</p>}</div>}
+        {selected && <div className="mt-5 rounded-md border border-slate-700 bg-slate-950/50 p-4 text-xs text-slate-300"><div className="flex items-center gap-2"><p className="font-medium text-slate-100">Saved run details</p><button type="button" disabled={busyCaseId === selected.id} onClick={() => void removeRecord(selected.id)} className="ml-auto text-rose-300 hover:text-rose-200 disabled:opacity-50">Delete</button></div><p className="mt-2">{selected.steps.length} steps · {formatTokens(selected.summary?.totalTokens ?? 0)} tokens · {formatDuration(selected.summary?.totalLatencyMs ?? 0)} execution</p><p className="mt-1 text-slate-400">{selected.checkpoints?.length ?? 0} checkpoints · {selected.promptVersions.length} prompt variants</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={busyCaseId === selected.id} onClick={() => void runSavedChecks(selected)} className="rounded-md bg-emerald-500 px-3 py-2 font-medium text-emerald-950 hover:bg-emerald-400 disabled:opacity-60">{busyCaseId === selected.id ? "Running..." : "Run frozen checks"}</button><button type="button" onClick={() => openSavedSessionCase(selected)} className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 font-medium text-cyan-100 hover:bg-cyan-300/20">Open saved trace</button></div>{selected.regression && <p className={`mt-3 rounded-md px-3 py-2 ${selected.regression.passed ? "bg-emerald-500/10 text-emerald-300" : "bg-rose-500/10 text-rose-200"}`}>{selected.regression.passed ? `Frozen verification passed at ${new Date(selected.regression.checkedAt).toLocaleString()}.` : `${selected.regression.failures.length || 1} check failed: ${selected.regression.failures.join(" ")}`}</p>}</div>}
       </div>
     </div>
   );
@@ -724,10 +968,14 @@ function SavedSessionLibrary() {
 
 function redactBundle(value: unknown, key = ""): unknown {
   // Usage metrics such as input_tokens are safe and essential to exported traces.
-  if (/^(?:api[_-]?key|authorization|secret|password|access[_-]?token|refresh[_-]?token|bearer|email|phone|ssn|social[_-]?security(?:[_-]?number)?)$/i.test(key)) return "[REDACTED]";
+  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  const metricKey = /^(?:cached_input|completion|final|input|output|prompt|thinking|total)_tokens$/.test(normalizedKey)
+    || normalizedKey === "token_count" || normalizedKey === "tokens";
+  if (!metricKey && /^(?:api[_-]?key|x[_-]?api[_-]?key|authorization|secret|password|access[_-]?token|refresh[_-]?token|bearer|bearer[_-]?token|client[_-]?secret|session[_-]?token|token|email|phone|ssn|social[_-]?security(?:[_-]?number)?)$/i.test(key)) return "[REDACTED]";
   if (typeof value === "string") {
     return value
       .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[REDACTED]")
+      .replace(/(?:api[_-]?key|x-api-key)\s*[:=]\s*["']?[A-Za-z0-9._~+/=-]+/gi, "api_key=[REDACTED]")
       .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]")
       .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED_EMAIL]")
       .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[REDACTED_SSN]");
@@ -815,12 +1063,12 @@ function DiffText({ left, right, side }: { left: string; right: string; side: "l
 }
 
 function PromptVersionMatrix({ versions, pricing, onClose }: { versions: PromptVersion[]; pricing: PricingProfile; onClose: () => void }) {
-  const capped = versions.slice(0, 10);
+  const capped = versions.slice(0, MAX_COMPARISON_VARIANTS);
   const baseline = capped[0];
   if (!baseline) return null;
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden p-5">
-      <div className="mb-4 flex items-center gap-3"><div><p className="text-base font-semibold">Prompt comparison matrix</p><p className="text-xs text-slate-400">Step {baseline.cursor + 1} · {capped.length} completed variants · capped at 10</p></div><button type="button" onClick={onClose} className="ml-auto text-xs text-cyan-200 hover:text-white">Back to step</button></div>
+      <div className="mb-4 flex items-center gap-3"><div><p className="text-base font-semibold">Prompt comparison matrix</p><p className="text-xs text-slate-400">Step {baseline.cursor + 1} · showing {capped.length} of {versions.length} completed variants · capped at {MAX_COMPARISON_VARIANTS}</p></div><button type="button" onClick={onClose} className="ml-auto text-xs text-cyan-200 hover:text-white">Back to step</button></div>
       <div className="min-h-0 flex-1 overflow-auto rounded-md border border-slate-700"><table className="w-full min-w-[680px] text-left text-xs"><thead><tr className="border-b border-slate-700 bg-slate-900/70"><th className="px-3 py-2 text-slate-500">Metric</th>{capped.map((version, index) => <th key={version.id} className="px-3 py-2 text-slate-200">{index === 0 ? "Original" : `Variant ${index}`}</th>)}</tr></thead><tbody>{["model", "parameters", "tokens", "cost", "latency", "assertions", "evaluators", "review"].map((metric) => <tr key={metric} className="border-b border-slate-800"><th className="px-3 py-2 font-medium text-slate-400">{metric}</th>{capped.map((version) => <td key={version.id} className="max-w-56 px-3 py-2 align-top font-mono text-slate-300">{metric === "model" ? version.model || "default" : metric === "parameters" ? JSON.stringify(version.parameters ?? {}) : metric === "tokens" ? formatTokens(version.usage?.total_tokens ?? 0) : metric === "cost" ? formatCost(usageCost(version.usage ?? emptyUsage(), version.pricing ?? pricing)) : metric === "latency" ? formatDuration(version.latencyMs ?? completedLatency(version)) : metric === "assertions" ? (version.assertionResult?.passed ? "passed" : version.assertionResult ? "failed" : "not run") : metric === "evaluators" ? Object.entries(version.evaluatorResults ?? {}).map(([name, result]) => `${name}: ${result.passed ? "passed" : "failed"}`).join(" · ") || "not run" : version.reviewVerdict ?? "unreviewed"}</td>)}</tr>)}</tbody></table></div>
     </div>
   );

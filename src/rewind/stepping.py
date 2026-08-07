@@ -721,6 +721,7 @@ def complete_step_sync(
     session: ReplaySession,
     step: Step,
     result: str,
+    usage: dict[str, int] | None = None,
 ) -> Decision | None:
     """Sync counterpart for a worker-thread tool result.
 
@@ -734,7 +735,7 @@ def complete_step_sync(
     complete_fn = getattr(channel, "complete_sync", None)
     if complete_fn is None:
         return None
-    ret = complete_fn(step, result)
+    ret = complete_fn(step, result, usage)
     return ret if isinstance(ret, Decision) else None
 
 

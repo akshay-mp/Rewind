@@ -268,11 +268,15 @@ class MessageFragment:
 
     ``text`` is verbatim (preserving the whitespace between tokens). The UI
     wraps ``added`` / ``removed`` fragments in ``<ins>`` / ``<del>`` tags
-    or renders them as row-by-row strikes and inserts.
+    or renders them as row-by-row strikes and inserts. Replacements use the
+    structured ``removed`` / ``added`` fields so either side can contain any
+    character, including the arrow used in the UI legend.
     """
 
     text: str
     kind: str  # "equal" | "added" | "removed" | "changed"
+    removed: str | None = None
+    added: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,7 +363,10 @@ def _coalesce_changed(
             # Pair them: render as one "changed" fragment carrying both texts.
             fragments.append(
                 MessageFragment(
-                    text=f"{text}\u2192{raw[i + 1][1]}", kind=_CHANGED
+                    text="",
+                    kind=_CHANGED,
+                    removed=text,
+                    added=raw[i + 1][1],
                 )
             )
             i += 2

@@ -134,6 +134,9 @@ def _seed_trace_with_two_branches(store: TraceStore) -> tuple[str, UUID, UUID]:
 
 def _seed_trace_with_message_spans(
     store: TraceStore,
+    *,
+    left_content: str = "alpha beta",
+    right_content: str = "alpha gamma",
 ) -> tuple[UUID, UUID]:
     """Seed a trace with two LLM spans carrying ``gen_ai.response`` payloads."""
     trace_id = "m" * 24 + "00000001"
@@ -152,7 +155,7 @@ def _seed_trace_with_message_spans(
                 "choices": [
                     {
                         "index": 0,
-                        "message": {"role": "assistant", "content": "alpha beta"},
+                        "message": {"role": "assistant", "content": left_content},
                         "finish_reason": "stop",
                     }
                 ],
@@ -173,7 +176,7 @@ def _seed_trace_with_message_spans(
                 "choices": [
                     {
                         "index": 0,
-                        "message": {"role": "assistant", "content": "alpha gamma"},
+                        "message": {"role": "assistant", "content": right_content},
                         "finish_reason": "stop",
                     }
                 ],
@@ -302,6 +305,27 @@ def test_message_diff_endpoint_returns_token_diff(
     assert "changed" in kinds
     assert body["added_tokens"] == 1
     assert body["removed_tokens"] == 1
+
+
+def test_message_diff_endpoint_preserves_arrows_in_changed_sides(
+    client: TestClient, store: TraceStore
+) -> None:
+    """The wire model carries arrow-containing replacements without splitting."""
+    left_rid, right_rid = _seed_trace_with_message_spans(
+        store,
+        left_content="prefix old→left suffix",
+        right_content="prefix new→right suffix",
+    )
+    resp = client.get(
+        f"/api/v1/spans/{left_rid}/message-diff",
+        params={"other": str(right_rid)},
+    )
+
+    assert resp.status_code == 200
+    changed = [fragment for fragment in resp.json()["fragments"] if fragment["kind"] == "changed"]
+    assert len(changed) == 1
+    assert changed[0]["removed"] == "old→left"
+    assert changed[0]["added"] == "new→right"
 
 
 def test_message_diff_endpoint_identical_for_same_span(

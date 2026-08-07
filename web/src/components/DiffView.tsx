@@ -276,7 +276,7 @@ function MessageDiffBlock({
       </p>
       <p className="message-diff-text">
         {diff.fragments.map((f, i) => (
-          <FragmentSpan key={i} text={f.text} kind={f.kind} />
+          <FragmentSpan key={i} fragment={f} />
         ))}
       </p>
     </div>
@@ -284,12 +284,11 @@ function MessageDiffBlock({
 }
 
 function FragmentSpan({
-  text,
-  kind,
+  fragment,
 }: {
-  text: string;
-  kind: MessageDiffView["fragments"][number]["kind"];
+  fragment: MessageDiffView["fragments"][number];
 }): JSX.Element {
+  const { text, kind } = fragment;
   if (kind === "equal") {
     return <span>{text}</span>;
   }
@@ -303,8 +302,8 @@ function FragmentSpan({
   // are visible inline.
   return (
     <span className="message-diff__changed">
-      <del>{text.split("\u2192")[0]}</del>
-      <ins>{text.split("\u2192")[1] ?? text}</ins>
+      <del>{fragment.removed}</del>
+      <ins>{fragment.added}</ins>
     </span>
   );
 }

@@ -243,6 +243,7 @@ class SSEApprovalChannel:
         except RuntimeError:
             current = None
         if current is loop:
+            coroutine.close()
             raise RuntimeError(
                 "a synchronous Rewind tool cannot block the server event loop; "
                 "run the tool in a worker thread or expose it as an async tool"
@@ -404,9 +405,14 @@ class SSEApprovalChannel:
             raise SteppingStopped(step)
         return decision
 
-    def complete_sync(self, step: Step, result: str) -> Decision:
+    def complete_sync(
+        self,
+        step: Step,
+        result: str,
+        usage: dict[str, int] | None = None,
+    ) -> Decision:
         """Thread-safe post-tool review used by ``@rewind.tool`` workers."""
-        return self._run_from_thread(self.complete(step, result))
+        return self._run_from_thread(self.complete(step, result, usage))
 
     def drain_events(self) -> list[dict[str, Any]]:
         """Non-blocking drain of any queued lifecycle events.

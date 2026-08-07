@@ -245,7 +245,12 @@ class TestRunnerMechanics:
         assert (await channel.next_event())["type"] == "dispatching"
 
         post_call = asyncio.create_task(
-            asyncio.to_thread(channel.complete_sync, step, '{"result": "ok"}')
+            asyncio.to_thread(
+                channel.complete_sync,
+                step,
+                '{"result": "ok"}',
+                {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10},
+            )
         )
         completed = await channel.next_event()
         assert completed == {
@@ -253,10 +258,24 @@ class TestRunnerMechanics:
             "cursor": 0,
             "kind": "tool",
             "result": '{"result": "ok"}',
+            "usage": {"input_tokens": 7, "output_tokens": 3, "total_tokens": 10},
         }
         channel.decide(Decision(kind=DecisionKind.APPROVE))
         assert (await post_call).kind is DecisionKind.APPROVE
         assert (await channel.next_event())["type"] == "resumed"
+
+    async def test_sync_gate_fails_fast_on_server_event_loop(self) -> None:
+        """A sync call must move to a worker before browser approval can block."""
+        channel = SSEApprovalChannel()
+        channel.bind_loop(asyncio.get_running_loop())
+        step = Step(
+            kind=StepKind.LLM,
+            payload={"model": "stub", "messages": []},
+            cursor=0,
+        )
+
+        with pytest.raises(RuntimeError, match="cannot block the server event loop"):
+            channel.submit_sync(step)
 
     async def test_approve_drives_session_to_done(
         self, store: TraceStore
@@ -486,7 +505,8 @@ class TestSSEApprovalChannel:
         await asyncio.sleep(0)  # let submitter reach the await
         assert (await ch.next_event())["type"] == "paused"
         replay = ch.replay_events_if_idle()
-        assert replay and replay[0]["type"] == "paused"
+        assert replay
+        assert replay[0]["type"] == "paused"
         ch.decide(Decision(kind=DecisionKind.APPROVE))
         decision = await task
         assert decision.kind is DecisionKind.APPROVE

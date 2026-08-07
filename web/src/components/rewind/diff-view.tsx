@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRewindStore } from "@/lib/rewind/store";
 import type { DiffToken, SpanDiffPair } from "@/lib/rewind/types";
+import type { MessageFragmentView } from "@/types";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -170,7 +171,7 @@ export function MessageDiffPanel({
   left,
   right,
 }: {
-  fragments: { text: string; kind: string }[];
+  fragments: MessageFragmentView[];
   left: string;
   right: string;
 }) {
@@ -192,7 +193,7 @@ export function MessageDiffPanel({
             ) : (
               fragments.map((f, i) => {
                 if (f.kind === "equal") return <span key={i}>{f.text}</span>;
-                if (f.kind === "add")
+                if (f.kind === "added")
                   return (
                     <span
                       key={i}
@@ -201,6 +202,18 @@ export function MessageDiffPanel({
                       {f.text}
                     </span>
                   );
+                if (f.kind === "changed") {
+                  return (
+                    <span key={i}>
+                      <span className="bg-rose-200/70 text-rose-950 line-through dark:bg-rose-500/30 dark:text-rose-100">
+                        {f.removed}
+                      </span>
+                      <span className="bg-emerald-200/70 text-emerald-950 dark:bg-emerald-500/30 dark:text-emerald-100">
+                        {f.added}
+                      </span>
+                    </span>
+                  );
+                }
                 return (
                   <span
                     key={i}
