@@ -26,6 +26,14 @@ _PRIVATE_PLANNING_FILES = {
     "docs/debugger-roadmap.md",
     "docs/implementation_plan.md",
 }
+_EXCLUDED_ARCHIVE_PARTS = {
+    ".pnpm-store",
+    "artifacts",
+    "node_modules",
+    ".next",
+    "__pycache__",
+}
+_EXCLUDED_ARCHIVE_SUFFIXES = {".pyc", ".pyo", ".pyd", ".tsbuildinfo"}
 
 
 def _run(command: list[str], *, cwd: Path = REPO_ROOT) -> None:
@@ -41,6 +49,14 @@ def _archive_has_private_planning_file(name: str) -> bool:
     return any(name == path or name.endswith(f"/{path}") for path in _PRIVATE_PLANNING_FILES)
 
 
+def _archive_has_excluded_local_path(name: str) -> bool:
+    path = Path(name)
+    return (
+        any(part in _EXCLUDED_ARCHIVE_PARTS for part in path.parts)
+        or path.suffix in _EXCLUDED_ARCHIVE_SUFFIXES
+    )
+
+
 def _wheel_members(wheel: Path) -> list[str]:
     with zipfile.ZipFile(wheel) as archive:
         members = archive.namelist()
@@ -51,6 +67,9 @@ def _wheel_members(wheel: Path) -> list[str]:
     )
     assert not any(_archive_has_private_planning_file(name) for name in members), (
         "wheel contains a private planning file"
+    )
+    assert not any(_archive_has_excluded_local_path(name) for name in members), (
+        "wheel contains an excluded local/generated path"
     )
     return members
 
@@ -67,6 +86,9 @@ def _sdist_members(sdist: Path) -> list[str]:
     )
     assert not any(_archive_has_private_planning_file(name) for name in members), (
         "sdist contains a private planning file"
+    )
+    assert not any(_archive_has_excluded_local_path(name) for name in members), (
+        "sdist contains an excluded local/generated path"
     )
     return members
 

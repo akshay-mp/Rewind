@@ -119,6 +119,18 @@ include = [
 exclude = [
     "docs/debugger-roadmap.md",
     "docs/implementation_plan.md",
+    ".pnpm-store",
+    ".pnpm-store/**",
+    "artifacts",
+    "artifacts/**",
+    "**/__pycache__",
+    "**/__pycache__/**",
+    "**/*.py[cod]",
+    "**/*.tsbuildinfo",
+    "**/node_modules",
+    "**/node_modules/**",
+    "**/.next",
+    "**/.next/**",
 ]
 
 [tool.hatch.build.targets.sdist.force-include]
