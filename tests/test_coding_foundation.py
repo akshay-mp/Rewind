@@ -19,7 +19,7 @@ from rewind.storage import SCHEMA_VERSION, TraceStore
 
 def test_schema_domain_crud_and_event_sequence(tmp_path: Path) -> None:
     store = TraceStore(tmp_path / "coding.db")
-    assert SCHEMA_VERSION == 11
+    assert SCHEMA_VERSION == 12
     profile = GoalProfile(name="goal", checks=(CheckSpec("required_text", "ok"),))
     run = CodingRun(workspace_path=str(tmp_path), goal_profile_id=profile.profile_id)
     store.upsert_goal_profile(profile)

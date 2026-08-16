@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -33,6 +34,14 @@ __all__ = ["InterceptError", "extract_signature", "patch"]
 
 class InterceptError(RuntimeError):
     """Raised when the interceptor cannot satisfy a frozen-replay contract."""
+
+
+_PATCH_LOCK = Lock()
+_PATCH_DEPTH = 0
+_PATCHED_SYNC_CLASS: Any = None
+_PATCHED_ASYNC_CLASS: Any = None
+_ORIGINAL_SYNC_CREATE: Any = None
+_ORIGINAL_ASYNC_CREATE: Any = None
 
 
 # ----------------------------------------------------------------------
@@ -262,39 +271,61 @@ def patch() -> Iterator[None]:
     CompletionsCls = completions_mod.Completions
     AsyncCompletionsCls = getattr(completions_mod, "AsyncCompletions", None)
 
-    if getattr(CompletionsCls.create, "__rewind_patched__", False):
-        yield
-        return
+    global _PATCH_DEPTH, _PATCHED_SYNC_CLASS, _PATCHED_ASYNC_CLASS
+    global _ORIGINAL_SYNC_CREATE, _ORIGINAL_ASYNC_CREATE
 
-    orig_sync_create = CompletionsCls.create
-    orig_async_create = (
-        AsyncCompletionsCls.create if AsyncCompletionsCls is not None else None
-    )
+    with _PATCH_LOCK:
+        if _PATCH_DEPTH:
+            _PATCH_DEPTH += 1
+        else:
+            orig_sync_create = CompletionsCls.create
+            orig_async_create = (
+                AsyncCompletionsCls.create if AsyncCompletionsCls is not None else None
+            )
 
-    def patched_sync_create(self: Any, *args: Any, **kwargs: Any) -> Any:
-        session = active_session()
-        if session is None:
-            return orig_sync_create(self, *args, **kwargs)
-        return _dispatch_sync(self, session, orig_sync_create, args, kwargs)
+            def patched_sync_create(self: Any, *args: Any, **kwargs: Any) -> Any:
+                session = active_session()
+                if session is None:
+                    return orig_sync_create(self, *args, **kwargs)
+                return _dispatch_sync(self, session, orig_sync_create, args, kwargs)
 
-    async def patched_async_create(self: Any, *args: Any, **kwargs: Any) -> Any:
-        session = active_session()
-        if session is None:
-            return await orig_async_create(self, *args, **kwargs)  # type: ignore[misc]
-        return await _dispatch_async(self, session, orig_async_create, args, kwargs)
+            async def patched_async_create(self: Any, *args: Any, **kwargs: Any) -> Any:
+                session = active_session()
+                if session is None:
+                    return await orig_async_create(self, *args, **kwargs)  # type: ignore[misc]
+                return await _dispatch_async(self, session, orig_async_create, args, kwargs)
 
-    patched_sync_create.__rewind_patched__ = True  # type: ignore[attr-defined]
-    patched_async_create.__rewind_patched__ = True  # type: ignore[attr-defined]
-    CompletionsCls.create = patched_sync_create  # type: ignore[method-assign]
-    if AsyncCompletionsCls is not None:
-        AsyncCompletionsCls.create = patched_async_create
+            patched_sync_create.__rewind_patched__ = True  # type: ignore[attr-defined]
+            patched_async_create.__rewind_patched__ = True  # type: ignore[attr-defined]
+            try:
+                CompletionsCls.create = patched_sync_create  # type: ignore[method-assign]
+                if AsyncCompletionsCls is not None:
+                    AsyncCompletionsCls.create = patched_async_create
+            except Exception:
+                CompletionsCls.create = orig_sync_create  # type: ignore[method-assign]
+                if AsyncCompletionsCls is not None and orig_async_create is not None:
+                    AsyncCompletionsCls.create = orig_async_create
+                raise
+
+            _PATCHED_SYNC_CLASS = CompletionsCls
+            _PATCHED_ASYNC_CLASS = AsyncCompletionsCls
+            _ORIGINAL_SYNC_CREATE = orig_sync_create
+            _ORIGINAL_ASYNC_CREATE = orig_async_create
+            _PATCH_DEPTH = 1
 
     try:
         yield
     finally:
-        CompletionsCls.create = orig_sync_create  # type: ignore[method-assign]
-        if AsyncCompletionsCls is not None and orig_async_create is not None:
-            AsyncCompletionsCls.create = orig_async_create
+        with _PATCH_LOCK:
+            _PATCH_DEPTH -= 1
+            if _PATCH_DEPTH == 0:
+                _PATCHED_SYNC_CLASS.create = _ORIGINAL_SYNC_CREATE
+                if _PATCHED_ASYNC_CLASS is not None and _ORIGINAL_ASYNC_CREATE is not None:
+                    _PATCHED_ASYNC_CLASS.create = _ORIGINAL_ASYNC_CREATE
+                _PATCHED_SYNC_CLASS = None
+                _PATCHED_ASYNC_CLASS = None
+                _ORIGINAL_SYNC_CREATE = None
+                _ORIGINAL_ASYNC_CREATE = None
 
 
 # ----------------------------------------------------------------------

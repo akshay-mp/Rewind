@@ -234,6 +234,9 @@ class InteractiveSession:
     trace_id: str
     branch_id: str
     runner_ref: str
+    agent_ref: str | None = None
+    input_payload: dict[str, Any] | None = None
+    result_payload: Any = None
     status: str = "running"
     error_message: str | None = None
     created_at: str = ""

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -17,10 +18,10 @@ from typing import Any
 
 import openai
 
-from rewind import checkpoint, tool
+from rewind import Rewind, RewindContext, checkpoint, tool
 from rewind.openai_intercept import patch
-from rewind.replay import ReplaySession
-from rewind.stepping_api import register_runner
+
+debugger = Rewind(title="Deep Research")
 
 
 def load_local_env() -> None:
@@ -110,17 +111,12 @@ def _fill(template: str, query: str, outputs: dict[int, str]) -> str:
 
 def _report_step(index: int, name: str, output: str) -> None:
     """Keep optional console diagnostics from terminating an agent run."""
-    try:
+    with contextlib.suppress(BrokenPipeError):
         print(
             f"[runner] step {index + 1}/8 ({name}): {output[:60]}...",
             file=sys.stderr,
             flush=True,
         )
-    except BrokenPipeError:
-        # The stepping server can outlive the terminal that launched it.
-        # Losing its diagnostic pipe must not turn a successful LLM response
-        # into an errored debugging session.
-        pass
 
 
 def _final_response(content: str) -> str:
@@ -148,7 +144,7 @@ def prepare_research_context(research_request: str) -> dict[str, Any]:
     The demo stays offline, while still exercising the same inspect/edit/run
     flow that a real search, database, or MCP tool would use.
     """
-    words = [word.strip(".,:;()[]#*\"").lower() for word in research_request.split()]
+    words = [word.strip('.,:;()[]#*"').lower() for word in research_request.split()]
     keywords = list(dict.fromkeys(word for word in words if len(word) > 4))[:8]
     return {
         "source": "local deterministic research-context tool",
@@ -157,10 +153,21 @@ def prepare_research_context(research_request: str) -> dict[str, Any]:
     }
 
 
-async def deep_research_runner(session: ReplaySession) -> None:
+@debugger.agent(
+    name="deep-research",
+    framework="openai",
+    description="Step through the Deep Research demo.",
+    tags=("example", "research"),
+)
+async def deep_research_runner(
+    query: str = "Compare RLHF vs DPO for aligning large language models, with citations.",
+    context: RewindContext | None = None,
+) -> None:
     """Re-run the 8-step Deep Research Agent under interactive stepping against Gemma 4 via Unsloth Studio."""
+    if context is None:
+        raise RuntimeError("deep_research_runner requires a Rewind workbench context")
+    session = context.session
     client = openai.AsyncOpenAI(base_url=GEMMA_BASE_URL, api_key=GEMMA_API_KEY)
-    query = "Compare RLHF vs DPO for aligning large language models, with citations."
     outputs: dict[int, str] = {}
 
     with patch():
@@ -213,10 +220,8 @@ async def deep_research_runner(session: ReplaySession) -> None:
 
 
 def main() -> int:
-    register_runner("deep-research", deep_research_runner)
-    register_runner("gemma", deep_research_runner)
-
     import uvicorn
+
     from rewind.receiver import create_app
     from rewind.storage import TraceStore
 
@@ -228,7 +233,7 @@ def main() -> int:
 
     store = TraceStore(args.db)
     demo_trace_id = _seed_demo_trace(store)
-    app = create_app(store)
+    app = create_app(store, registry=debugger)
     print(
         f"[deep-research-stepping] runner 'deep-research' registered.\n"
         f"[deep-research-stepping] Serving on http://{args.host}:{args.port}/ui\n"

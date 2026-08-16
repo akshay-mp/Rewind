@@ -318,6 +318,9 @@ export interface LiveSession {
   traceId: string;
   branchId: string;
   runnerRef: string;
+  agentRef?: string;
+  inputPayload?: unknown;
+  resultPayload?: unknown;
   status: "running" | "paused" | "done" | "errored";
   error: string | null;
   pausedStep: PausedStep | null;

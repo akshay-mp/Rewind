@@ -29,7 +29,9 @@ So Rewind does **not** need its own capture proxy. It needs:
 
 1. A **local OTLP receiver** that stores traces into SQLite (production path,
    zero agent-side lock-in).
-2. An **opt-in replay-time LLM-client wrapper** (`rewind.replay()`) — *only*
+2. A **decorator-first workbench** that invokes registered agents with typed
+   inputs and a `RewindContext` only during a debug session.
+3. An **opt-in replay-time LLM-client wrapper** (`rewind.replay()`) — *only*
    active during a debug session, never in production.
 
 ## Status
@@ -46,6 +48,7 @@ So Rewind does **not** need its own capture proxy. It needs:
 | P6 | Per-framework replay adapters | ✅ Done (`docs/phases/phase-6.md`) |
 | P7 | Local-model enrichment | ✅ Done (`docs/phases/phase-7.md`) |
 | P8 | Polish, packaging, distribution | ✅ Done (`docs/phases/phase-8.md`) |
+| P9 | Interactive step-through debugging | ✅ Done ([docs/phases/phase-9.md](docs/phases/phase-9.md)) |
 
 ## Quick start
 
@@ -58,6 +61,32 @@ rewind serve --port 4318 --db ./rewind.db
 rewind ui --port 8484 --db ./rewind.db
 # → http://127.0.0.1:8484/ui
 ```
+
+### Decorator-first agents
+
+The current workbench entry point is a `Rewind` object with typed agent inputs:
+
+```python
+from rewind import Rewind, RewindContext
+
+debugger = Rewind(title="Research")
+
+@debugger.agent(description="Answer a question")
+async def answer(question: str, context: RewindContext | None = None) -> str:
+    return question
+```
+
+Run `rewind dev app:debugger` to expose the agent list and interactive
+sessions at the local UI. Direct calls to `answer(...)` remain ordinary
+pass-through calls; `RewindContext` is injected only for workbench runs.
+During an OpenAI-framework workbench run, official OpenAI Python SDK Chat
+Completions calls (`chat.completions.create`, sync and async) are intercepted,
+including when that SDK is configured for an OpenAI-compatible endpoint.
+Other framework replay adapters remain explicit: use the factories in
+[`docs/replay-adapters.md`](docs/replay-adapters.md) when needed. Generic
+decorator auto-activation for those frameworks is currently unavailable, and
+the workbench reports the actionable adapter/wrapper instead of claiming the
+framework is installed.
 
 ### Replay a recorded trace
 
@@ -132,39 +161,26 @@ rewind eval suite.yaml --db ./rewind.db --suite-name my-suite
 # exit 0 = PASS, 1 = FAIL, 2 = ERROR/validation
 ```
 
-### Step through an agent interactively (Phase 9)
+### Run the live decorator-first workbench
 
-Pause an agent at every LLM/tool call, inspect the pending step, edit the
-prompt or tool args, and approve / stop / step-once — all from the browser
-UI. Then rewind to any prior step and re-run from there with different
-edits. This is the capability LangSmith and Langfuse lack: they observe;
-Rewind lets you **steer**.
-
-```python
-# 1. Write your agent as an async runner and register it.
-from rewind.replay import ReplaySession
-from rewind.stepping_api import register_runner
-
-async def my_runner(session: ReplaySession) -> None:
-    await agent.run()   # pauses at each LLM call automatically
-
-register_runner("my-agent", my_runner)
-
-# 2. Start the server (runs the registered runner behind the UI).
-#    python examples/interactive_stepping.py --db ~/.rewind/rewind.db
-
-# 3. Open http://127.0.0.1:8484/ui, click "sessions", start a session with
-#    your trace id + runner ref. The agent pauses at each step; approve,
-#    edit, or stop from the browser.
-```
-
-See [`examples/interactive_stepping.py`](examples/interactive_stepping.py)
-for a complete worked example, and [`docs/phases/phase-9.md`](docs/phases/phase-9.md)
-for the full design, threat model, and the runner contract.
-
-For the seeded live-workbench walkthrough, including prompt variants,
-token/cost checks, saved-step navigation, and browser-refresh validation, see
+The verified local demo uses the decorator-first registry and a seeded
+OpenAI-compatible Gemma/Unsloth endpoint. Start the backend with
+[`examples/start_deep_research_stepping.py`](examples/start_deep_research_stepping.py),
+run Vite on port 5174, and open the workbench on port 8484. The complete
+commands and acceptance walkthrough are in
 [`docs/interactive-workbench-testing.md`](docs/interactive-workbench-testing.md).
+
+The current walkthrough verifies fresh sessions, automatic `PROCEED`
+advancement, substantive-call pauses after the final response, separate
+thinking, token/cost/latency/context panels, checkpoints, saved-step
+navigation, no-call rewind/forward, continue-from-checkpoint, and the
+available edit, variant, assertion, review, and regression flows. It does not
+claim that every planned recording or framework-integration feature is
+implemented or demonstrated.
+
+The older `register_runner`/`POST /api/v1/sessions` surface remains available
+as an advanced escape hatch for custom runners and explicit framework wiring;
+it is not the primary decorator-first usage path.
 
 ## Development
 
@@ -186,10 +202,11 @@ python scripts/security_scan.py --phase <N>
 cd web && pnpm dev   # or:  node_modules/.bin/vite --host 127.0.0.1
 ```
 
-Latest local quality gate: 486 passing tests, 12 skipped framework-gated
-adapter tests, and 48 deselected integration tests; mypy --strict is clean
-across 35 source files. See `docs/interactive-workbench-testing.md` for the
-interactive debugger checks.
+Latest verified full suite: **522 passed, 13 skipped, 49 deselected, and 3
+warnings**. Frontend TypeScript typecheck and production build passed, and
+`git diff --check` passed. See
+[`docs/interactive-workbench-testing.md`](docs/interactive-workbench-testing.md)
+for the live workbench checks.
 
 ## Layout
 
@@ -204,7 +221,7 @@ rewind/
     diff.py            Trace diff (Phase 5)
     eval_api.py        Suite runner + baseline diff (Phase 5.5)
     cli.py             Click-based CLI: serve / ui / replay / eval / version
-  tests/               pytest suites (per-phase, 486 passing locally)
+  tests/               pytest suites (latest full suite: 522 passed)
   web/                 React + Vite + TypeScript timeline UI (P2)
   docs/
     phases/            Per-phase: QA, security, dev-handoff, design

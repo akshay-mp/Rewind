@@ -63,6 +63,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from rewind.agents import AgentDefinition, Rewind, mask_secrets
 from rewind.enums import ReplayMode
 from rewind.replay import ReplaySession
 from rewind.stepping import (
@@ -77,6 +78,8 @@ from rewind.stepping import (
 from rewind.storage import TraceStore
 
 __all__ = [
+    "AgentListResponse",
+    "AgentStartRequest",
     "DecisionRequest",
     "EvaluateRequest",
     "EvaluateResponse",
@@ -100,7 +103,7 @@ __all__ = [
 #: It receives the bound :class:`ReplaySession` so it can inspect the cursor
 #: or branch_id if needed; typically it just calls ``await agent.run()``
 #: inside the ``replay()`` context the server has already opened.
-RunnerFn = Callable[[ReplaySession], Awaitable[None]]
+RunnerFn = Callable[[ReplaySession], Awaitable[Any]]
 
 #: Module-global registry. Populated by :func:`register_runner` before the
 #: server starts. Kept global (not on app.state) so a developer's call to
@@ -513,6 +516,34 @@ class StartSessionResponse(BaseModel):
     status: str
 
 
+class AgentStartRequest(BaseModel):
+    """Body of ``POST /api/v1/agents/{ref}/sessions``."""
+
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    trace_id: str | None = None
+    mode: str = ReplayMode.INTERACTIVE.value
+    branch_at: int | None = None
+    label: str = ""
+
+
+class AgentListItem(BaseModel):
+    ref: str
+    name: str
+    description: str
+    framework: str
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any]
+    tags: tuple[str, ...]
+    capabilities: dict[str, bool]
+    available: bool
+    availability_reason: str | None = None
+
+
+class AgentListResponse(BaseModel):
+    items: list[AgentListItem]
+    total: int
+
+
 class SessionDetailView(BaseModel):
     """Wire shape for a single session row."""
 
@@ -520,6 +551,9 @@ class SessionDetailView(BaseModel):
     trace_id: str
     branch_id: str
     runner_ref: str
+    agent_ref: str | None = None
+    input_payload: dict[str, Any] | None = None
+    result_payload: Any = None
     status: str
     error_message: str | None = None
     created_at: str
@@ -626,6 +660,9 @@ def _session_to_view(s: InteractiveSession) -> SessionDetailView:
         trace_id=s.trace_id,
         branch_id=s.branch_id,
         runner_ref=s.runner_ref,
+        agent_ref=s.agent_ref,
+        input_payload=s.input_payload,
+        result_payload=s.result_payload,
         status=s.status,
         error_message=s.error_message,
         created_at=s.created_at,
@@ -678,6 +715,13 @@ class RestartFromRequest(BaseModel):
         "re-runs the runner live from there.",
     )
     label: str = Field("", description="Human-readable label for the new session.")
+    inputs: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "Optional replacement inputs. Required when restarting a decorated "
+            "agent whose original inputs contain Pydantic secret inputs."
+        ),
+    )
 
 
 # ----------------------------------------------------------------------
@@ -689,6 +733,8 @@ def _spawn_runner_task(
     session_obj: ReplaySession,
     runner: RunnerFn,
     runner_ref: str,
+    agent_ref: str | None = None,
+    input_payload: dict[str, Any] | None = None,
 ) -> str:
     """Spawn the background ``asyncio.Task`` that drives an interactive run.
 
@@ -715,6 +761,9 @@ def _spawn_runner_task(
                 trace_id=row.trace_id,
                 branch_id=row.branch_id,
                 runner_ref=row.runner_ref,
+                agent_ref=row.agent_ref,
+                input_payload=row.input_payload,
+                result_payload=row.result_payload,
                 status=row.status,
                 error_message=row.error_message,
                 created_at=row.created_at,
@@ -736,6 +785,8 @@ def _spawn_runner_task(
             trace_id=session_obj.trace_id,
             branch_id=str(session_obj.branch_id),
             runner_ref=runner_ref,
+            agent_ref=agent_ref,
+            input_payload=input_payload,
             status="running",
             created_at=now,
             updated_at=now,
@@ -744,9 +795,10 @@ def _spawn_runner_task(
         channel.bind_loop(asyncio.get_running_loop())
         token = _active_session.set(session_obj)
         try:
-            await runner(session_obj)
-            _set_status(store, session_id, "done")
-            channel.emit({"type": "done"})
+            result = await runner(session_obj)
+            result_payload = mask_secrets(result)
+            _set_status(store, session_id, "done", result_payload=result_payload)
+            channel.emit({"type": "done", "result": result_payload})
         except SteppingStopped as exc:
             # Normal, developer-initiated termination.
             _set_status(store, session_id, "done")
@@ -778,7 +830,7 @@ def _spawn_runner_task(
 # ----------------------------------------------------------------------
 # Mount
 # ----------------------------------------------------------------------
-def mount_stepping(app: FastAPI) -> None:
+def mount_stepping(app: FastAPI, registry: Rewind | None = None) -> None:
     """Register the stepping-server API routes on ``app``.
 
     Mirrors :func:`rewind.timeline.mount_timeline` and
@@ -786,6 +838,104 @@ def mount_stepping(app: FastAPI) -> None:
     exception conventions. Mount after eval so the read API is available
     first.
     """
+
+    app.state.agent_registry = registry
+
+    @app.get("/api/v1/agents", tags=["agents"])
+    def list_agents(request: Request) -> AgentListResponse:
+        """List decorator-registered agents owned by this app."""
+        owner: Rewind | None = getattr(request.app.state, "agent_registry", None)
+        definitions = list(owner) if owner is not None else []
+        items = [
+            AgentListItem(
+                ref=definition.ref,
+                name=definition.name,
+                description=definition.description,
+                framework=definition.framework,
+                input_schema=definition.input_schema,
+                output_schema=definition.output_schema,
+                tags=definition.tags,
+                capabilities=definition.capabilities,
+                available=definition.available,
+                availability_reason=definition.availability_reason,
+            )
+            for definition in definitions
+        ]
+        return AgentListResponse(items=items, total=len(items))
+
+    @app.post(
+        "/api/v1/agents/{agent_ref}/sessions",
+        tags=["agents"],
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def start_agent_session(
+        request: Request,
+        agent_ref: str,
+        body: AgentStartRequest,
+    ) -> StartSessionResponse:
+        """Validate inputs and start a decorator-owned interactive run."""
+        owner: Rewind | None = getattr(request.app.state, "agent_registry", None)
+        definition: AgentDefinition | None = owner.get(agent_ref) if owner else None
+        if definition is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"unknown agent ref '{agent_ref}'",
+            )
+        if not definition.available:
+            reason = definition.availability_reason or "the integration is unavailable"
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": f"agent '{agent_ref}' is unavailable",
+                    "availability_reason": reason,
+                },
+            )
+        try:
+            validated = definition.validate_inputs(body.inputs)
+        except Exception as exc:  # Pydantic validation is client input.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        mode = _resolve_mode(body.mode)
+        trace_id = body.trace_id
+        if trace_id is None:
+            from secrets import token_hex
+
+            from rewind.models import Trace
+
+            trace_id = token_hex(16)
+            store: TraceStore = request.app.state.store
+            store.upsert_trace(Trace(trace_id=trace_id))
+        store = request.app.state.store
+        try:
+            root = ReplaySession.for_root(store, trace_id, mode=mode, label=body.label)
+            session_obj = (
+                root
+                if body.branch_at is None
+                else root.fork(branch_at=body.branch_at, mode=mode, label=body.label)
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        raw_inputs = validated.model_dump(mode="python")
+
+        agent_runner = definition.compile_runner(validated)
+
+        session_id = _spawn_runner_task(
+            store=store,
+            session_obj=session_obj,
+            runner=agent_runner,
+            runner_ref=agent_ref,
+            agent_ref=agent_ref,
+            input_payload=mask_secrets(raw_inputs),
+        )
+        return StartSessionResponse(
+            session_id=session_id,
+            trace_id=session_obj.trace_id,
+            branch_id=str(session_obj.branch_id),
+            status="running",
+        )
 
     @app.post(
         "/api/v1/sessions",
@@ -880,7 +1030,44 @@ def mount_stepping(app: FastAPI) -> None:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"session not found: {session_id}",
             )
-        runner = get_runner(source.runner_ref)
+        owner: Rewind | None = getattr(request.app.state, "agent_registry", None)
+        definition = owner.get(source.agent_ref) if owner and source.agent_ref else None
+        runner: RunnerFn | None = None
+        restart_input_payload: dict[str, Any] | None = source.input_payload
+        if definition is not None:
+            if not definition.available:
+                reason = definition.availability_reason or "the integration is unavailable"
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "message": f"agent '{definition.ref}' is unavailable",
+                        "availability_reason": reason,
+                    },
+                )
+            if definition.has_secret_inputs and body.inputs is None:
+                fields = ", ".join(definition.secret_input_fields)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"restart requires an inputs override because the decorated "
+                        f"agent has secret input fields: {fields}"
+                    ),
+                )
+            restart_inputs = body.inputs if body.inputs is not None else source.input_payload or {}
+            try:
+                validated_restart = definition.validate_inputs(restart_inputs)
+            except Exception as exc:  # Pydantic validation is client input.
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=str(exc),
+                ) from exc
+            runner = definition.compile_runner(validated_restart)
+            restart_input_payload = mask_secrets(validated_restart.model_dump(mode="python"))
+
+            runner_ref = source.runner_ref
+        else:
+            runner = get_runner(source.runner_ref)
+            runner_ref = source.runner_ref
         if runner is None:
             # The runner was un-registered between the source run and now.
             raise HTTPException(
@@ -938,7 +1125,9 @@ def mount_stepping(app: FastAPI) -> None:
             store=store,
             session_obj=new_session,
             runner=runner,
-            runner_ref=source.runner_ref,
+            runner_ref=runner_ref,
+            agent_ref=source.agent_ref,
+            input_payload=restart_input_payload,
         )
         return StartSessionResponse(
             session_id=new_session_id,
@@ -982,6 +1171,7 @@ def mount_stepping(app: FastAPI) -> None:
 
     @app.get("/api/v1/sessions/{session_id}/stream", tags=["stepping"])
     async def stream_session(
+        request: Request,
         session_id: str,
     ) -> StreamingResponse:
         """Server-Sent Events stream of Steps + lifecycle events.
@@ -993,8 +1183,9 @@ def mount_stepping(app: FastAPI) -> None:
         * ``done``    — runner completed (normally, via STOP, or cancelled).
         * ``errored`` — runner raised; payload includes the message.
 
-        The stream stays open until the runner task finishes. If the
-        session is unknown or already finished, returns 404.
+        The stream stays open until the runner task finishes. If the runner
+        finished before EventSource attached, replay the durable terminal row
+        as one event so the browser can still leave its loading state.
         """
         if not _is_valid_uuid(session_id):
             raise HTTPException(
@@ -1003,9 +1194,45 @@ def mount_stepping(app: FastAPI) -> None:
             )
         live = _SESSIONS.get(session_id)
         if live is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"no live session: {session_id}",
+            store: TraceStore = request.app.state.store
+            row = store.get_interactive_session(session_id)
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"session not found: {session_id}",
+                )
+            if row.status == "done":
+                terminal_event = {
+                    "type": "done",
+                    "result": row.result_payload,
+                    "result_payload": row.result_payload,
+                }
+            elif row.status == "errored":
+                message = row.error_message or "interactive session failed"
+                terminal_event = {
+                    "type": "errored",
+                    "message": message,
+                    "error_message": message,
+                }
+            else:
+                terminal_event = {
+                    "type": "errored",
+                    "message": (
+                        f"session {session_id} has no live runner; durable status is {row.status!r}"
+                    ),
+                    "error_message": "session has no live runner",
+                }
+
+            async def terminal_stream() -> AsyncIterator[str]:
+                yield _format_sse(terminal_event)
+
+            return StreamingResponse(
+                terminal_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
             )
         channel = live.channel
 
@@ -1174,6 +1401,9 @@ def mount_stepping(app: FastAPI) -> None:
                 trace_id=row.trace_id,
                 branch_id=row.branch_id,
                 runner_ref=row.runner_ref,
+                agent_ref=row.agent_ref,
+                input_payload=row.input_payload,
+                result_payload=row.result_payload,
                 status=row.status,
                 error_message=row.error_message,
                 created_at=row.created_at,
@@ -1253,7 +1483,12 @@ def mount_stepping(app: FastAPI) -> None:
 
 
 def _set_status(
-    store: TraceStore, session_id: str, status_: str, *, error_message: str | None = None
+    store: TraceStore,
+    session_id: str,
+    status_: str,
+    *,
+    error_message: str | None = None,
+    result_payload: Any = None,  # noqa: ANN401
 ) -> None:
     """Update a session row's status + timestamp in place.
 
@@ -1270,6 +1505,9 @@ def _set_status(
             trace_id=row.trace_id,
             branch_id=row.branch_id,
             runner_ref=row.runner_ref,
+            agent_ref=row.agent_ref,
+            input_payload=row.input_payload,
+            result_payload=(result_payload if result_payload is not None else row.result_payload),
             status=status_,
             error_message=error_message,
             created_at=row.created_at,

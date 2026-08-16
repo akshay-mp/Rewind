@@ -212,6 +212,19 @@ class ReplaySession:
         trace = store.get_trace(trace_id)
         if trace is None:
             raise ReplayError(f"trace not found: {trace_id}")
+        # Fresh decorator sessions may create an empty trace before the
+        # runner starts. Materialize its root branch now so the timeline,
+        # tree, and diff APIs can address the exact session branch id.
+        from rewind.models import Branch
+
+        store.ensure_branch(
+            Branch(
+                branch_id=trace.root_branch_id,
+                trace_id=trace_id,
+                mode=mode.value,
+                label=label,
+            )
+        )
         session = cls(
             store=store,
             trace_id=trace_id,

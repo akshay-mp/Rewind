@@ -6,11 +6,19 @@ then rewind an agent to any span, branch it live, and diff the timelines.
 
 from __future__ import annotations
 
+from rewind.agents import AgentDefinition, Rewind, RewindContext
 from rewind.checkpoint import checkpoint
 from rewind.tool_intercept import tool
 
 __version__ = "0.1.0"
-__all__ = ["__version__", "checkpoint", "tool"]
+__all__ = [
+    "AgentDefinition",
+    "Rewind",
+    "RewindContext",
+    "__version__",
+    "checkpoint",
+    "tool",
+]
 
 
 # Lazy re-export of the public Phase 5.5 eval surface. We use __getattr__

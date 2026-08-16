@@ -13,6 +13,8 @@
  * backend by next.config.ts rewrites — no CORS, no env-var URL in the browser.
  */
 
+import { api } from "@/api";
+import type { AgentSessionRequest } from "@/types";
 import { splitReasoning, useRewindStore } from "./store";
 import type {
   BreakpointRule,
@@ -72,6 +74,33 @@ export async function startSession(body: StartSessionBody): Promise<string> {
   return data.session_id;
 }
 
+/** Start a decorated agent through its agent-scoped session endpoint. */
+export async function startAgentSession(agentRef: string, body: AgentSessionRequest): Promise<string> {
+  const { startLiveSession, failSession } = useRewindStore.getState();
+  let data: StartSessionResponse;
+  try {
+    data = await api.startAgentSession(agentRef, body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failSession(message);
+    throw error;
+  }
+  _runUntilNextLlm = false;
+  startLiveSession(
+    data.session_id,
+    data.trace_id,
+    data.branch_id,
+    agentRef,
+    false,
+    { agentRef, inputPayload: body.inputs },
+  );
+  window.localStorage.setItem("rewind-active-session", data.session_id);
+  void hydrateExperimentRecords(data.trace_id);
+  void hydrateRunControl(data.session_id);
+  void streamSessionDecisions(data.session_id);
+  return data.session_id;
+}
+
 /** Reconnect to a server-owned session after a browser refresh. */
 export async function resumeSession(sessionId: string): Promise<string> {
   if (_resumeInFlight) return _resumeInFlight;
@@ -86,14 +115,18 @@ export async function resumeSession(sessionId: string): Promise<string> {
 let _resumeInFlight: Promise<string> | null = null;
 
 async function resumeSessionOnce(sessionId: string): Promise<string> {
-  const res = await fetch(`/api/v1/sessions/${encodeURIComponent(sessionId)}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const session = (await res.json()) as { session_id: string; trace_id: string; branch_id: string; runner_ref: string };
+  const session = await api.getSession(sessionId);
   useRewindStore.getState().startLiveSession(
     session.session_id,
     session.trace_id,
     session.branch_id,
     session.runner_ref,
+    false,
+    {
+      agentRef: session.agent_ref ?? undefined,
+      inputPayload: session.input_payload,
+      resultPayload: session.result_payload,
+    },
   );
   window.localStorage.setItem("rewind-active-session", session.session_id);
   await hydrateExperimentRecords(session.trace_id);
@@ -595,6 +628,7 @@ export function streamSessionDecisions(sessionId: string): void {
         break;
       case "done":
         finishSession();
+        void hydrateSessionResult(sessionId);
         es.close();
         _activeStream = null;
         break;
@@ -734,6 +768,17 @@ async function hydrateRunControl(sessionId: string): Promise<void> {
     } catch {
       await new Promise((resolve) => window.setTimeout(resolve, 50 * (attempt + 1)));
     }
+  }
+}
+
+async function hydrateSessionResult(sessionId: string): Promise<void> {
+  try {
+    const session = await api.getSession(sessionId);
+    if (session.result_payload !== undefined) {
+      useRewindStore.getState().setSessionResult(session.result_payload);
+    }
+  } catch {
+    // The completion event remains useful even if the optional result fetch is unavailable.
   }
 }
 

@@ -26,6 +26,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from rewind import __version__
+from rewind.agents import Rewind
 from rewind.coding.api import mount_coding
 from rewind.eval_api import mount_eval
 from rewind.ingest import (
@@ -62,7 +63,7 @@ _UI_MISSING_HTML = """<!doctype html>
 """
 
 
-def create_app(store: TraceStore) -> FastAPI:
+def create_app(store: TraceStore, registry: Rewind | None = None) -> FastAPI:
     """Build a FastAPI app bound to the given store.
 
     The store is injected (not constructed inside the handler) so tests can
@@ -91,7 +92,7 @@ def create_app(store: TraceStore) -> FastAPI:
     # Phase 9: interactive stepping server lives at /api/v1/sessions* and
     # shares the store. Mounted after eval so all read APIs are available
     # before the (potentially long-running) stepping surface.
-    mount_stepping(app)
+    mount_stepping(app, registry=registry)
 
     # Coding-agent control plane shares the same durable SQLite store.
     mount_coding(app)

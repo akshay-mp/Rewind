@@ -1,10 +1,13 @@
 # Rewind — Documentation Index
 
 > Time-travel debugging for AI agents. **OTel-in / replay-out.**
-> Phases 0 through 9 are complete. Phases 0–8 delivered the original plan
-> (OTel-in / replay-out engine); Phase 9 adds the interactive step-through
-> debugging primitive on top. The live workbench verification guide covers
-> start, review, rewind, prompt variants, pricing, and browser reconnect.
+> The current decorator-first workbench loads typed agents from a `Rewind`
+> object and intercepts official OpenAI Python SDK Chat Completions calls
+> (`chat.completions.create`, sync and async) during an OpenAI-framework
+> workbench run, including when that SDK is configured for an
+> OpenAI-compatible endpoint. The live verification guide covers fresh
+> sessions, review,
+> rewind, prompt variants, pricing, checkpoints, and browser reconnect.
 > See `README.md`
 > (parent) for install + usage, or jump straight to [`quickstart.md`](quickstart.md)
 > for the 5-minute install-to-trace flow.
@@ -58,6 +61,7 @@ live under `diagrams/` and follow the naming convention
 |---|---|
 | [`README.md`](../README.md)   | Project overview, status table, install + quick-start, dev workflow |
 | [`quickstart.md`](quickstart.md) | 5-minute install-to-trace flow (end-user entry point) |
+| [`demo-recording.md`](demo-recording.md) | Production checklist for the 2:40 LinkedIn demo; no video tooling is included |
 | [`demo-run.md`](demo-run.md) | **Live demo run guide** — capture → branch → diff against a local model (Unsloth) in the polished `web-demo/` UI. The doc to follow when showing Rewind to people. |
 | [`wiring.md`](wiring.md)     | Per-framework OpenInference wiring recipes (OpenAI, ADK, LangGraph, CrewAI, PydanticAI, SmolAgents, MCP) |
 | [`branching-diff-walkthrough.md`](branching-diff-walkthrough.md) | The core debugging workflow (branch + diff) end-to-end |
@@ -69,16 +73,15 @@ live under `diagrams/` and follow the naming convention
 | [`../plan.md`](../../plan.md) | Original full phased plan, competitive analysis, architectural asymmetry |
 | `memories/repo/`              | Per-phase completion notes + project conventions (repo-scoped; machine-curated) |
 
-## Quality snapshot (2026-08-05 local verification)
+## Quality snapshot (latest local verification)
 
-- **Tests:** 486 passing / 12 skipped / 48 deselected (the skipped tests are
-  framework-gated adapter suites requiring an uninstalled framework).
-- **Lint:** `ruff check src/rewind tests` clean; `pylint src/rewind/` 10.00/10.
-- **Types:** `mypy --strict src/rewind` clean across 35 source files.
-- **Web:** TypeScript check and production build pass.
-- **Security:** `ruff select S` clean; `bandit -r src/rewind` clean; `deepsec`
-  skipped when unavailable on `PATH`.
-- **Performance:** interceptor p99 = 0.167µs (target <100µs; ~600× headroom).
+- **Tests:** 522 passed / 13 skipped / 49 deselected / 3 warnings.
+- **Web:** frontend TypeScript typecheck and production build passed.
+- **Diff:** `git diff --check` passed.
+
+These counts do not imply that optional framework packages are installed, and
+the recording checklist does not imply that video capture or caption tooling
+is implemented.
 
 Reproduce via the command block in `README.md §Development` or any phase doc
 §6 (Developer Handoff).

@@ -19,6 +19,32 @@ Verify:
 rewind --version
 ```
 
+## Decorator-first workbench
+
+For a local interactive agent, define one `Rewind` object and load it with:
+
+```python
+from rewind import Rewind, RewindContext
+
+debugger = Rewind(title="My agents")
+
+@debugger.agent(description="Answer a question", tags=("demo",))
+async def answer(question: str, context: RewindContext | None = None) -> str:
+    return question
+```
+
+Start it with `rewind dev app:debugger`. Direct calls to `answer(...)` remain
+ordinary pass-through calls; `RewindContext` is injected only for workbench
+runs. Official OpenAI Python SDK Chat Completions calls
+(`chat.completions.create`, sync and async) are intercepted in this path,
+including when that SDK is configured for an OpenAI-compatible endpoint.
+Replay adapters for other frameworks remain explicit; generic decorator
+auto-activation for them is unavailable and reports an actionable wrapper
+hint. See [`replay-adapters.md`](./replay-adapters.md).
+
+For the live verified demo, use the exact local model and UI setup in
+[`interactive-workbench-testing.md`](./interactive-workbench-testing.md).
+
 ## 2. Start the receiver
 
 ```bash
@@ -73,6 +99,10 @@ token-level changes between the two runs.
 
 ## What's next
 
+- Follow the [live workbench verification](./interactive-workbench-testing.md)
+  for the decorator-first stepping flow.
+- Use the [recording-ready checklist](./demo-recording.md) when preparing a
+  short product demo; it is a production checklist, not video tooling.
 - See [`docs/wiring.md`](./wiring.md) for per-framework instrumentation
   recipes (OpenAI, ADK, LangGraph, CrewAI, PydanticAI, SmolAgents, MCP).
 - See [`docs/branching-diff-walkthrough.md`](./branching-diff-walkthrough.md)

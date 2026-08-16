@@ -200,7 +200,9 @@ interface RewindState {
     branchId: string,
     runnerRef: string,
     preservePromptVersions?: boolean,
+    metadata?: { agentRef?: string; inputPayload?: unknown; resultPayload?: unknown },
   ) => void;
+  setSessionResult: (result: unknown) => void;
   pauseAtStep: (step: PausedStep) => void;
   markStepDispatching: (cursor: number) => void;
   /** Attach the model's response text to the current paused step (verify loop). */
@@ -490,13 +492,14 @@ export const useRewindStore = create<RewindState>((set, get) => ({
   // arrive from the Python stepping server.
   setUIView: (v) => set({ uiView: v }),
 
-  startLiveSession: (sessionId, traceId, branchId, runnerRef, preservePromptVersions = false) =>
+  startLiveSession: (sessionId, traceId, branchId, runnerRef, preservePromptVersions = false, metadata) =>
     set((state) => ({
       liveSession: {
         sessionId,
         traceId,
         branchId,
         runnerRef,
+        ...metadata,
         status: "running",
         error: null,
         pausedStep: null,
@@ -507,6 +510,10 @@ export const useRewindStore = create<RewindState>((set, get) => ({
         startedAt: Date.now(),
       },
     })),
+
+  setSessionResult: (result) => set((s) => s.liveSession ? {
+    liveSession: { ...s.liveSession, resultPayload: result },
+  } : s),
 
   pauseAtStep: (step) =>
     set((s) => {

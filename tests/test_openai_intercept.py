@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import threading
 import types
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -512,6 +513,42 @@ def test_patch_is_idempotent_nested() -> None:
             # After inner exits we're still patched (outer is still active).
             assert Completions.create is inner_patched
         # Outer exit fully restores.
+        assert Completions.create is original
+
+
+def test_overlapping_patch_contexts_restore_only_after_the_last_exit() -> None:
+    """A concurrent session keeps the process-global methods patched."""
+    with _fake_openai_module() as fake:
+        Completions = fake["Completions"]
+        original = Completions.create
+        first_entered = threading.Event()
+        both_entered = threading.Barrier(2)
+        first_exited = threading.Event()
+        retained_patch: list[bool] = []
+
+        def first() -> None:
+            with patch():
+                first_entered.set()
+                both_entered.wait(timeout=5)
+            first_exited.set()
+
+        def second() -> None:
+            first_entered.wait(timeout=5)
+            with patch():
+                both_entered.wait(timeout=5)
+                first_exited.wait(timeout=5)
+                retained_patch.append(Completions.create is not original)
+
+        first_thread = threading.Thread(target=first)
+        second_thread = threading.Thread(target=second)
+        first_thread.start()
+        second_thread.start()
+        first_thread.join(timeout=5)
+        second_thread.join(timeout=5)
+
+        assert not first_thread.is_alive()
+        assert not second_thread.is_alive()
+        assert retained_patch == [True]
         assert Completions.create is original
 
 

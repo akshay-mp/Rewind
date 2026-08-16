@@ -6,6 +6,8 @@
 // relative. For dev mode Vite's proxy forwards /api → :8484.
 
 import type {
+  AgentListResponse,
+  AgentSessionRequest,
   BranchNodeView,
   CreateBranchRequest,
   CreateBranchResponse,
@@ -83,6 +85,17 @@ export interface ListTracesParams {
 }
 
 export const api = {
+  listAgents(): Promise<AgentListResponse> {
+    return getJson<AgentListResponse>("/api/v1/agents");
+  },
+
+  startAgentSession(agentRef: string, body: AgentSessionRequest): Promise<StartSessionResponse> {
+    return postJson<StartSessionResponse>(
+      `/api/v1/agents/${encodeURIComponent(agentRef)}/sessions`,
+      body,
+    );
+  },
+
   listTraces(params: ListTracesParams = {}): Promise<TraceListResponse> {
     const search = new URLSearchParams();
     if (params.limit !== undefined) search.set("limit", String(params.limit));

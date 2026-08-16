@@ -78,6 +78,56 @@ export interface SearchResponse {
   offset: number;
 }
 
+// ----- Decorated agents ----------------------------------------------------
+
+/** The JSON Schema subset used to render an agent's input form. */
+export interface JsonSchema {
+  type?: ("string" | "integer" | "number" | "boolean" | "array" | "object" | "null") | Array<"string" | "integer" | "number" | "boolean" | "array" | "object" | "null">;
+  title?: string;
+  description?: string;
+  format?: string;
+  default?: unknown;
+  enum?: unknown[];
+  anyOf?: JsonSchema[];
+  oneOf?: JsonSchema[];
+  nullable?: boolean;
+  $ref?: string;
+  $defs?: Record<string, JsonSchema>;
+  required?: string[];
+  properties?: Record<string, JsonSchema>;
+  items?: JsonSchema;
+  writeOnly?: boolean;
+  secret?: boolean;
+  maxLength?: number;
+  [key: string]: unknown;
+}
+
+export interface AgentView {
+  ref: string;
+  name: string;
+  description: string;
+  framework: string;
+  input_schema: JsonSchema;
+  output_schema: JsonSchema;
+  tags: string[];
+  capabilities: Record<string, boolean>;
+  available: boolean;
+  availability_reason?: string | null;
+}
+
+export interface AgentListResponse {
+  items: AgentView[];
+  total: number;
+}
+
+export interface AgentSessionRequest {
+  inputs: Record<string, unknown>;
+  trace_id?: string;
+  mode?: string;
+  branch_at?: number | null;
+  label?: string;
+}
+
 // ----- Phase 5: branching & diff -------------------------------------------
 
 /** Recursive branch node — one row per `rewind.models.Branch`. */
@@ -267,6 +317,9 @@ export interface SessionDetailView {
   trace_id: string;
   branch_id: string;
   runner_ref: string;
+  agent_ref?: string | null;
+  input_payload?: unknown;
+  result_payload?: unknown;
   status: SessionStatus;
   error_message: string | null;
   created_at: string;

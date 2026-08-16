@@ -34,7 +34,7 @@ import {
   Pencil,
   Wrench,
 } from "lucide-react";
-import { useRewindStore } from "@/lib/rewind/store";
+import { splitReasoning, useRewindStore } from "@/lib/rewind/store";
 import {
   loadPricingProfiles,
   loadRegressionCases,
@@ -82,6 +82,13 @@ function kindTint(kind: string): string {
     case "mcp": return "bg-violet-500";
     default: return "bg-muted-foreground";
   }
+}
+
+function displayAgentResult(payload: unknown): string {
+  if (typeof payload !== "string") return JSON.stringify(payload, null, 2) ?? "";
+  const parsed = splitReasoning(payload);
+  if (parsed.reasoning !== null) return parsed.response || "(No final response returned)";
+  return parsed.response || payload;
 }
 
 function decisionBadge(decision: string, reviewVerdict?: "accepted" | "rejected" | null): { label: string; className: string } {
@@ -589,6 +596,17 @@ export function SessionView() {
                 <p className="text-xs text-muted-foreground">
                   Start another session from the top bar.
                 </p>
+                {liveSession.resultPayload !== undefined && (
+                  <div className="w-full max-w-2xl rounded-md border border-emerald-500/25 bg-emerald-500/[0.06] p-4 text-left">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium text-emerald-200">Agent Result</p>
+                      <span className="text-[10px] uppercase tracking-wide text-emerald-300/70">completed</span>
+                    </div>
+                    <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-slate-950/50 p-3 font-mono text-xs text-slate-200">
+                      {displayAgentResult(liveSession.resultPayload)}
+                    </pre>
+                  </div>
+                )}
                 <div className="rounded-md border border-slate-700 bg-slate-950/40 px-4 py-3 text-xs text-slate-300">Evaluation summary · {acceptedCount} accepted · {rejectedCount} rejected · {formatTokens(usage.total_tokens)} tokens · {formatCost(estimatedCost)} · {formatDuration(latency.totalMs)} execution <span className="text-slate-500">(LLM {formatDuration(latency.llmMs)} · tools {formatDuration(latency.toolMs)})</span></div>
                 <ReproducibilitySummary session={liveSession} />
                 <div className="flex flex-wrap justify-center gap-2"><button type="button" onClick={() => void saveRegressionCase()} className="rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-400">Save regression case</button><button type="button" onClick={exportBundle} className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm font-medium text-cyan-100 hover:bg-cyan-300/20">Export redacted bundle</button><button type="button" onClick={clearLiveSession} className="rounded-md border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800">Saved sessions</button></div>

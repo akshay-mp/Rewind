@@ -2,7 +2,9 @@
 
 The Rewind workbench keeps operational records on the developer machine.
 Its session controls cover the parts of a pre-production run that need to be
-inspected before an agent reaches a deployed environment.
+inspected before an agent reaches a deployed environment. The current
+decorator-first entry point is `Rewind` + `@debugger.agent`; use
+`rewind dev app:debugger` for a local workbench run.
 
 ## Run Records
 
@@ -31,9 +33,24 @@ back into the local session library for inspection and search.
 
 ## Provider And Framework Support
 
-The interactive demo uses any OpenAI-compatible endpoint via
-`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `REWIND_MODEL`. This includes local
-Unsloth, Ollama, llama.cpp/vLLM-style servers, and hosted OpenAI-compatible
-providers. The package also ships replay adapters for LangGraph, Google ADK,
-CrewAI, PydanticAI, and SmolAgents; see [replay adapters](./replay-adapters.md)
-and [wiring](./wiring.md) for the integration snippets.
+The verified interactive demo uses the local OpenAI-compatible Gemma/Unsloth
+endpoint at `http://127.0.0.1:8888/v1`, configured with
+`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `REWIND_MODEL`. Check
+`http://127.0.0.1:8888/v1/models` before recording or testing. Keep the API
+key in the environment or local `.env`; never place it in source, logs,
+screenshots, or a recording.
+
+During an OpenAI-framework workbench run, official OpenAI Python SDK Chat
+Completions calls (`chat.completions.create`, sync and async) are intercepted,
+including when that SDK is configured for an OpenAI-compatible endpoint.
+Replay adapters for LangGraph, Google ADK, CrewAI, PydanticAI, and SmolAgents
+remain explicit; generic decorator auto-activation for them is unavailable and
+reports an actionable wrapper. See
+[replay adapters](./replay-adapters.md) and [wiring](./wiring.md) for the
+integration snippets. This support statement does not claim any optional
+framework package is installed locally.
+
+For a short LinkedIn capture, follow the
+[recording-ready checklist](./demo-recording.md). It describes production
+preparation only; Rewind does not provide video capture or caption-burning
+tooling.

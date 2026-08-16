@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { api } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -8,7 +9,9 @@ import {
 } from "@/components/ui/resizable";
 import { useRewindStore } from "@/lib/rewind/store";
 import { spanCost } from "@/lib/rewind/diff";
-import { resumeSession, startSession } from "@/lib/rewind/session-client";
+import { resumeSession, startAgentSession } from "@/lib/rewind/session-client";
+import { AgentStartDialog } from "@/components/AgentStartDialog";
+import type { AgentView } from "@/types";
 import { SpanTimeline } from "@/components/rewind/span-timeline";
 import { SpanDetail } from "@/components/rewind/span-detail";
 import { DiffView } from "@/components/rewind/diff-view";
@@ -48,48 +51,66 @@ function TopBar() {
   } = useRewindStore();
 
   const [sessStarting, setSessStarting] = useState(false);
+  const [agents, setAgents] = useState<AgentView[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(true);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
+  const [selectedAgentRef, setSelectedAgentRef] = useState("");
+  const [dialogAgent, setDialogAgent] = useState<AgentView | null>(null);
+
+  const loadAgents = useCallback(async (): Promise<AgentView[]> => {
+    setAgentsLoading(true);
+    try {
+      const response = await api.listAgents();
+      setAgents(response.items);
+      setAgentsError(null);
+      setSelectedAgentRef((current) => current && response.items.some((agent) => agent.ref === current)
+        ? current
+        : response.items.length === 1 ? response.items[0].ref : response.items.find((agent) => agent.available)?.ref ?? response.items[0]?.ref ?? "");
+      return response.items;
+    } catch (error) {
+      setAgentsError(error instanceof Error ? error.message : String(error));
+      return [];
+    } finally {
+      setAgentsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAgents();
+  }, [loadAgents]);
 
   const selected = selectedBranchId ? traces[selectedBranchId] : null;
   const canStep = !!selected && mode === "inspect";
 
-  // Start Agent — launches step-by-step interactive mode
-  const startAgent = useCallback(async () => {
-    setLastEvent("Starting Agent — step-by-step interactive mode armed...");
-    let traceIdToUse = selectedBranchId || "";
+  const selectedAgent = agents.find((agent) => agent.ref === selectedAgentRef)
+    ?? (agents.length === 1 ? agents[0] : null);
+  const availableAgentCount = agents.filter((agent) => agent.available).length;
+  const unavailableReason = selectedAgent?.availability_reason || "This agent is unavailable; configure its capabilities first.";
 
-    if (!traceIdToUse) {
-      try {
-        const res = await fetch("/api/v1/traces?limit=1");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.items && data.items.length > 0) {
-            traceIdToUse = data.items[0].trace_id;
-          }
-        }
-      } catch {
-        // fallback trace id
-      }
-    }
+  const openStartDialog = useCallback(async () => {
+    const freshAgents = await loadAgents();
+    const agent = freshAgents.find((item) => item.ref === selectedAgentRef)
+      ?? (freshAgents.length === 1 ? freshAgents[0] : freshAgents.find((item) => item.available) ?? null);
+    if (agent?.available) setDialogAgent(agent);
+  }, [loadAgents, selectedAgentRef]);
 
-    if (!traceIdToUse) {
-      traceIdToUse = "6ea5f71370dbceaf43a3c814f1bb2f04";
-    }
-
-    const runnerToUse = "deep-research";
-
+  const startAgent = useCallback(async (inputs: Record<string, unknown>) => {
+    if (!dialogAgent) return;
+    setLastEvent(`Starting ${dialogAgent.name} — step-by-step interactive mode armed...`);
     setSessStarting(true);
     try {
-      await startSession({
-        trace_id: traceIdToUse,
-        runner_ref: runnerToUse,
+      await startAgentSession(dialogAgent.ref, {
+        inputs,
       });
+      setDialogAgent(null);
       setUIView("session");
-    } catch (e) {
-      useRewindStore.setState({ runError: e instanceof Error ? e.message : String(e) });
+    } catch (error) {
+      useRewindStore.setState({ runError: error instanceof Error ? error.message : String(error) });
+      throw error;
     } finally {
       setSessStarting(false);
     }
-  }, [selectedBranchId, setLastEvent, setUIView]);
+  }, [dialogAgent, setLastEvent, setUIView]);
 
   const compareWithOriginal = useCallback(() => {
     if (!rootBranchId || !selectedBranchId || selectedBranchId === rootBranchId)
@@ -123,13 +144,29 @@ function TopBar() {
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {/* Primary "Start Agent" Button */}
+            {agents.length > 1 && (
+              <select
+                aria-label="Agent"
+                value={selectedAgent?.ref ?? ""}
+                onChange={(event) => setSelectedAgentRef(event.target.value)}
+                className="h-8 max-w-52 rounded-md border bg-background px-2 text-xs"
+                disabled={agentsLoading}
+              >
+                {agents.map((agent) => (
+                  <option key={agent.ref} value={agent.ref} disabled={!agent.available}>
+                    {agent.name}{agent.available ? "" : ` · unavailable${agent.availability_reason ? ` (${agent.availability_reason})` : " (not configured)"}`}
+                  </option>
+                ))}
+              </select>
+            )}
             <Button
               size="sm"
-              onClick={startAgent}
-              disabled={isRunning || sessStarting}
+              onClick={() => void openStartDialog()}
+              disabled={isRunning || sessStarting || agentsLoading || !selectedAgent || !selectedAgent.available}
+              title={selectedAgent && !selectedAgent.available ? unavailableReason : undefined}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-sm"
             >
-              {isRunning || sessStarting ? (
+              {isRunning || sessStarting || agentsLoading ? (
                 <Loader2 className="size-4 animate-spin mr-1.5" />
               ) : (
                 <Play className="size-4 mr-1.5 fill-current" />
@@ -256,7 +293,29 @@ function TopBar() {
             <button onClick={() => useRewindStore.setState({ runError: null })} className="underline">dismiss</button>
           </div>
         )}
+        {!agentsLoading && agents.length === 0 && !agentsError && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            <strong>No agents registered.</strong> Register an agent with the backend, then <button type="button" className="underline" onClick={() => void loadAgents()}>refresh the agent list</button> to start a session.
+          </div>
+        )}
+        {agentsError && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            Could not load the agent registry: {agentsError} <button type="button" className="ml-1 underline" onClick={() => void loadAgents()}>retry</button>
+          </div>
+        )}
+        {!agentsLoading && agents.length > 0 && availableAgentCount === 0 && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            Registered agents are unavailable. {selectedAgent?.availability_reason || "Configure at least one agent capability before starting a session."}
+          </div>
+        )}
       </div>
+      <AgentStartDialog
+        agent={dialogAgent}
+        open={dialogAgent !== null}
+        submitting={sessStarting}
+        onOpenChange={(open) => { if (!open && !sessStarting) setDialogAgent(null); }}
+        onStart={startAgent}
+      />
     </header>
   );
 }

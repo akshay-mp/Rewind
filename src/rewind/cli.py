@@ -7,6 +7,7 @@ adds ``eval``; Phase 7 adds ``enrich`` and ``render-template``.
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -182,6 +183,61 @@ def ui(host: str, port: int, otlp_port: int, db_path: Path) -> None:
     )
     click.echo(
         f"          OTLP receiver → http://{host}:{port}/v1/traces",
+        err=True,
+    )
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+@cli.command()
+@click.argument("application")
+@click.option("--host", default=_DEFAULT_HOST, show_default=True)
+@click.option("--port", type=int, default=_DEFAULT_UI_PORT, show_default=True)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=_DEFAULT_DB,
+    show_default=True,
+)
+def dev(application: str, host: str, port: int, db_path: Path) -> None:
+    """Run a decorator app, e.g. ``rewind dev my_app:debugger``."""
+    if ":" not in application:
+        raise click.ClickException(
+            "expected MODULE:OBJECT (for example app:debugger); "
+            "the object must be a rewind.Rewind instance"
+        )
+    module_name, object_name = application.split(":", 1)
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:  # Import errors should identify the app target.
+        raise click.ClickException(
+            f"could not import {module_name!r}: {exc}. "
+            "Check the module path and install its dependencies."
+        ) from exc
+    try:
+        application_object = getattr(module, object_name)
+    except AttributeError as exc:
+        raise click.ClickException(
+            f"module {module_name!r} has no object {object_name!r}; "
+            "export your Rewind instance under that name"
+        ) from exc
+    from rewind import Rewind
+
+    if not isinstance(application_object, Rewind):
+        raise click.ClickException(
+            f"{application!r} is {type(application_object).__name__}, not rewind.Rewind"
+        )
+    # Imported lazily so the base CLI remains lightweight.
+    import uvicorn
+
+    from rewind.receiver import create_app
+    from rewind.storage import TraceStore
+
+    db_path = _ensure_default_db_path(db_path)
+    app = create_app(TraceStore(str(db_path)), registry=application_object)
+    click.echo(
+        f"rewind dev → http://{host}:{port}/ui "
+        f"({len(application_object.agents)} agents, db={db_path})",
         err=True,
     )
     uvicorn.run(app, host=host, port=port, log_level="warning")

@@ -73,7 +73,9 @@ if TYPE_CHECKING:
 #:   snapshots (Phase 2 completion).
 #: * v10 - adds versioned local pricing profiles.
 #: * v11 - adds the coding-agent control-plane tables.
-SCHEMA_VERSION = 11
+#: * v12 - adds decorator-agent identity, inputs, and final result payloads
+#:   to interactive sessions.
+SCHEMA_VERSION = 12
 
 #: Generic return type for ``TraceStore._execute``.
 _T = TypeVar("_T")
@@ -197,7 +199,10 @@ CREATE TABLE IF NOT EXISTS interactive_sessions (
     error_message   TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
-    run_control     TEXT NOT NULL DEFAULT '{}'
+    run_control     TEXT NOT NULL DEFAULT '{}',
+    agent_ref       TEXT,
+    input_payload   TEXT,
+    result_payload  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_interactive_sessions_trace
     ON interactive_sessions(trace_id);
@@ -215,6 +220,12 @@ _RUN_CONTROL_MIGRATION_SQL = """
 ALTER TABLE interactive_sessions
     ADD COLUMN run_control TEXT NOT NULL DEFAULT '{}';
 """
+
+_AGENT_SESSION_MIGRATION_COLUMNS = {
+    "agent_ref": "TEXT",
+    "input_payload": "TEXT",
+    "result_payload": "TEXT",
+}
 
 #: Phase 2.1 — durable experiment records. Prompt variants, their results,
 #: reusable assertion profiles, and per-step developer reviews are persisted
@@ -496,6 +507,11 @@ class TraceStore:
             }
             if "run_control" not in cols:
                 conn.executescript(_RUN_CONTROL_MIGRATION_SQL)
+            for column, definition in _AGENT_SESSION_MIGRATION_COLUMNS.items():
+                if column not in cols:
+                    conn.execute(
+                        f"ALTER TABLE interactive_sessions ADD COLUMN {column} {definition}"
+                    )
             for table, columns in _PROMPT_EXPERIMENT_MIGRATION_COLUMNS.items():
                 existing = {
                     str(row[1])
@@ -713,6 +729,36 @@ class TraceStore:
             )
 
         self._execute(_insert)
+
+    def ensure_branch(self, branch: Branch) -> None:
+        """Persist a branch pointer if its id is not already present.
+
+        Root branch materialization can race when concurrent replay sessions
+        open the same trace. The UUID is the identity, so an existing row is
+        already the desired result.
+        """
+
+        def _ensure(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """
+                INSERT INTO branches (
+                    branch_id, trace_id, parent_branch_id, branch_at_index,
+                    mode, label, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(branch_id) DO NOTHING
+                """,
+                (
+                    str(branch.branch_id),
+                    branch.trace_id,
+                    str(branch.parent_branch_id) if branch.parent_branch_id else None,
+                    branch.branch_at_index,
+                    branch.mode,
+                    branch.label,
+                    branch.created_at,
+                ),
+            )
+
+        self._execute(_ensure)
 
     def list_branches(self, trace_id: str) -> list[Branch]:
         """List all branches for a trace, root branch first."""
@@ -1168,13 +1214,17 @@ class TraceStore:
                 """
                 INSERT INTO interactive_sessions
                     (session_id, trace_id, branch_id, runner_ref, status,
-                     error_message, created_at, updated_at, run_control)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     error_message, created_at, updated_at, run_control,
+                     agent_ref, input_payload, result_payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     status        = excluded.status,
                     error_message = excluded.error_message,
                     updated_at    = excluded.updated_at,
-                    run_control   = excluded.run_control
+                    run_control   = excluded.run_control,
+                    agent_ref     = excluded.agent_ref,
+                    input_payload = excluded.input_payload,
+                    result_payload = excluded.result_payload
                 """,
                 (
                     session.session_id,
@@ -1186,6 +1236,11 @@ class TraceStore:
                     session.created_at,
                     session.updated_at,
                     run_control_json,
+                    session.agent_ref,
+                    json.dumps(session.input_payload, default=str, sort_keys=True)
+                    if session.input_payload is not None else None,
+                    json.dumps(session.result_payload, default=str, sort_keys=True)
+                    if session.result_payload is not None else None,
                 ),
             )
 
@@ -1202,7 +1257,7 @@ class TraceStore:
                 """
                 SELECT session_id, trace_id, branch_id, runner_ref,
                        status, error_message, created_at, updated_at,
-                       run_control
+                       run_control, agent_ref, input_payload, result_payload
                 FROM interactive_sessions
                 WHERE session_id = ?
                 """,
@@ -1219,6 +1274,11 @@ class TraceStore:
                 error_message=row["error_message"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
+                agent_ref=row["agent_ref"],
+                input_payload=json.loads(row["input_payload"])
+                if row["input_payload"] else None,
+                result_payload=json.loads(row["result_payload"])
+                if row["result_payload"] else None,
                 run_control=RunControlIntent.from_dict(
                     json.loads(row["run_control"] or "{}")
                 ),
@@ -1245,7 +1305,7 @@ class TraceStore:
                 """
                 SELECT session_id, trace_id, branch_id, runner_ref,
                        status, error_message, created_at, updated_at,
-                       run_control
+                       run_control, agent_ref, input_payload, result_payload
                 FROM interactive_sessions
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
@@ -1262,6 +1322,11 @@ class TraceStore:
                     error_message=r["error_message"],
                     created_at=r["created_at"],
                     updated_at=r["updated_at"],
+                    agent_ref=r["agent_ref"],
+                    input_payload=json.loads(r["input_payload"])
+                    if r["input_payload"] else None,
+                    result_payload=json.loads(r["result_payload"])
+                    if r["result_payload"] else None,
                     run_control=RunControlIntent.from_dict(
                         json.loads(r["run_control"] or "{}")
                     ),
