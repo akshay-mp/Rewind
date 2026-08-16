@@ -14,6 +14,7 @@ Install the extra to run them::
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -79,18 +80,19 @@ def _wrapped_llm() -> tuple[Any, list[Any]]:
         def __init__(self) -> None:
             self.model = "adk-test"
 
-        async def generate_response_async(self, request: Any) -> Any:
+        async def generate_content_async(
+            self, request: Any, stream: bool = False
+        ) -> Any:
             calls.append(request)
-            return self._response()
-
-        def generate_response(self, request: Any) -> Any:
-            calls.append(request)
-            return self._response()
+            yield self._response("live-partial")
+            yield self._response("live-text")
 
         @staticmethod
-        def _response() -> Any:
+        def _response(text: str) -> Any:
             return SimpleNamespace(
-                content=SimpleNamespace(role="model", parts=[SimpleNamespace(text="live-text")])
+                content=SimpleNamespace(
+                    role="model", parts=[SimpleNamespace(text=text)]
+                )
             )
 
     return replay_llm(_Wrapped()), calls
@@ -121,8 +123,9 @@ def test_frozen_replay_returns_recorded_payload(
     store, _span = seeded
     wrapped, calls = _wrapped_llm()
     with replay_ctx(store, trace_id, mode=ReplayMode.FROZEN):
-        result = wrapped.generate_response(_adk_request())
-    assert _llm_response_to_text(result) == "recorded-text"
+        result = asyncio.run(_collect(wrapped.generate_content_async(_adk_request())))
+    assert len(result) == 1
+    assert _llm_response_to_text(result[0]) == "recorded-text"
     assert calls == [], "FROZEN replay must make zero outbound calls"
 
 
@@ -132,15 +135,24 @@ def test_branch_replay_forwards_divergent_call(
     """BRANCH replay forwards a divergent call and captures a new span."""
     store, _span = seeded
     wrapped, calls = _wrapped_llm()
-    with replay_ctx(store, trace_id, mode=ReplayMode.BRANCH):
+    with replay_ctx(store, trace_id, mode=ReplayMode.BRANCH) as session:
         # Recorded message set: serve from fixture.
-        frozen = wrapped.generate_response(_adk_request())
-        assert _llm_response_to_text(frozen) == "recorded-text"
+        frozen = asyncio.run(_collect(wrapped.generate_content_async(_adk_request())))
+        assert len(frozen) == 1
+        assert _llm_response_to_text(frozen[0]) == "recorded-text"
         assert calls == []
         # Divergence: a new message set never matches a recorded span.
-        divergent = wrapped.generate_response(_adk_request("a different turn"))
+        divergent = asyncio.run(
+            _collect(wrapped.generate_content_async(_adk_request("a different turn")))
+        )
         assert calls, "BRANCH divergence must forward to the wrapped model"
-        assert _llm_response_to_text(divergent) == "live-text"
+        assert [_llm_response_to_text(response) for response in divergent] == [
+            "live-partial",
+            "live-text",
+        ]
+        captured = session.recorded_spans()[-1]
+        response = captured.raw_attributes["gen_ai.response"]
+        assert response["choices"][0]["message"]["content"] == "live-text"
 
 
 def test_no_session_delegates_to_wrapped(
@@ -148,5 +160,11 @@ def test_no_session_delegates_to_wrapped(
 ) -> None:
     """Without an active session, the wrapper is transparent."""
     wrapped, calls = _wrapped_llm()
-    wrapped.generate_response(_adk_request())
+    result = asyncio.run(_collect(wrapped.generate_content_async(_adk_request())))
+    assert len(result) == 2
     assert len(calls) == 1
+
+
+async def _collect(generator: Any) -> list[Any]:
+    """Drive an ADK async generator while the replay ContextVar is active."""
+    return [response async for response in generator]

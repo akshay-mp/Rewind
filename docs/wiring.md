@@ -43,7 +43,7 @@ OpenAIInstrumentor().instrument()
 ## Google ADK
 
 ```bash
-pip install openinference-instrumentation-google-adk
+pip install "google-adk>=1.28.1,<2" openinference-instrumentation-google-adk
 ```
 
 ```python
@@ -51,7 +51,7 @@ from openinference.instrumentation.google_adk import ADKInstrumentor
 ADKInstrumentor().instrument()
 ```
 
-Wraps `google.adk.models.llms.BaseLlm.generate_response[_async]`. **Replay
+Captures `google.adk.models.BaseLlm.generate_content_async`. **Replay
 adapter**: [`docs/replay-adapters.md`](./replay-adapters.md#adk) — wrap
 your ADK `BaseLlm` with `rewind.adapters.adk.replay_llm(real_model)` to
 get time-travel branching in debug mode.

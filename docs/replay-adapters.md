@@ -37,8 +37,8 @@ captured under a new branch id.
 | Framework | Adapter factory | Wraps | Import extra |
 |---|---|---|---|
 | **LangGraph** | `rewind.adapters.langgraph.replay_chat_model` | `BaseChatModel._generate` (sync + async) | `pip install rewind-debugger[langgraph]` |
-| **Google ADK** | `rewind.adapters.adk.replay_llm` | `BaseLlm.generate_response[_async]` | `pip install rewind-debugger[adk]` |
-| **CrewAI** | `rewind.adapters.crewai.replay_llm` | `BaseLLM.call[_async]`, `get_response[_async]` | `pip install rewind-debugger[crewai]` |
+| **Google ADK** | `rewind.adapters.adk.replay_llm` | `BaseLlm.generate_content_async` | `pip install rewind-debugger[adk]` |
+| **CrewAI** | `rewind.adapters.crewai.replay_llm` | `BaseLLM.call[_async]`, `get_response[_async]` | `pip install crewai` |
 | **PydanticAI** | `rewind.adapters.pydantic_ai.replay_model` | `Model.request[_stream]` | `pip install rewind-debugger[pydantic-ai]` |
 | **SmolAgents** | `rewind.adapters.smolagents.replay_model` | `Model.__call__`, `generate`, `astream` | `pip install rewind-debugger[smolagents]` |
 | **Generic OpenAI** | `rewind.replay` ctxmgr (monkey-patch fallback) | `openai.resources.chat.completions.Completions.create` (sync + async + streaming) | None — always available |
@@ -66,13 +66,20 @@ with replay(trace_id="…", branch_at=2, mode="branch"):
 
 ### ADK  *(Phase 6)*
 
+Install the supported Google ADK 1.x range alongside Rewind's adapter extra:
+
+```bash
+pip install "google-adk>=1.28.1,<2" rewind-debugger[adk]
+```
+
 ```python
 from rewind.adapters.adk import replay_llm
-from google.adk.models.llms import BaseLlm
+from google.adk.models import BaseLlm
 
 real_llm: BaseLlm = load_your_adk_model()
 replay_wrapped = replay_llm(real_llm, trace_id="…")
 # Pass replay_wrapped to your ADK agent's `model=…` slot.
+# ADK invokes replay_wrapped.generate_content_async(request, stream=False).
 ```
 
 ### CrewAI  *(Phase 6)*
@@ -135,9 +142,10 @@ adapters for any multi-threaded agent.
 
 ## Troubleshooting
 
-**`AdapterError: pip install rewind-debugger[<extra>]`** — you called the
-adapter factory without the framework installed. Install the extra, or
-switch to the generic OpenAI ctxmgr if your framework isn't supported.
+**`AdapterError: install the framework dependency`** — you called the
+adapter factory without the framework installed. Install the dependency
+listed in the adapter matrix, or switch to the generic OpenAI ctxmgr if
+your framework isn't supported.
 
 **Frozen replay diverged** — the agent's `messages_hash` doesn't match
 any recorded span at or before the cursor. Most common cause: the

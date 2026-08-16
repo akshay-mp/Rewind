@@ -91,6 +91,11 @@ def replay_model(
         def model_id(self) -> str:
             return f"rewind-replay({getattr(self._rewind_wrapped, 'model_id', 'smolagents')})"
 
+        @model_id.setter
+        def model_id(self, value: str) -> None:
+            # SmolAgents 1.26 assigns model_id during Model.__init__.
+            self._smolagents_model_id = value
+
         def __call__(
             self,
             messages: list[Any],

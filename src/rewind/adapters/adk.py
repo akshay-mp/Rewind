@@ -3,15 +3,14 @@
 Plan §6 Phase 6 — extends the adapter-first replay strategy (first
 shipped for LangGraph in Phase 3 Track 3B.1) to **Google ADK**.
 
-ADK exposes :class:`google.adk.models.llms.BaseLlm` (aliased as
-:class:`Llm`) as the pluggable model slot. Subclasses implement
-``generate_response_async`` / ``generate_response`` and the agent loop
-calls them per turn; by default ADK ships ``Gemini`` and ``LiteLlm``
-clients. This adapter provides :func:`replay_llm`, a factory that wraps a
-real ``BaseLlm`` so that during a :func:`rewind.replay` context:
+ADK exposes :class:`google.adk.models.BaseLlm` (aliased as :class:`Llm`)
+as the pluggable model slot. Subclasses implement the
+``generate_content_async`` async generator and the agent loop calls it per
+turn. This adapter provides :func:`replay_llm`, a factory that wraps a real
+``BaseLlm`` so that during a :func:`rewind.replay` context:
 
-* Active + matching recorded LLM span ``<= cursor`` → return the recorded
-  :class:`google.adk.models.llms.LlmResponse` (zero egress).
+* Active + matching recorded LLM span ``<= cursor`` → yield the recorded
+  :class:`google.adk.models.LlmResponse` (zero egress).
 * Active + divergence in ``BRANCH`` / ``FULL_RERUN`` → forward to the
   wrapped model and capture the new span under the replay branch.
 * Active + divergence in ``FROZEN`` → raise
@@ -31,7 +30,7 @@ from rewind.adapters._common import assert_not_frozen, build_live_span
 from rewind.openai_intercept import extract_signature
 
 if TYPE_CHECKING:
-    from google.adk.models.llms import BaseLlm, LlmRequest, LlmResponse
+    from google.adk.models import BaseLlm, LlmResponse
 
     from rewind.replay import ReplaySession
 
@@ -62,14 +61,11 @@ def replay_llm(
     Returns
     -------
     BaseLlm
-        A subclass instance whose ``generate_response[_async]`` routes
-        through Rewind. The wrapped model is preserved as
-        ``._rewind_wrapped``.
+        A subclass instance whose ``generate_content_async`` routes through
+        Rewind. The wrapped model is preserved as ``._rewind_wrapped``.
     """
     try:
-        # pylint: disable=import-outside-toplevel
-        from google.adk.models.llms import BaseLlm, LlmResponse
-        # pylint: enable=import-outside-toplevel
+        BaseLlm, _LlmRequest, LlmResponse = _adk_types()
     except ImportError as exc:  # pragma: no cover - exercised only without ADK
         raise AdapterError(
             "rewind.adapters.adk requires `google-adk`; install it via "
@@ -86,6 +82,38 @@ def replay_llm(
         # ------------------------------------------------------------------
         # ADK contract
         # ------------------------------------------------------------------
+        async def generate_content_async(
+            self,
+            llm_request: Any,
+            stream: bool = False,
+        ) -> Any:
+            """Replay or forward ADK's async-generator model contract."""
+            session = self._active_session()
+            if session is None:
+                async for response in self._rewind_wrapped.generate_content_async(
+                    llm_request, stream=stream
+                ):
+                    yield response
+                return
+
+            signature = self._signature(llm_request)
+            recorded = session.respond_or_forward(signature)
+            if recorded is not None:
+                yield self._materialise(recorded)
+                return
+
+            assert_not_frozen(session)
+            final: Any = None
+            async for response in self._rewind_wrapped.generate_content_async(
+                llm_request, stream=stream
+            ):
+                final = response
+                yield response
+            if final is not None:
+                self._capture_live_span(
+                    llm_request, session, final, self._get_model_name()
+                )
+
         @property
         def _llm_type(self) -> str:
             return f"rewind-replay({getattr(self._rewind_wrapped, 'model', 'adk')})"
@@ -98,16 +126,21 @@ def replay_llm(
 
         async def generate_response_async(
             self,
-            request: LlmRequest,
-        ) -> LlmResponse:
+            request: Any,
+        ) -> Any:
+            if not hasattr(self._rewind_wrapped, "generate_response_async"):
+                final: Any = None
+                async for response in self.generate_content_async(request):
+                    final = response
+                return final or LlmResponse()
             response = await self._dispatch_async(request, self._active_session())
             return response or LlmResponse()
 
         async def _dispatch_async(
             self,
-            request: LlmRequest,
+            request: Any,
             session: ReplaySession | None,
-        ) -> LlmResponse:
+        ) -> Any:
             if session is None:
                 return await self._rewind_wrapped.generate_response_async(request)
             signature = self._signature(request)
@@ -122,8 +155,13 @@ def replay_llm(
 
         def generate_response(
             self,
-            request: LlmRequest,
-        ) -> LlmResponse:
+            request: Any,
+        ) -> Any:
+            if not hasattr(self._rewind_wrapped, "generate_response"):
+                raise AdapterError(
+                    "This ADK model exposes only generate_content_async; "
+                    "use its async-generator API."
+                )
             session = self._active_session()
             if session is None:
                 return self._rewind_wrapped.generate_response(request)
@@ -140,7 +178,7 @@ def replay_llm(
         # ------------------------------------------------------------------
         # Helpers
         # ------------------------------------------------------------------
-        def _signature(self, request: LlmRequest) -> Any:
+        def _signature(self, request: Any) -> Any:
             # ADK's LlmRequest keeps the agent's outbound messages on
             # ``.contents`` plus the model id on ``.model`` and live tools on
             # ``.config.tools``. We re-use the shared extraction from
@@ -174,9 +212,9 @@ def replay_llm(
 
         def _capture_live_span(
             self,
-            request: LlmRequest,
+            request: Any,
             session: ReplaySession,
-            result: LlmResponse,
+            result: Any,
             model_name: str,
         ) -> None:
             content = _llm_response_to_text(result)
@@ -200,7 +238,11 @@ def replay_llm(
                 return None
             return session
 
-    instance = _ReplayLlm()
+    model_name = str(getattr(wrapped, "model", "adk-replay") or "adk-replay")
+    try:
+        instance = _ReplayLlm(model=model_name)
+    except TypeError:  # pragma: no cover - legacy BaseLlm implementations
+        instance = _ReplayLlm()
     return instance
 
 
@@ -256,7 +298,7 @@ def _llm_response_from_text(content: str, *, model: str) -> Any:
     """
     # pylint: disable=import-outside-toplevel
     try:
-        from google.adk.models.llms import LlmResponse
+        _, _, LlmResponse = _adk_types()
     except ImportError as exc:  # pragma: no cover - depends on ADK presence
         raise AdapterError(
             "rewind.adapters.adk requires `google-adk`; install it via "
@@ -270,7 +312,10 @@ def _llm_response_from_text(content: str, *, model: str) -> Any:
         try:
             from google.genai.types import Content, Part
         except ImportError:  # pragma: no cover - pre-0.2 ADK without genai
-            from google.adk.models.llms import Content, Part
+            try:
+                from google.adk.models import Content, Part
+            except ImportError:
+                from google.adk.models.llms import Content, Part
         # pylint: enable=import-outside-toplevel,no-name-in-module
         return LlmResponse(
             content=Content(role="model", parts=[Part(text=content)]),
@@ -300,3 +345,18 @@ def _llm_response_to_text(result: Any) -> str:
         return content
     parts = getattr(content, "parts", None) or []
     return _flatten_parts(parts)
+
+
+def _adk_types() -> tuple[Any, Any, Any]:
+    """Load ADK model types across the current and legacy module layouts."""
+    # pylint: disable=import-outside-toplevel
+    try:
+        from google.adk.models import BaseLlm, LlmRequest, LlmResponse
+    except ImportError:
+        from google.adk.models.llms import BaseLlm, LlmResponse
+        try:
+            from google.adk.models.llms import LlmRequest
+        except ImportError:  # pragma: no cover - legacy ADK shape
+            LlmRequest = Any
+    # pylint: enable=import-outside-toplevel
+    return BaseLlm, LlmRequest, LlmResponse

@@ -153,7 +153,8 @@ Install the optional extras as needed:
 
 ```bash
 pip install rewind-debugger[adk]              # one framework
-pip install rewind-debugger[adk,crewai]       # several
+pip install rewind-debugger[adk,pydantic-ai] # several Rewind-managed frameworks
+pip install crewai                             # CrewAI adapter dependency
 pip install rewind-debugger[adapters]         # all four
 ```
 

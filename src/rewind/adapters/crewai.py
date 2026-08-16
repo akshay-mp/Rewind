@@ -74,7 +74,7 @@ def replay_llm(
     except ImportError as exc:  # pragma: no cover - exercised only without crewai
         raise AdapterError(
             "rewind.adapters.crewai requires `crewai`; install it via "
-            "`pip install rewind-debugger[crewai]` or use the generic OpenAI "
+            "`pip install crewai` or use the generic OpenAI "
             "monkey-patch (rewind.openai_intercept.patch)."
         ) from exc
 

@@ -114,16 +114,16 @@ def test_frozen_replay_returns_recorded_payload(
 ) -> None:
     store, _span = seeded
     wrapped, calls = _wrapped_model()
-    with replay_ctx(store, trace_id, mode=ReplayMode.FROZEN):
-        result = wrapped.request(
-            [_request_part("hello")],
-            model_settings=None,
-            model_request_parameters=None,
-        )
-    # `request` is async — drive it through a fresh event loop.
     import asyncio
 
-    out = asyncio.new_event_loop().run_until_complete(result)
+    with replay_ctx(store, trace_id, mode=ReplayMode.FROZEN):
+        out = asyncio.run(
+            wrapped.request(
+                [_request_part("hello")],
+                model_settings=None,
+                model_request_parameters=None,
+            )
+        )
     assert _model_response_to_text(out) == "recorded-text"
     assert calls == [], "FROZEN replay must make zero outbound calls"
 

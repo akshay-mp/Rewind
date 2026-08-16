@@ -6,9 +6,9 @@ Skipped unless ``crewai`` is importable. Exercises:
 * BRANCH replay forwards divergent calls and records a new span.
 * No active session → the wrapper is transparent.
 
-Install the extra to run them::
+Install CrewAI separately to run them::
 
-    pip install rewind-debugger[crewai]
+    pip install crewai
 """
 
 from __future__ import annotations
