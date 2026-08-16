@@ -27,7 +27,7 @@
 | Classifier | `src/rewind/classify.py` | Defensive map from raw GenAI/OpenInference attrs → `SpanKind`. Unclassifiable → `UNKNOWN` (never dropped). |
 | Storage | `src/rewind/storage.py` | `TraceStore`: SQLite + WAL, foreign keys, explicit transactions. Verbatim `raw_attributes` JSON column. |
 | CLI scaffold | `src/rewind/cli.py` | `rewind --version` / `rewind version`. Phase 1 adds `serve`. |
-| Packaging | `pyproject.toml` | hatchling build, `rewind-ai` console script, dev extras (ruff/pylint/mypy/pytest). |
+| Packaging | `pyproject.toml` | hatchling build, `rewind-debugger` console script, dev extras (ruff/pylint/mypy/pytest). |
 
 ### 1.2 The no-fidelity-loss contract (the core invariant)
 

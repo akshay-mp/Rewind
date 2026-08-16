@@ -7,7 +7,7 @@ Skipped unless ``smolagents`` is importable. Exercises:
 
 Install the extra to run them::
 
-    pip install rewind-ai[smolagents]
+    pip install rewind-debugger[smolagents]
 """
 
 from __future__ import annotations

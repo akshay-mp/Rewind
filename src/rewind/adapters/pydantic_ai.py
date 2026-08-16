@@ -82,7 +82,7 @@ def replay_model(
     except ImportError as exc:  # pragma: no cover - exercised only without pydantic-ai
         raise AdapterError(
             "rewind.adapters.pydantic_ai requires `pydantic-ai`; install it via "
-            "`pip install rewind-ai[pydantic-ai]` or use the generic OpenAI "
+            "`pip install rewind-debugger[pydantic-ai]` or use the generic OpenAI "
             "monkey-patch (rewind.openai_intercept.patch)."
         ) from exc
 
@@ -309,7 +309,7 @@ def _text_model_response(content: str) -> Any:
     except ImportError as exc:  # pragma: no cover - exercised only without pydantic-ai
         raise AdapterError(
             "rewind.adapters.pydantic_ai requires `pydantic-ai`; install it via "
-            "`pip install rewind-ai[pydantic-ai]`."
+            "`pip install rewind-debugger[pydantic-ai]`."
         ) from exc
     # pylint: enable=import-outside-toplevel
 

@@ -9,7 +9,7 @@ contract against a stand-in ADK ``BaseLlm``:
 
 Install the extra to run them::
 
-    pip install rewind-ai[adk]
+    pip install rewind-debugger[adk]
 """
 
 from __future__ import annotations
@@ -90,9 +90,7 @@ def _wrapped_llm() -> tuple[Any, list[Any]]:
         @staticmethod
         def _response() -> Any:
             return SimpleNamespace(
-                content=SimpleNamespace(
-                    role="model", parts=[SimpleNamespace(text="live-text")]
-                )
+                content=SimpleNamespace(role="model", parts=[SimpleNamespace(text="live-text")])
             )
 
     return replay_llm(_Wrapped()), calls

@@ -36,11 +36,11 @@ captured under a new branch id.
 
 | Framework | Adapter factory | Wraps | Import extra |
 |---|---|---|---|
-| **LangGraph** | `rewind.adapters.langgraph.replay_chat_model` | `BaseChatModel._generate` (sync + async) | `pip install rewind-ai[langgraph]` |
-| **Google ADK** | `rewind.adapters.adk.replay_llm` | `BaseLlm.generate_response[_async]` | `pip install rewind-ai[adk]` |
-| **CrewAI** | `rewind.adapters.crewai.replay_llm` | `BaseLLM.call[_async]`, `get_response[_async]` | `pip install rewind-ai[crewai]` |
-| **PydanticAI** | `rewind.adapters.pydantic_ai.replay_model` | `Model.request[_stream]` | `pip install rewind-ai[pydantic-ai]` |
-| **SmolAgents** | `rewind.adapters.smolagents.replay_model` | `Model.__call__`, `generate`, `astream` | `pip install rewind-ai[smolagents]` |
+| **LangGraph** | `rewind.adapters.langgraph.replay_chat_model` | `BaseChatModel._generate` (sync + async) | `pip install rewind-debugger[langgraph]` |
+| **Google ADK** | `rewind.adapters.adk.replay_llm` | `BaseLlm.generate_response[_async]` | `pip install rewind-debugger[adk]` |
+| **CrewAI** | `rewind.adapters.crewai.replay_llm` | `BaseLLM.call[_async]`, `get_response[_async]` | `pip install rewind-debugger[crewai]` |
+| **PydanticAI** | `rewind.adapters.pydantic_ai.replay_model` | `Model.request[_stream]` | `pip install rewind-debugger[pydantic-ai]` |
+| **SmolAgents** | `rewind.adapters.smolagents.replay_model` | `Model.__call__`, `generate`, `astream` | `pip install rewind-debugger[smolagents]` |
 | **Generic OpenAI** | `rewind.replay` ctxmgr (monkey-patch fallback) | `openai.resources.chat.completions.Completions.create` (sync + async + streaming) | None — always available |
 
 The **generic OpenAI** path is the fallback when no framework-specific
@@ -135,7 +135,7 @@ adapters for any multi-threaded agent.
 
 ## Troubleshooting
 
-**`AdapterError: pip install rewind-ai[<extra>]`** — you called the
+**`AdapterError: pip install rewind-debugger[<extra>]`** — you called the
 adapter factory without the framework installed. Install the extra, or
 switch to the generic OpenAI ctxmgr if your framework isn't supported.
 

@@ -19,7 +19,7 @@ sequenceDiagram
     A->>F: replay_llm(wrapped, trace_id="…")
     F->>F: from google.adk.models.llms import BaseLlm  (lazy)
     alt framework not installed
-        F-->>A: raise AdapterError("install with pip install rewind-ai[adk]")
+        F-->>A: raise AdapterError("install with pip install rewind-debugger[adk]")
     else framework installed
         F->>F: define _ReplayLlm(BaseLlm) in closure scope
         F-->>A: return _ReplayLlm(wrapped, trace_id)

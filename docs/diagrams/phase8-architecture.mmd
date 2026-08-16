@@ -45,7 +45,7 @@ flowchart TB
     end
 
     %% Packaging wiring
-    Scripts -->|"pipx install rewind-ai<br/>→ rewind serve"| CLI
+    Scripts -->|"pipx install rewind-debugger<br/>→ rewind serve"| CLI
     DefaultDB -->|"auto-mkdir on first write"| Store
     Extras -.->|"lazy import"| Enrich
 

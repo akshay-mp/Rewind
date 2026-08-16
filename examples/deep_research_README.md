@@ -31,7 +31,7 @@ pip install -e ".[dev]"
 
 # 2. The deep-research extra
 pip install open-deep-research openinference-instrumentation-langchain
-#    (or, once declared:  pip install rewind-ai[deepresearch])
+#    (or, once declared:  pip install rewind-debugger[deepresearch])
 
 # 3. A local model server reachable via the OpenAI-compatible API:
 #    Unsloth (default), Ollama, or even real OpenAI.
@@ -95,7 +95,7 @@ No `open_deep_research` source changes are required.
   wheel (PyO3 maxes at 3.13). On 3.14 you must install ODR with `--no-deps`
   after satisfying its runtime deps manually (`langgraph`, `langchain-openai`,
   `langchain-community`, `langchain-tavily`, `langchain-mcp-adapters`, `mcp`).
-  On Python 3.11–3.13 a plain `pip install rewind-ai[deepresearch]` works.
+  On Python 3.11–3.13 a plain `pip install rewind-debugger[deepresearch]` works.
   **If you just want to run the demo, use `deep_research_demo.py` or the
   `web-demo/` instead — neither has this dependency.**
 - The agent runs with `search_api="none"` (no external web search) so the

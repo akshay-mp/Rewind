@@ -77,7 +77,7 @@ The contract every adapter follows (codified in
 2. **The factory lazy-imports inside itself.** `replay_llm(wrapped, ...)`
    does `from google.adk.models.llms import BaseLlm` at first call.
 3. **If the import fails, raise `AdapterError(RuntimeError)`** with an
-   actionable `pip install rewind-ai[adk]` hint.
+   actionable `pip install rewind-debugger[adk]` hint.
 4. **Define the framework subclass inside the factory** so the lazy
    imports are in closure scope when the class body executes.
 
@@ -218,7 +218,7 @@ sequenceDiagram
     A->>F: replay_*(wrapped, trace_id="…")
     F->>F: from <framework> import BaseModel  (lazy)
     alt framework not installed
-        F-->>A: raise AdapterError("pip install rewind-ai[<extra>]")
+        F-->>A: raise AdapterError("pip install rewind-debugger[<extra>]")
     else framework installed
         F-->>A: return _Replay*(wrapped, trace_id)
     end
@@ -316,7 +316,7 @@ fall out:
    `extract_signature` reuse, message-flattening helpers, factory
    ImportError contract. They pass in every venv.
 2. **Per-framework replay-contract tests are `find_spec`-gated.**
-   Installing `rewind-ai[adk]` in CI enables `test_adk_adapter.py`;
+   Installing `rewind-debugger[adk]` in CI enables `test_adk_adapter.py`;
    installing `[crewai]` enables `test_crewai_adapter.py`; etc. In the
    dev venv with no frameworks installed, all 12 gated tests SKIP
    gracefully.
@@ -325,7 +325,7 @@ fall out:
 
 | Criterion | Verification |
 |---|---|
-| Branch-and-replay works for ADK | `tests/test_adk_adapter.py::test_branch_replay_forwards_divergent_call` (gated — runs with `pip install rewind-ai[adk]`) |
+| Branch-and-replay works for ADK | `tests/test_adk_adapter.py::test_branch_replay_forwards_divergent_call` (gated — runs with `pip install rewind-debugger[adk]`) |
 | Branch-and-replay works for CrewAI | `tests/test_crewai_adapter.py::test_branch_replay_forwards_divergent_call` (gated) |
 | Branch-and-replay works for PydanticAI | `tests/test_pydantic_ai_adapter.py::test_frozen_replay_returns_recorded_payload` (gated — only frozen path needs async loop care; branch mirror in the gated pattern ready when the framework is installed) |
 | Branch-and-replay works for SmolAgents | `tests/test_smolagents_adapter.py::test_frozen_replay_returns_recorded_payload` (gated) |
@@ -357,7 +357,7 @@ installed; gated tests SKIP gracefully.
 | Surface | Introduced by | Mitigation |
 |---|---|---|
 | Lazy import of foreign code | `from <framework> import …` inside each adapter factory | Imports resolve against the user's installed (operator-trusted) site-packages — same trust boundary as `import openai` / `import langchain_core` in Phase 3. No `sys.path` mutation, no `importlib.import_module(user_input)`, no `eval`. Operator's pip-install list is the trust root. |
-| Optional dependency surface | `pip install rewind-ai[adk]` pulls `google-adk>=0.2.0`; same for crewai/pydantic-ai/smolagents | All four frameworks are operator-installed explicitly via named extras. Rewind never pins a specific version transitively unless declared in `[project.optional-dependencies]`. Operators remain in control of their dependency tree. |
+| Optional dependency surface | `pip install rewind-debugger[adk]` pulls `google-adk>=0.2.0`; same for crewai/pydantic-ai/smolagents | All four frameworks are operator-installed explicitly via named extras. Rewind never pins a specific version transitively unless declared in `[project.optional-dependencies]`. Operators remain in control of their dependency tree. |
 | Adapter subclass instantiation | `_Replay*(wrapped)` holds a reference to the user's existing framework model | Adapter closures do NOT deep-copy, monkey-patch upstream framework code, or replace any global state. The adapter is a per-instance wrapper returned to the user — they opt in by passing it to their agent. Without it, zero behaviour change. |
 | Per-call data flow | Adapter reads framework messages, forwards them to `extract_signature` → SQLite, and may forward to wrapped model | Same data flow as Phase 3 LangGraph (audited there). `raw_attributes` stores message content verbatim — operators apply the same DB-access controls as Phase 1. |
 
@@ -395,7 +395,7 @@ unchanged for the receiver / replay API.
 |---|---|
 | Adding a sixth framework adapter | Read `src/rewind/adapters/langgraph.py` (60-90s — it's the pattern origin) → check `_common.build_live_span` + `assert_not_frozen` cover what you need → write `adapters/<fw>.py` with the lazy-import-in-factory pattern → add tests in `tests/test_<fw>_adapter.py` gated on `find_spec("<fw>")` |
 | Adding the `adapters` umbrella extra | `pyproject.toml [project.optional-dependencies]` — add the new extra to the `adapters` list (concrete package list — PEP 621 forbids self-reference) |
-| Running framework-gated tests | `pip install rewind-ai[adk]` (or whichever) → `python -m pytest tests/test_adk_adapter.py -v` |
+| Running framework-gated tests | `pip install rewind-debugger[adk]` (or whichever) → `python -m pytest tests/test_adk_adapter.py -v` |
 | Debugging a materialise bug | Each adapter has a private `_materialise` / `_text_*_response` helper — check the framework's response shape inside it. The recorded payload is always the OpenAI-compatible chat-completion JSON under `raw_attributes["gen_ai.response"]`. |
 | Updating the adapter rule | `/memories/repo/rewind-project-conventions.md` §"Adapter rule" — this is the canonical spec |
 
@@ -412,7 +412,7 @@ env -C rewind sh -c 'ruff check src/rewind tests && \
 python -m pytest tests/test_adapters_common.py -v
 
 # Install + run a gated suite
-pip install rewind-ai[adk]
+pip install rewind-debugger[adk]
 python -m pytest tests/test_adk_adapter.py -v
 
 # Adapter usage from agent code

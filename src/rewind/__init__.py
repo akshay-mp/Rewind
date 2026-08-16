@@ -11,12 +11,14 @@ from rewind.checkpoint import checkpoint
 from rewind.tool_intercept import tool
 
 __version__ = "0.1.0"
+rewind = Rewind()
 __all__ = [
     "AgentDefinition",
     "Rewind",
     "RewindContext",
     "__version__",
     "checkpoint",
+    "rewind",
     "tool",
 ]
 

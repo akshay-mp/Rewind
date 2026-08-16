@@ -20,8 +20,8 @@ structure — so they're easy to copy-paste into a new agent skeleton.
 
 ```bash
 # Install Rewind (any of:)
-pipx install rewind-ai
-pip install rewind-ai            # if no pipx
+pipx install rewind-debugger
+pip install rewind-debugger            # if no pipx
 pip install -e .                 # dev install from the repo
 
 # Install one OpenInference instrumentation package per example:

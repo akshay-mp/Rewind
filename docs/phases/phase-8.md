@@ -35,7 +35,7 @@ minutes without reading a phase doc.
 |---|---|---|
 | Well-known default DB path | `src/rewind/cli.py` (MODIFIED) | `_DEFAULT_DB = Path.home() / ".rewind" / "rewind.db"`; `_ensure_default_db_path(db_path)` auto-mkdirs the directory **only** for the default path (an explicit `--db /tmp/foo.db` is the user's responsibility). Wired into `serve` and `ui`. Means the README quickstart works from any CWD. |
 | Optional extras | `pyproject.toml` (MODIFIED) | `enrichment = ["transformers>=4.40.0", "psutil>=5.9.0"]` — operators opt into the heavier enrichment path; base install stays lean. Mirrors the P6 `adk`/`crewai`/`pydantic-ai`/`smolagents` extras. |
-| sdist inclusions | `pyproject.toml` (MODIFIED) | `[tool.hatch.build.targets.sdist]` now includes `docs/`, `examples/`, `scripts/` — so `pip download rewind-ai` ships the docs a developer reads after install. |
+| sdist inclusions | `pyproject.toml` (MODIFIED) | `[tool.hatch.build.targets.sdist]` now includes `docs/`, `examples/`, `scripts/` — so `pip download rewind-debugger` ships the docs a developer reads after install. |
 | Performance gate | `scripts/benchmark_receiver.py` (NEW) | Stand-alone (not a pytest) CLI measuring the two plan-named budgets: receiver overhead (POST OTLP/HTTP to a live server) and interceptor overhead (in-process no-op hot path). Prints p50/p90/p99; CI can enforce thresholds via `--p99-msg-ms` / `--p99-interceptor-us`. |
 | Demo agents | `examples/{tool_caller,rag_loop,multi_step_coder}.py` + `examples/README.md` (NEW) | Three runnable scripts — minimal tool-caller, two-turn RAG loop, multi-step coding agent — all using `openinference-instrumentation-openai` + the standard OpenAI client pointed at `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318`. Concrete starting points for evaluation. |
 | User-facing docs | `docs/{quickstart,wiring,branching-diff-walkthrough,replay-adapters}.md` (NEW) | Four end-user docs: 5-minute install-to-trace, per-framework OpenInference wiring recipes, the branching-diff debugging walkthrough, per-framework replay-adapter usage. **No phase docs.** Operators never read phase docs in normal use. |
@@ -52,7 +52,7 @@ ways:
    different files if their CWDs differed at all. `~/.rewind/` is
    a single well-known location — the capture and the UI always see
    the same store.
-2. **First-run must not fail.** `pipx install rewind-ai && rewind
+2. **First-run must not fail.** `pipx install rewind-debugger && rewind
    serve` runs before the directory exists. `_ensure_default_db_path`
    mkdirs (parents=True, exist_ok=True) so the very first invocation
    is a no-failure path. We deliberately do **not** extend this to
@@ -93,10 +93,10 @@ next to an `examples/README.md` that explains which one to copy.
 ### 1.5 Distribution surface after Phase 8
 
 ```
-pipx install rewind-ai                           # base install
-pipx install rewind-ai[enrichment]               # + tokenizer/psutil for P7
-pipx install rewind-ai[adapters]                 # + all P6 framework adapters
-pipx install rewind-ai[enrichment,adapters,dev]  # development
+pipx install rewind-debugger                           # base install
+pipx install rewind-debugger[enrichment]               # + tokenizer/psutil for P7
+pipx install rewind-debugger[adapters]                 # + all P6 framework adapters
+pipx install rewind-debugger[enrichment,adapters,dev]  # development
 → rewind serve                                   # listens on :4318, writes ~/.rewind/rewind.db
 → rewind ui --port 8484                          # opens http://127.0.0.1:8484/ui
 ```
@@ -143,7 +143,7 @@ flowchart TB
         Engine["replay.py — ReplaySession"]
         Enrich["enrichment.py — enrich_span"]
     end
-    Scripts -->|"pipx install rewind-ai"| CLI
+    Scripts -->|"pipx install rewind-debugger"| CLI
     DefaultDB -->|"auto-mkdir on first write"| Store
     Extras -.->|"lazy import"| Enrich
     RecvBench -.->|"POSTs OTLP/HTTP"| Receiver
@@ -173,7 +173,7 @@ sequenceDiagram
     participant Store as TraceStore (~/.rewind/rewind.db)
     participant Recv as OTLP receiver
     participant Agent as Instrumented agent
-    U->>Pipx: pipx install rewind-ai
+    U->>Pipx: pipx install rewind-debugger
     Pipx-->>U: ~/.local/bin/rewind
     U->>CLI: rewind serve --port 4318
     CLI->>Ensure: _ensure_default_db_path(_DEFAULT_DB)
@@ -349,7 +349,7 @@ the loopback-only bind and the Phase 4 threat model unchanged.
 rm -rf ~/.rewind
 
 # Install + run:
-pipx install rewind-ai
+pipx install rewind-debugger
 rewind serve --port 4318 &            # creates ~/.rewind/rewind.db
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 \
     python examples/rag_loop.py      # ships a trace

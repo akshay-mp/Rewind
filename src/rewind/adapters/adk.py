@@ -73,7 +73,7 @@ def replay_llm(
     except ImportError as exc:  # pragma: no cover - exercised only without ADK
         raise AdapterError(
             "rewind.adapters.adk requires `google-adk`; install it via "
-            "`pip install rewind-ai[adk]` or use the generic OpenAI "
+            "`pip install rewind-debugger[adk]` or use the generic OpenAI "
             "monkey-patch (rewind.openai_intercept.patch)."
         ) from exc
 
@@ -260,7 +260,7 @@ def _llm_response_from_text(content: str, *, model: str) -> Any:
     except ImportError as exc:  # pragma: no cover - depends on ADK presence
         raise AdapterError(
             "rewind.adapters.adk requires `google-adk`; install it via "
-            "`pip install rewind-ai[adk]`."
+            "`pip install rewind-debugger[adk]`."
         ) from exc
     # pylint: enable=import-outside-toplevel
 

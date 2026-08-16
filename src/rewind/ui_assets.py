@@ -22,12 +22,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-#: Absolute path to the shipped package's ``web/dist`` directory. Resolved at
-#: import time so the value is stable across FastAPI requests.
-#: When installed via pip the ``web/dist`` is bundled inside the wheel (see
-#: ``pyproject.toml``'s ``[tool.hatch.build.targets.wheel]``). When running
-#: from a checkout, it lives alongside ``src/rewind``.
-_WEB_DIST: Path = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
+#: The wheel carries the built UI inside the Python package. The checkout
+#: fallback keeps local development working without copying generated files
+#: into ``src/rewind``.
+_PACKAGED_UI: Path = Path(__file__).resolve().parent / "_ui"
+_CHECKOUT_UI: Path = Path(__file__).resolve().parents[2] / "web" / "dist"
 
 
 def ui_dist_path() -> Path | None:
@@ -36,8 +35,9 @@ def ui_dist_path() -> Path | None:
     The caller is expected to handle the ``None`` case by serving a 404 + an
     HTML hint about running ``cd web && pnpm build``.
     """
-    if _WEB_DIST.is_dir() and (_WEB_DIST / "index.html").is_file():
-        return _WEB_DIST
+    for candidate in (_PACKAGED_UI, _CHECKOUT_UI):
+        if candidate.is_dir() and (candidate / "index.html").is_file():
+            return candidate
     return None
 
 

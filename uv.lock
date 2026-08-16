@@ -7402,7 +7402,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rewind-ai"
+name = "rewind-debugger"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -7429,6 +7429,7 @@ adapters = [
     { name = "crewai", version = "1.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
     { name = "crewai", version = "1.15.10", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15'" },
     { name = "google-adk" },
+    { name = "langchain-core" },
     { name = "pydantic-ai" },
     { name = "smolagents" },
 ]
@@ -7459,6 +7460,9 @@ enrichment = [
     { name = "psutil" },
     { name = "transformers" },
 ]
+langgraph = [
+    { name = "langchain-core" },
+]
 pydantic-ai = [
     { name = "pydantic-ai" },
 ]
@@ -7477,6 +7481,8 @@ requires-dist = [
     { name = "google-adk", marker = "extra == 'adapters'", specifier = ">=0.2.0" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=0.2.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
+    { name = "langchain-core", marker = "extra == 'adapters'", specifier = ">=0.3.0" },
+    { name = "langchain-core", marker = "extra == 'langgraph'", specifier = ">=0.3.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
     { name = "open-deep-research", marker = "extra == 'deepresearch'", specifier = ">=0.0.16" },
     { name = "openai", specifier = ">=1.50.0" },
@@ -7503,7 +7509,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.12" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
 ]
-provides-extras = ["dev", "web", "adk", "crewai", "pydantic-ai", "smolagents", "adapters", "enrichment", "deepresearch"]
+provides-extras = ["dev", "web", "adk", "crewai", "langgraph", "pydantic-ai", "smolagents", "adapters", "enrichment", "deepresearch"]
 
 [[package]]
 name = "rich"

@@ -8,7 +8,7 @@ Skipped unless ``pydantic_ai`` is importable. Exercises:
 
 Install the extra to run them::
 
-    pip install rewind-ai[pydantic-ai]
+    pip install rewind-debugger[pydantic-ai]
 """
 
 from __future__ import annotations
@@ -29,9 +29,7 @@ from rewind.replay import (
 from rewind.storage import TraceStore
 
 _HAS_PYDANTIC_AI = importlib.util.find_spec("pydantic_ai") is not None
-pytestmark = pytest.mark.skipif(
-    not _HAS_PYDANTIC_AI, reason="pydantic-ai not installed"
-)
+pytestmark = pytest.mark.skipif(not _HAS_PYDANTIC_AI, reason="pydantic-ai not installed")
 
 
 _MESSAGES = [{"role": "user", "content": "hello"}]

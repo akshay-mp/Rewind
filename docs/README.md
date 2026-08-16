@@ -75,7 +75,7 @@ live under `diagrams/` and follow the naming convention
 
 ## Quality snapshot (latest local verification)
 
-- **Tests:** 522 passed / 13 skipped / 49 deselected / 3 warnings.
+- **Tests:** 527 passed / 13 skipped / 49 deselected / 3 warnings.
 - **Web:** frontend TypeScript typecheck and production build passed.
 - **Diff:** `git diff --check` passed.
 

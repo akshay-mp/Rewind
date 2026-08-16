@@ -4,19 +4,36 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
+from types import ModuleType
 from typing import Annotated
 
 import pytest
+import uvicorn
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, SecretBytes, SecretStr
 
-from rewind import Rewind, RewindContext
+from rewind import Rewind, RewindContext, rewind
 from rewind.cli import cli
 from rewind.receiver import create_app
 from rewind.stepping_api import _SESSIONS
 from rewind.storage import TraceStore
+
+
+def test_public_rewind_registry_supports_decorator_registration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(rewind, "_agents", {})
+
+    assert isinstance(rewind, Rewind)
+
+    @rewind.agent(framework="openai")
+    def public_api_agent(question: str) -> str:
+        return question
+
+    assert rewind.get("public_api_agent") is not None
 
 
 def test_decorator_is_direct_pass_through_and_excludes_context() -> None:
@@ -291,6 +308,46 @@ def test_dev_reports_actionable_import_errors() -> None:
     result = CliRunner().invoke(cli, ["dev", "missing_module:debugger"])
     assert result.exit_code != 0
     assert "could not import" in result.output
+
+
+def test_dev_accepts_rewind_registry_with_registered_agent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(rewind, "_agents", {})
+    module = ModuleType("rewind_cli_test_app")
+    exec(  # noqa: S102 - controlled temporary module fixture
+        '''
+from rewind import rewind
+
+@rewind.agent(framework="openai")
+def answer(question: str) -> str:
+    return question
+''',
+        module.__dict__,
+    )
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    served: dict[str, object] = {}
+
+    def fake_run(app: object, **kwargs: object) -> None:
+        served["app"] = app
+        served.update(kwargs)
+
+    monkeypatch.setattr(uvicorn, "run", fake_run)
+
+    result = CliRunner().invoke(
+        cli,
+        ["dev", f"{module.__name__}:rewind", "--db", str(tmp_path / "dev.db")],
+    )
+
+    assert result.exit_code == 0
+    assert "(1 agents," in result.output
+    assert served["app"] is not None
+    assert served["host"] == "127.0.0.1"
+    assert served["port"] == 8484
+    assert served["log_level"] == "warning"
+    listing = TestClient(served["app"]).get("/api/v1/agents").json()
+    assert listing["items"][0]["name"] == "answer"
 
 
 def test_secret_agent_restart_requires_override_and_masks_new_inputs(tmp_path: Path) -> None:

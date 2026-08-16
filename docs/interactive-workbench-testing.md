@@ -51,10 +51,11 @@ Open <http://127.0.0.1:5174/ui/> and click **Start Agent**.
 
 The backend serves the API and workbench on
 <http://127.0.0.1:8484/ui/>. Vite on port 5174 is the development UI used
-for this live verification. The example uses
-`from rewind import Rewind, RewindContext`, `@debugger.agent`, typed input,
-and the decorator entry point exposed by `rewind dev app:debugger`; the
-explicit example command above is convenient for the seeded demo.
+for this live verification. The seeded example imports
+`from rewind import Rewind, RewindContext`, creates
+`rewind = Rewind(title="Deep Research")`, and registers typed input with
+`@rewind.agent`. The explicit example command above is convenient for this
+custom-titled demo. Existing names such as `debugger` remain supported.
 
 ## Interception boundary
 
@@ -131,7 +132,7 @@ cd web && npm run typecheck && npm run build
 cd .. && git diff --check
 ```
 
-Latest verified result: **522 passed, 13 skipped, 49 deselected, and 3
+Latest verified result: **527 passed, 13 skipped, 49 deselected, and 3
 warnings**; frontend typecheck/build passed; `git diff --check` passed. The
 count does not imply that optional framework packages are installed.
 

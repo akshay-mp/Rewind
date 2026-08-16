@@ -3,8 +3,11 @@
 The Rewind workbench keeps operational records on the developer machine.
 Its session controls cover the parts of a pre-production run that need to be
 inspected before an agent reaches a deployed environment. The current
-decorator-first entry point is `Rewind` + `@debugger.agent`; use
-`rewind dev app:debugger` for a local workbench run.
+decorator-first entry point is `from rewind import RewindContext, rewind` with
+`@rewind.agent`; use `rewind dev app:rewind` for a local workbench run.
+For a custom title or separate registry, use `from rewind import Rewind,
+RewindContext` and define `rewind = Rewind(title="...")` in your app module;
+existing names such as `debugger` remain supported.
 
 ## Run Records
 

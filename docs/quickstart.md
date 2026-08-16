@@ -6,9 +6,9 @@ minutes**.
 ## 1. Install Rewind
 
 ```bash
-pipx install rewind-ai          # recommended — isolated, no venv juggling
+pipx install rewind-debugger          # recommended — isolated, no venv juggling
 # OR
-pip install rewind-ai
+pip install rewind-debugger
 # OR, from the repo:
 pip install -e .
 ```
@@ -24,18 +24,25 @@ rewind --version
 For a local interactive agent, define one `Rewind` object and load it with:
 
 ```python
-from rewind import Rewind, RewindContext
+from rewind import RewindContext, rewind
 
-debugger = Rewind(title="My agents")
-
-@debugger.agent(description="Answer a question", tags=("demo",))
+@rewind.agent(description="Answer a question", tags=("demo",))
 async def answer(question: str, context: RewindContext | None = None) -> str:
     return question
 ```
 
-Start it with `rewind dev app:debugger`. Direct calls to `answer(...)` remain
+Start it with `rewind dev app:rewind`. Direct calls to `answer(...)` remain
 ordinary pass-through calls; `RewindContext` is injected only for workbench
-runs. Official OpenAI Python SDK Chat Completions calls
+runs. For a custom title or separate registry, use:
+
+```python
+from rewind import Rewind, RewindContext
+
+rewind = Rewind(title="My agents")
+```
+
+Existing names such as `debugger` remain supported. Official OpenAI Python SDK
+Chat Completions calls
 (`chat.completions.create`, sync and async) are intercepted in this path,
 including when that SDK is configured for an OpenAI-compatible endpoint.
 Replay adapters for other frameworks remain explicit; generic decorator

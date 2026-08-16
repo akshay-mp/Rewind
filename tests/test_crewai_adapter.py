@@ -8,7 +8,7 @@ Skipped unless ``crewai`` is importable. Exercises:
 
 Install the extra to run them::
 
-    pip install rewind-ai[crewai]
+    pip install rewind-debugger[crewai]
 """
 
 from __future__ import annotations
@@ -119,9 +119,7 @@ def test_branch_replay_forwards_divergent_call(
         assert frozen == "recorded-text"
         assert calls == []
         # Divergence: a new message set never matches a recorded span.
-        divergent = wrapped.call(
-            [{"role": "user", "content": "a different turn"}]
-        )
+        divergent = wrapped.call([{"role": "user", "content": "a different turn"}])
         assert calls, "BRANCH divergence must forward to the wrapped model"
         assert divergent == "live-text"
 

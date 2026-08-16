@@ -74,7 +74,7 @@ def replay_model(
     except ImportError as exc:  # pragma: no cover - exercised only without smolagents
         raise AdapterError(
             "rewind.adapters.smolagents requires `smolagents`; install it via "
-            "`pip install rewind-ai[smolagents]` or use the generic OpenAI "
+            "`pip install rewind-debugger[smolagents]` or use the generic OpenAI "
             "monkey-patch (rewind.openai_intercept.patch)."
         ) from exc
 
@@ -246,7 +246,7 @@ def _smol_chat_message(content: str, tools_to_call_from: Any) -> Any:
         except ImportError as exc:  # pragma: no cover - tolerance for shape drift
             raise AdapterError(
                 "rewind.adapters.smolagents couldn't locate `ChatMessage`; "
-                "install smolagents with `pip install rewind-ai[smolagents]`."
+                "install smolagents with `pip install rewind-debugger[smolagents]`."
             ) from exc
     # pylint: enable=import-outside-toplevel
 

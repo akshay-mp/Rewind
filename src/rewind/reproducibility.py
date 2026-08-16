@@ -79,7 +79,7 @@ def _collect_package_versions() -> dict[str, str]:
         return {}
 
     interesting = [
-        "rewind-ai",
+        "rewind-debugger",
         "fastapi",
         "uvicorn",
         "openai",

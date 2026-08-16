@@ -53,7 +53,8 @@ So Rewind does **not** need its own capture proxy. It needs:
 ## Quick start
 
 ```bash
-pip install rewind-ai
+pip install rewind-debugger
+# The wheel includes the built timeline UI; no separate frontend build is needed.
 rewind serve --port 4318 --db ./rewind.db
 # Point your OTel/OpenInference-instrumented agent at:
 #   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
@@ -67,18 +68,25 @@ rewind ui --port 8484 --db ./rewind.db
 The current workbench entry point is a `Rewind` object with typed agent inputs:
 
 ```python
-from rewind import Rewind, RewindContext
+from rewind import RewindContext, rewind
 
-debugger = Rewind(title="Research")
-
-@debugger.agent(description="Answer a question")
+@rewind.agent(description="Answer a question")
 async def answer(question: str, context: RewindContext | None = None) -> str:
     return question
 ```
 
-Run `rewind dev app:debugger` to expose the agent list and interactive
+Run `rewind dev app:rewind` to expose the agent list and interactive
 sessions at the local UI. Direct calls to `answer(...)` remain ordinary
 pass-through calls; `RewindContext` is injected only for workbench runs.
+For a custom title or separate registry, use:
+
+```python
+from rewind import Rewind, RewindContext
+
+rewind = Rewind(title="Research")
+```
+
+Existing names such as `debugger` remain supported.
 During an OpenAI-framework workbench run, official OpenAI Python SDK Chat
 Completions calls (`chat.completions.create`, sync and async) are intercepted,
 including when that SDK is configured for an OpenAI-compatible endpoint.
@@ -144,9 +152,9 @@ graph.compiled = replay_chat_model(real_chat_model)
 Install the optional extras as needed:
 
 ```bash
-pip install rewind-ai[adk]              # one framework
-pip install rewind-ai[adk,crewai]       # several
-pip install rewind-ai[adapters]         # all four
+pip install rewind-debugger[adk]              # one framework
+pip install rewind-debugger[adk,crewai]       # several
+pip install rewind-debugger[adapters]         # all four
 ```
 
 Without an extra installed, the corresponding factory raises
@@ -202,7 +210,7 @@ python scripts/security_scan.py --phase <N>
 cd web && pnpm dev   # or:  node_modules/.bin/vite --host 127.0.0.1
 ```
 
-Latest verified full suite: **522 passed, 13 skipped, 49 deselected, and 3
+Latest verified full suite: **527 passed, 13 skipped, 49 deselected, and 3
 warnings**. Frontend TypeScript typecheck and production build passed, and
 `git diff --check` passed. See
 [`docs/interactive-workbench-testing.md`](docs/interactive-workbench-testing.md)
@@ -221,7 +229,7 @@ rewind/
     diff.py            Trace diff (Phase 5)
     eval_api.py        Suite runner + baseline diff (Phase 5.5)
     cli.py             Click-based CLI: serve / ui / replay / eval / version
-  tests/               pytest suites (latest full suite: 522 passed)
+  tests/               pytest suites (latest full suite: 527 passed)
   web/                 React + Vite + TypeScript timeline UI (P2)
   docs/
     phases/            Per-phase: QA, security, dev-handoff, design
@@ -234,6 +242,8 @@ rewind/
 ```
 
 See `docs/README.md` for a navigable index of all phase docs and diagrams.
+For wheel builds, installation requirements, and release publishing, see
+[`docs/packaging-release.md`](docs/packaging-release.md).
 
 ## Out of scope (v1)
 

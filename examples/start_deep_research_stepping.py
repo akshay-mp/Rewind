@@ -21,7 +21,7 @@ import openai
 from rewind import Rewind, RewindContext, checkpoint, tool
 from rewind.openai_intercept import patch
 
-debugger = Rewind(title="Deep Research")
+rewind = Rewind(title="Deep Research")
 
 
 def load_local_env() -> None:
@@ -153,7 +153,7 @@ def prepare_research_context(research_request: str) -> dict[str, Any]:
     }
 
 
-@debugger.agent(
+@rewind.agent(
     name="deep-research",
     framework="openai",
     description="Step through the Deep Research demo.",
@@ -233,7 +233,7 @@ def main() -> int:
 
     store = TraceStore(args.db)
     demo_trace_id = _seed_demo_trace(store)
-    app = create_app(store, registry=debugger)
+    app = create_app(store, registry=rewind)
     print(
         f"[deep-research-stepping] runner 'deep-research' registered.\n"
         f"[deep-research-stepping] Serving on http://{args.host}:{args.port}/ui\n"
