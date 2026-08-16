@@ -114,8 +114,7 @@ class SuiteRunner:
                         cid, result = task.result()
                     except Exception:  # pylint: disable=broad-except
                         _LOGGER.exception(
-                            "Regression case %s failed during suite execution",
-                            case_id,
+                            "Regression case failed during suite execution",
                         )
                         self.summary["errored"] += 1
                         yield {

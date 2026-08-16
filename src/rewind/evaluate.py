@@ -1476,8 +1476,7 @@ async def run_frozen_verification(
         spans, branch_id = factory(store, scenario)
     except Exception:  # pylint: disable=broad-exception-caught
         _LOGGER.exception(
-            "Frozen verification for case %s failed during replay",
-            case_id,
+            "Frozen verification failed during replay",
         )
         store.insert_regression_run(
             {
