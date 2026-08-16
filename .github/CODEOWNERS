@@ -1,0 +1,8 @@
+# Default owner for repository changes.
+* @akshay-mp
+
+# Security-sensitive and release-critical paths.
+/.github/workflows/ @akshay-mp
+/.github/dependabot.yml @akshay-mp
+/pyproject.toml @akshay-mp
+/src/rewind/ @akshay-mp

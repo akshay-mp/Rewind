@@ -69,13 +69,13 @@ name immediately because PyPI and TestPyPI availability can change.
    - PyPI project name: `rewind-debugger`
    - GitHub owner: `akshay-mp`
    - GitHub repository: `Rewind`
-   - Workflow filename: `.github/workflows/release.yml`
+   - Workflow filename: `release.yml`
    - Environment name: `pypi`
 
 3. On TestPyPI, open
    <https://test.pypi.org/manage/account/publishing/> and add a pending
    publisher with the same owner and repository, workflow filename
-   `.github/workflows/testpypi.yml`, and environment name `testpypi`.
+   `testpypi.yml`, and environment name `testpypi`.
 
 No PyPI token or GitHub secret is used. The publish jobs request the GitHub
 OIDC identity token and the configured publisher binds it to the repository,
