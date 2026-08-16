@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
@@ -85,6 +86,10 @@ _DEFAULT_SCENARIO_TIMEOUT_S = 30.0
 #: Per the Phase 4 guarantee, 100k-span traces must not OOM the harness.
 #: The evaluator's structured walk is O(n) so the cap is defensive.
 _MAX_SPANS_FOR_EVAL = 100_000
+
+# Public error details must not expose provider, filesystem, or database data.
+_GENERIC_REPLAY_ERROR_DETAIL = "error: regression case could not be executed"
+_LOGGER = logging.getLogger(__name__)
 
 
 # ----------------------------------------------------------------------
@@ -1469,10 +1474,25 @@ async def run_frozen_verification(
 
     try:
         spans, branch_id = factory(store, scenario)
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception:  # pylint: disable=broad-exception-caught
+        _LOGGER.exception(
+            "Frozen verification for case %s failed during replay",
+            case_id,
+        )
+        store.insert_regression_run(
+            {
+                "run_id": str(uuid4()),
+                "case_id": case_id,
+                "passed": False,
+                "detail": _GENERIC_REPLAY_ERROR_DETAIL,
+                "branch_id": None,
+                "started_at": started,
+                "finished_at": _utcnow_iso(),
+            }
+        )
         return RegressionResult(
             passed=False,
-            detail=f"failed to materialise frozen replay: {exc}",
+            detail=_GENERIC_REPLAY_ERROR_DETAIL,
         )
 
     failures: list[str] = []

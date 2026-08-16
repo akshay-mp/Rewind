@@ -30,11 +30,15 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 EOF
 
 bun install
-nohup ./node_modules/.bin/next dev -p 3000 > /tmp/web-demo-dev.log 2>&1 &
+nohup ./node_modules/.bin/next dev -H 127.0.0.1 -p 3000 > /tmp/web-demo-dev.log 2>&1 &
 disown
 ```
 
 Open http://localhost:3000.
+
+> **Local-only warning:** Do not expose this demo through a reverse proxy. The
+> prompt-edit branch route intentionally accepts developer-authored system
+> prompts and has no multi-user authentication.
 
 ## Layout
 

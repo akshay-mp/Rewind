@@ -24,6 +24,7 @@ primitive; keeping it separate keeps each file's responsibility single.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -37,6 +38,9 @@ __all__ = [
     "SuiteRunner",
     "SuiteSummary",
 ]
+
+_LOGGER = logging.getLogger(__name__)
+_GENERIC_ERROR_DETAIL = "error: regression case could not be executed"
 
 
 #: One progress event yielded by :meth:`SuiteRunner.run`. Plain dict so the
@@ -108,13 +112,17 @@ class SuiteRunner:
                     case_id = pending.pop(task)
                     try:
                         cid, result = task.result()
-                    except Exception as exc:  # pylint: disable=broad-except
+                    except Exception:  # pylint: disable=broad-except
+                        _LOGGER.exception(
+                            "Regression case %s failed during suite execution",
+                            case_id,
+                        )
                         self.summary["errored"] += 1
                         yield {
                             "type": "case_done",
                             "case_id": case_id,
                             "passed": False,
-                            "detail": f"error: {exc}",
+                            "detail": _GENERIC_ERROR_DETAIL,
                         }
                         continue
                     if result.passed:

@@ -149,6 +149,28 @@ class TestRunFrozenVerification:
         assert len(runs) == 1
         assert runs[0]["passed"] is True
 
+    def test_factory_exception_detail_is_generic(self, store: TraceStore) -> None:
+        canary = "factory-secret-should-not-leak"
+        cid = "direct-factory-error"
+        store.upsert_regression_case(
+            {
+                "case_id": cid,
+                "name": "factory error",
+                "seed_trace_id": _TRACE_ID,
+            }
+        )
+
+        def raising_factory(_store: TraceStore, _scenario: object) -> tuple[list, UUID]:
+            raise RuntimeError(canary)
+
+        result = asyncio.run(
+            run_frozen_verification(cid, store=store, factory=raising_factory)
+        )
+
+        assert canary not in result.detail
+        assert result.detail == "error: regression case could not be executed"
+        assert result.passed is False
+
     def test_failing_span_count(self, store: TraceStore) -> None:
         cid = str(uuid4())
         store.upsert_regression_case(
@@ -383,6 +405,41 @@ class TestRegressionEndpoints:
         assert response.json()["passed"] is True
         assert response.json()["branch_id"] == str(UUID(int=0))
 
+    def test_run_case_factory_error_persists_generic_failure(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from rewind import eval_api
+
+        canary = "factory-secret-should-not-leak-http"
+        factory_ref = "test-regression-raising-factory"
+
+        def raising_factory(_store: TraceStore, _scenario: object) -> tuple[list, UUID]:
+            raise RuntimeError(canary)
+
+        monkeypatch.setitem(eval_api._REGRESSION_FACTORIES, factory_ref, raising_factory)
+        client.post(
+            "/api/v1/regression-cases",
+            json={
+                "case_id": "rc-factory-error",
+                "name": "factory error",
+                "seed_trace_id": _TRACE_ID,
+            },
+        )
+
+        response = client.post(
+            "/api/v1/regression-cases/rc-factory-error/run",
+            json={"factory_ref": factory_ref},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["passed"] is False
+        assert body["branch_id"] is None
+        assert canary not in response.text
+        runs = client.get("/api/v1/regression-cases/rc-factory-error/runs").json()
+        assert len(runs) == 1
+        assert runs[0]["detail"] == "error: regression case could not be executed"
+
     def test_run_case_rejects_unknown_factory(self, client: TestClient) -> None:
         client.post(
             "/api/v1/regression-cases",
@@ -523,3 +580,67 @@ class TestSuiteRunner:
         assert passed is False
         assert runner.summary["passed"] == 1
         assert runner.summary["failed"] == 1
+
+    def test_factory_exception_is_generic_in_progress_events(
+        self,
+        store: TraceStore,
+    ) -> None:
+        canary = "factory-secret-should-not-leak"
+        case_id = "suite-factory-error"
+        store.upsert_regression_case(
+            {
+                "case_id": case_id,
+                "name": "factory error",
+                "seed_trace_id": _TRACE_ID,
+            }
+        )
+
+        def raising_factory(_store: TraceStore, _scenario: object) -> tuple[list, UUID]:
+            raise RuntimeError(canary)
+
+        runner = SuiteRunner(store, case_ids=[case_id], factory=raising_factory)
+
+        async def _drive() -> list[dict]:
+            events = []
+            async for event in runner.run():
+                events.append(event)
+            return events
+
+        events = asyncio.run(_drive())
+        encoded_events = json.dumps(events)
+        case_done = next(event for event in events if event["type"] == "case_done")
+
+        assert canary not in encoded_events
+        assert case_done["passed"] is False
+        assert case_done["detail"] == "error: regression case could not be executed"
+        assert runner.summary["failed"] == 1
+        assert runner.summary["errored"] == 0
+
+    def test_unexpected_task_exception_is_generic_and_errored(
+        self,
+        store: TraceStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from rewind import suite_runner
+
+        canary = "unexpected-task-secret-should-not-leak"
+
+        async def raising_run(*_args: object, **_kwargs: object) -> object:
+            raise RuntimeError(canary)
+
+        monkeypatch.setattr(suite_runner, "run_frozen_verification", raising_run)
+        runner = SuiteRunner(store, case_ids=["unexpected-task"])
+
+        async def _drive() -> list[dict]:
+            events = []
+            async for event in runner.run():
+                events.append(event)
+            return events
+
+        events = asyncio.run(_drive())
+        encoded_events = json.dumps(events)
+        case_done = next(event for event in events if event["type"] == "case_done")
+
+        assert canary not in encoded_events
+        assert case_done["detail"] == "error: regression case could not be executed"
+        assert runner.summary["errored"] == 1

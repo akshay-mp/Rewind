@@ -73,13 +73,16 @@ EOF
 # Install JS deps (first run only; ~1 min).
 bun install
 
-# Start the dev server (do NOT use `bun run dev` — its tee pipe breaks on
-# long-running requests; invoke next directly).
-nohup ./node_modules/.bin/next dev -p 3000 > /tmp/web-demo-dev.log 2>&1 &
+# Start the dev server on loopback only.
+nohup ./node_modules/.bin/next dev -H 127.0.0.1 -p 3000 > /tmp/web-demo-dev.log 2>&1 &
 disown
 ```
 
 Open **http://localhost:3000** in your browser.
+
+> **Local-only warning:** Do not expose this demo through a reverse proxy. The
+> prompt-edit branch route intentionally accepts developer-authored system
+> prompts and has no multi-user authentication.
 
 > **Works with Ollama too** — just change `OPENAI_BASE_URL=http://localhost:11434/v1`
 > and `REWIND_MODEL=qwen3:32b`. No code changes.
@@ -169,7 +172,7 @@ sqlite3 /tmp/rewind-demo.db \
 
 | Symptom | Fix |
 |---|---|
-| `Capture trace` spins forever | The dev server's `tee` pipe broke. Restart with `./node_modules/.bin/next dev` directly (not `bun run dev`). |
+| `Capture trace` spins forever | Restart the loopback-bound dev server with `./node_modules/.bin/next dev -H 127.0.0.1 -p 3000`. |
 | Spans don't appear in `rewind ui` | The web-demo's mirror is best-effort; confirm `rewind serve` is on 4318. The web-demo UI still works without it. |
 | Model returns `<think>...` blocks | The agent disables thinking via `chat_template_kwargs`. If your server doesn't support it, switch to a non-thinking model. |
 | `address already in use` on 3000/4318/8888 | Another instance is running. `pkill -fl "next dev\|rewind serve"` and retry. |

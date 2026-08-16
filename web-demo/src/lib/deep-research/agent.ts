@@ -106,11 +106,11 @@ function estimateTokens(text: string): number {
 function fillTemplate(
   template: string,
   query: string,
-  outputsByIndex: Record<number, string>,
+  outputsByIndex: Map<number, string>,
 ): string {
   let out = template.replace(/\{query\}/g, query);
   out = out.replace(/\{output:(\d+)\}/g, (_m, idx) => {
-    const v = outputsByIndex[Number(idx)];
+    const v = outputsByIndex.get(Number(idx));
     return v !== undefined ? v : `[output:${idx} not yet available]`;
   });
   return out;
@@ -346,7 +346,7 @@ export async function runTraceStream(
   emit: Emit,
   prompts: SpanPrompt[] = DEFAULT_PROMPTS,
 ): Promise<Trace> {
-  const outputsByIndex: Record<number, string> = {};
+  const outputsByIndex = new Map<number, string>();
   const spans: Span[] = [];
 
   for (let i = 0; i < prompts.length; i++) {
@@ -363,7 +363,7 @@ export async function runTraceStream(
             : { type: "content_delta", index: i, chunk: d.chunk },
         ),
     );
-    outputsByIndex[i] = output;
+    outputsByIndex.set(i, output);
     const span = makeSpan({
       index: i,
       prompt: p,
@@ -425,13 +425,13 @@ export async function runBranchStream(
     prompts = DEFAULT_PROMPTS,
   } = args;
 
-  const outputsByIndex: Record<number, string> = {};
+  const outputsByIndex = new Map<number, string>();
   const spans: Span[] = [];
 
   // Phase 1 — FROZEN replay of the cached prefix (instant, no deltas).
   for (let i = 0; i < branchAtSpanIndex; i++) {
     const parentSpan = parent.spans[i];
-    outputsByIndex[i] = parentSpan.output;
+    outputsByIndex.set(i, parentSpan.output);
     const cached: Span = {
       ...parentSpan,
       id: uuid(),
@@ -461,7 +461,7 @@ export async function runBranchStream(
             : { type: "content_delta", index: i, chunk: d.chunk },
         ),
     );
-    outputsByIndex[i] = output;
+    outputsByIndex.set(i, output);
     const span = makeSpan({
       index: i,
       prompt: p,

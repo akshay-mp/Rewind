@@ -46,7 +46,7 @@ if curl -s -o /dev/null -w '' -m 2 http://localhost:3000/ 2>/dev/null; then
   echo "  ✓ already running"
 else
   cd "$REPO/web-demo"
-  ( nohup ./node_modules/.bin/next dev -p 3000 >/tmp/web-demo-dev.log 2>&1 & ) >/dev/null 2>&1
+  ( nohup ./node_modules/.bin/next dev -H 127.0.0.1 -p 3000 >/tmp/web-demo-dev.log 2>&1 & ) >/dev/null 2>&1
   sleep 8
   curl -s -o /dev/null -w "  web=%{http_code}\n" -m 8 http://localhost:3000/
 fi
