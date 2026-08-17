@@ -65,7 +65,7 @@ rewind serve
 Output will look like:
 
 ```
-rewind serve → http://127.0.0.1:4318/v1/traces  (db=~/.rewind/rewind.db, version=0.1.1)
+rewind serve → http://127.0.0.1:4318/v1/traces  (db=~/.rewind/rewind.db, version=0.1.2)
 ```
 
 The receiver now accepts OTLP/HTTP at `http://127.0.0.1:4318/v1/traces`

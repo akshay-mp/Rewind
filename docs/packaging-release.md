@@ -18,7 +18,7 @@ For an application-managed install, pin the published distribution in its
 `requirements.txt`:
 
 ```text
-rewind-debugger==0.1.1
+rewind-debugger==0.1.2
 ```
 
 Then install the application requirements with:
@@ -85,7 +85,7 @@ workflow, and environment above.
 
 1. Build and verify the frontend and Python artifacts locally.
 2. Update `project.version` in `pyproject.toml`.
-3. Create and push the matching tag, for example `v0.1.1`.
+3. Create and push the matching tag, for example `v0.1.2`.
 
 The tag workflow fails before publishing when the tag version does not match
 `project.version`. It publishes through PyPI Trusted Publishing with GitHub
@@ -108,7 +108,7 @@ and verify it manually. TestPyPI does not necessarily contain all runtime
 dependencies, so keep PyPI as the extra index:
 
 ```bash
-RELEASE_VERSION=0.1.1  # Set this to project.version before each release.
+RELEASE_VERSION=0.1.2  # Set this to project.version before each release.
 python -m venv /tmp/rewind-testpypi-verify
 /tmp/rewind-testpypi-verify/bin/python -m pip install \
   --index-url https://test.pypi.org/simple/ \
