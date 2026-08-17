@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -20,6 +21,8 @@ from rewind.cli import cli
 from rewind.receiver import create_app
 from rewind.stepping_api import _SESSIONS
 from rewind.storage import TraceStore
+
+_HAS_LANGCHAIN = importlib.util.find_spec("langchain_core") is not None
 
 
 def test_public_rewind_registry_supports_decorator_registration(
@@ -142,7 +145,10 @@ def test_fresh_agent_root_branch_and_restart_child_are_api_visible(tmp_path: Pat
     assert diff.json()["identical"] is True
 
 
-def test_unavailable_agent_start_includes_availability_reason(tmp_path: Path) -> None:
+def test_unavailable_agent_start_includes_availability_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     debugger = Rewind()
 
     @debugger.agent(framework="langgraph")
@@ -151,6 +157,7 @@ def test_unavailable_agent_start_includes_availability_reason(tmp_path: Path) ->
 
     definition = debugger.get("unavailable")
     assert definition is not None
+    monkeypatch.setattr("rewind.agents.FrameworkPlugin.available", lambda _plugin: False)
     assert not definition.available
     assert definition.availability_reason
 
@@ -203,6 +210,7 @@ def test_restart_rejects_agent_that_became_unavailable(
     assert calls == ["first"]
 
 
+@pytest.mark.skipif(not _HAS_LANGCHAIN, reason="langchain-core not installed")
 def test_sync_agent_uses_to_thread_without_revalidating(monkeypatch: pytest.MonkeyPatch) -> None:
     debugger = Rewind()
     calls: list[str] = []
@@ -299,9 +307,13 @@ def test_auto_detection_prefers_explicit_target_and_advertises_capabilities() ->
     definition = debugger.get("run")
     assert definition is not None
     assert definition.framework == "langgraph"
-    assert definition.capabilities["interactive_llm"] is False
-    assert definition.capabilities["native_tool_calls"] is False
-    assert definition.availability_reason is not None
+    assert definition.capabilities["interactive_llm"] is True
+    assert definition.capabilities["native_tool_calls"] is True
+    if _HAS_LANGCHAIN:
+        assert definition.available
+        assert definition.availability_reason is None
+    else:
+        assert definition.availability_reason is not None
 
 
 def test_dev_reports_actionable_import_errors() -> None:
@@ -337,7 +349,13 @@ def answer(question: str) -> str:
 
     result = CliRunner().invoke(
         cli,
-        ["dev", f"{module.__name__}:rewind", "--db", str(tmp_path / "dev.db")],
+        [
+            "dev",
+            f"{module.__name__}:rewind",
+            "--db",
+            str(tmp_path / "dev.db"),
+            "--no-open",
+        ],
     )
 
     assert result.exit_code == 0

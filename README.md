@@ -87,14 +87,44 @@ rewind = Rewind(title="Research")
 ```
 
 Existing names such as `debugger` remain supported.
-During an OpenAI-framework workbench run, official OpenAI Python SDK Chat
-Completions calls (`chat.completions.create`, sync and async) are intercepted,
-including when that SDK is configured for an OpenAI-compatible endpoint.
-Other framework replay adapters remain explicit: use the factories in
+
+During a workbench run, Rewind auto-activates interception for the
+frameworks below — no manual model wrapping required:
+
+* **OpenAI** — official OpenAI Python SDK Chat Completions calls
+  (`chat.completions.create`, sync and async), including when the SDK is
+  configured for an OpenAI-compatible endpoint.
+* **LangGraph / langchain** — every `BaseChatModel` / `BaseTool`
+  `invoke`/`ainvoke` (which `bind_tools` bindings and ToolNode calls route
+  through), so graphs that construct models inside their nodes are stepped,
+  replayed, and captured unchanged. This includes graphs built with
+  deepagents, LangGraph's prebuilt `create_react_agent`, and similar
+  frameworks on top of `langchain-core`.
+
+Other framework replay adapters (CrewAI, PydanticAI, ADK, SmolAgents)
+remain explicit: use the factories in
 [`docs/replay-adapters.md`](docs/replay-adapters.md) when needed. Generic
 decorator auto-activation for those frameworks is currently unavailable, and
 the workbench reports the actionable adapter/wrapper instead of claiming the
 framework is installed.
+
+### Run any LangGraph app
+
+A foreign LangGraph project needs no Rewind-specific code. Install
+`rewind-debugger[langgraph]` alongside the app, then point the CLI at the
+exported graph:
+
+```bash
+pip install rewind-debugger[langgraph]   # or: pip install -e /path/to/rewind[langgraph]
+rewind app:main                          # ≡ rewind dev app:main
+```
+
+`app:main` may be a `rewind.Rewind` registry, a compiled LangGraph graph /
+langchain runnable (wrapped into a one-agent registry automatically), or a
+plain callable. The workbench opens in your browser
+(`--no-open` to suppress) with the graph registered as an interactive agent:
+start it from the form, and every LLM and tool call pauses in the
+step-by-step debugger.
 
 ### Replay a recorded trace
 

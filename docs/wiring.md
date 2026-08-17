@@ -70,7 +70,11 @@ LangchainInstrumentor().instrument()
 ```
 
 Captures `langchain_core.language_models.BaseChatModel` invocations,
-LangGraph node transitions, and LangChain tool calls. **Replay adapter**:
+LangGraph node transitions, and LangChain tool calls. **Workbench
+auto-activation**: during a `rewind dev` / `rewind app:main` run, Rewind
+patches `BaseChatModel` / `BaseTool` `invoke`/`ainvoke` itself — every LLM
+and tool call pauses in the step-by-step debugger with no app changes.
+**Replay adapter** (for replay outside the workbench):
 `rewind.adapters.langgraph.replay_chat_model(model)` — see
 [`docs/replay-adapters.md`](./replay-adapters.md#langgraph).
 

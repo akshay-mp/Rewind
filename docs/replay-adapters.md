@@ -52,6 +52,11 @@ are the recommended path for any supported framework.
 
 ### LangGraph  *(pattern origin — Phase 3)*
 
+> **Workbench runs no longer need this wrapper.** `rewind dev` /
+> `rewind app:main` auto-activates LangGraph interception (every
+> `BaseChatModel` / `BaseTool` invoke, stepped and captured). The factory
+> below remains for replay contexts you drive yourself from Python.
+
 ```python
 from rewind.adapters.langgraph import replay_chat_model
 

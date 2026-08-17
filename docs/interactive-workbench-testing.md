@@ -59,13 +59,16 @@ custom-titled demo. Existing names such as `debugger` remain supported.
 
 ## Interception boundary
 
-The decorator is generic registration plus typed input validation. During an
-OpenAI-framework workbench invocation, official OpenAI Python SDK Chat
-Completions calls (`chat.completions.create`, sync and async) are intercepted,
-including when that SDK is configured for an OpenAI-compatible endpoint.
-Other framework replay adapters remain explicit. Generic decorator
-auto-activation for LangGraph, CrewAI, PydanticAI, ADK, and SmolAgents is
-currently unavailable; the
+The decorator is generic registration plus typed input validation. During a
+workbench invocation, official OpenAI Python SDK Chat Completions calls
+(`chat.completions.create`, sync and async) are intercepted, including when
+that SDK is configured for an OpenAI-compatible endpoint. LangGraph /
+langchain apps get the same auto-activation: every `BaseChatModel` and
+`BaseTool` `invoke`/`ainvoke` inside the run is stepped, replayed, and
+captured — `rewind app:main` accepts a bare compiled graph as the launch
+target. Other framework replay adapters remain explicit. Generic decorator
+auto-activation for CrewAI, PydanticAI, ADK, and SmolAgents is currently
+unavailable; the
 capability response reports the actionable adapter/wrapper instead of
 assuming an optional framework package is installed. See
 [`replay-adapters.md`](replay-adapters.md) and [`wiring.md`](wiring.md).

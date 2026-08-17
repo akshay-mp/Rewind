@@ -77,13 +77,8 @@ _PLUGINS: dict[str, FrameworkPlugin] = {
     "langgraph": FrameworkPlugin(
         "langgraph",
         ("langgraph", "langchain_core"),
-        {"interactive_llm": False, "native_tool_calls": False, "python_tools": True},
+        {"interactive_llm": True, "native_tool_calls": True, "python_tools": True},
         "rewind.adapters.langgraph.replay_chat_model",
-        workbench_supported=False,
-        unsupported_reason=(
-            "generic LangGraph activation is not wired; wrap the target model with "
-            "rewind.adapters.langgraph.replay_chat_model"
-        ),
     ),
     "crewai": FrameworkPlugin(
         "crewai",
@@ -315,6 +310,10 @@ class AgentDefinition:
         patch_context: AbstractContextManager[None] = nullcontext()
         if self.framework == "openai":
             from rewind.openai_intercept import patch
+
+            patch_context = patch()
+        elif self.framework == "langgraph":
+            from rewind.langgraph_intercept import patch
 
             patch_context = patch()
         with patch_context:

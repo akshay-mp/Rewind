@@ -165,6 +165,11 @@ ignore = ["S101"]  # allow assert in tests
 "src/rewind/openai_intercept.py" = ["ANN401"]
 "src/rewind/tool_intercept.py" = ["ANN401"]
 "src/rewind/adapters/**" = ["ANN401"]
+# Same SDK-boundary monkey-patch for langchain: signatures mirror
+# BaseChatModel/BaseTool's `input`/`config` parameters verbatim.
+"src/rewind/langgraph_intercept.py" = ["ANN401", "A002"]
+# Wraps foreign langgraph/langchain runnables — genuinely Any at the boundary.
+"src/rewind/graph_app.py" = ["ANN401"]
 # Deep-research integration scripts. The ODR graph + LangChain model objects
 # are genuinely Any-typed at the SDK boundary; the scripts mirror the existing
 # adapter-override pragmatism. (Examples live outside src/ so they don't ship

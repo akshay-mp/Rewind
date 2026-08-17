@@ -43,12 +43,15 @@ endpoint at `http://127.0.0.1:8888/v1`, configured with
 key in the environment or local `.env`; never place it in source, logs,
 screenshots, or a recording.
 
-During an OpenAI-framework workbench run, official OpenAI Python SDK Chat
-Completions calls (`chat.completions.create`, sync and async) are intercepted,
+During a workbench run, official OpenAI Python SDK Chat Completions calls
+(`chat.completions.create`, sync and async) are intercepted,
 including when that SDK is configured for an OpenAI-compatible endpoint.
-Replay adapters for LangGraph, Google ADK, CrewAI, PydanticAI, and SmolAgents
-remain explicit; generic decorator auto-activation for them is unavailable and
-reports an actionable wrapper. See
+LangGraph / langchain apps get the same auto-activation: every
+`BaseChatModel` and `BaseTool` `invoke`/`ainvoke` inside the run is stepped,
+replayed, and captured — `rewind app:main` accepts a bare compiled graph as
+the launch target. Replay adapters for Google ADK, CrewAI, PydanticAI, and
+SmolAgents remain explicit; generic decorator auto-activation for them is
+unavailable and reports an actionable wrapper. See
 [replay adapters](./replay-adapters.md) and [wiring](./wiring.md) for the
 integration snippets. This support statement does not claim any optional
 framework package is installed locally.

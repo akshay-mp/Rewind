@@ -45,9 +45,13 @@ Existing names such as `debugger` remain supported. Official OpenAI Python SDK
 Chat Completions calls
 (`chat.completions.create`, sync and async) are intercepted in this path,
 including when that SDK is configured for an OpenAI-compatible endpoint.
-Replay adapters for other frameworks remain explicit; generic decorator
-auto-activation for them is unavailable and reports an actionable wrapper
-hint. See [`replay-adapters.md`](./replay-adapters.md).
+LangGraph / langchain apps get the same auto-activation: every
+`BaseChatModel` and `BaseTool` `invoke`/`ainvoke` is stepped, replayed, and
+captured — and `rewind app:main` accepts a bare compiled graph as the target
+(no Rewind-specific code in the app). Replay adapters for the remaining
+frameworks (CrewAI, PydanticAI, ADK, SmolAgents) remain explicit; generic
+decorator auto-activation for them is unavailable and reports an actionable
+wrapper hint. See [`replay-adapters.md`](./replay-adapters.md).
 
 For the live verified demo, use the exact local model and UI setup in
 [`interactive-workbench-testing.md`](./interactive-workbench-testing.md).

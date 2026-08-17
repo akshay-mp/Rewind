@@ -8,6 +8,7 @@ adds ``eval``; Phase 7 adds ``enrich`` and ``render-template``.
 from __future__ import annotations
 
 import importlib
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -47,7 +48,26 @@ def _ensure_default_db_path(db_path: Path) -> Path:
     return db_path
 
 
-@click.group()
+class _RewindGroup(click.Group):
+    """Click group that accepts ``rewind app:main`` as a dev shorthand.
+
+    A first token that isn't a known command but looks like ``MODULE:OBJECT``
+    reroutes to ``dev``, so ``rewind app:main`` ≡ ``rewind dev app:main`` —
+    the one-command entrypoint for running a foreign LangGraph app under the
+    workbench. Known command names always win.
+    """
+
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        if args and ":" in args[0] and args[0] not in self.commands:
+            dev = self.get_command(ctx, "dev")
+            if dev is not None:
+                return "dev", dev, list(args)
+        return super().resolve_command(ctx, args)
+
+
+@click.group(cls=_RewindGroup)
 @click.version_option(version=__version__, prog_name="rewind")
 def cli() -> None:
     """Rewind — time-travel debugging for AI agents."""
@@ -199,14 +219,31 @@ def ui(host: str, port: int, otlp_port: int, db_path: Path) -> None:
     default=_DEFAULT_DB,
     show_default=True,
 )
-def dev(application: str, host: str, port: int, db_path: Path) -> None:
-    """Run a decorator app, e.g. ``rewind dev my_app:debugger``."""
+@click.option(
+    "--no-open",
+    is_flag=True,
+    default=False,
+    help="Do not auto-open the workbench UI in a browser once the server is up.",
+)
+def dev(application: str, host: str, port: int, db_path: Path, no_open: bool) -> None:
+    """Run an app under the Rewind workbench, e.g. ``rewind dev my_app:main``.
+
+    The target may be a ``rewind.Rewind`` registry, a compiled LangGraph
+    graph / langchain runnable, or a plain callable. ``rewind app:main``
+    (without ``dev``) is accepted as shorthand.
+    """
     if ":" not in application:
         raise click.ClickException(
-            "expected MODULE:OBJECT (for example app:debugger); "
-            "the object must be a rewind.Rewind instance"
+            "expected MODULE:OBJECT (for example app:main); the object must be "
+            "a rewind.Rewind instance, a LangGraph graph, or a callable"
         )
     module_name, object_name = application.split(":", 1)
+    # Resolve the module from the caller's working directory first — the
+    # same behaviour as ``uvicorn app:app`` / ``langgraph dev``, so
+    # ``rewind app:main`` works from inside the target project.
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
     try:
         module = importlib.import_module(module_name)
     except Exception as exc:  # Import errors should identify the app target.
@@ -219,14 +256,21 @@ def dev(application: str, host: str, port: int, db_path: Path) -> None:
     except AttributeError as exc:
         raise click.ClickException(
             f"module {module_name!r} has no object {object_name!r}; "
-            "export your Rewind instance under that name"
+            "export your Rewind registry, LangGraph graph, or callable "
+            "under that name"
         ) from exc
+    # pylint: disable=import-outside-toplevel
     from rewind import Rewind
+    from rewind.graph_app import GraphAppError, registry_from_object
+    # pylint: enable=import-outside-toplevel
 
-    if not isinstance(application_object, Rewind):
-        raise click.ClickException(
-            f"{application!r} is {type(application_object).__name__}, not rewind.Rewind"
-        )
+    if isinstance(application_object, Rewind):
+        registry = application_object
+    else:
+        try:
+            registry = registry_from_object(application_object, name=object_name)
+        except GraphAppError as exc:
+            raise click.ClickException(f"{application!r}: {exc}") from exc
     # Imported lazily so the base CLI remains lightweight.
     import uvicorn
 
@@ -234,13 +278,47 @@ def dev(application: str, host: str, port: int, db_path: Path) -> None:
     from rewind.storage import TraceStore
 
     db_path = _ensure_default_db_path(db_path)
-    app = create_app(TraceStore(str(db_path)), registry=application_object)
+    app = create_app(TraceStore(str(db_path)), registry=registry)
+    url = f"http://{_browser_host(host)}:{port}/ui"
     click.echo(
-        f"rewind dev → http://{host}:{port}/ui "
-        f"({len(application_object.agents)} agents, db={db_path})",
+        f"rewind dev → {url} "
+        f"({len(registry.agents)} agents, db={db_path})",
         err=True,
     )
+    if not no_open:
+        _open_when_ready(url)
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def _browser_host(host: str) -> str:
+    """A host a local browser can actually reach (0.0.0.0 is bind-only)."""
+    return "127.0.0.1" if host in ("0.0.0.0", "::", "") else host  # noqa: S104
+
+
+def _open_when_ready(url: str, *, timeout: float = 15.0) -> None:
+    """Open ``url`` in the default browser once the server answers /healthz."""
+    # pylint: disable=import-outside-toplevel
+    import threading
+    import time
+    import urllib.request
+    import webbrowser
+    # pylint: enable=import-outside-toplevel
+
+    health = url.rsplit("/ui", 1)[0] + "/healthz"
+
+    def _open() -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                # Loopback http URL assembled from CLI flags — no custom schemes.
+                with urllib.request.urlopen(health, timeout=1) as response:  # noqa: S310
+                    if response.status == 200:
+                        break
+            except Exception:
+                time.sleep(0.25)
+        webbrowser.open(url)
+
+    threading.Thread(target=_open, daemon=True, name="rewind-open-ui").start()
 
 
 @cli.command()
