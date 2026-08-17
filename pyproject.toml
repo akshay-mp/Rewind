@@ -58,13 +58,13 @@ web = [
 # absent. Install one or more with:  pip install rewind-debugger[adk]
 adk = ["google-adk>=1.28.1,<2"]
 langgraph = ["langchain-core>=0.3.0"]
-pydantic-ai = ["pydantic-ai>=1.56.0,<2"]
+pydantic-ai = ["pydantic-ai>=1.56.0,<3"]
 smolagents = ["smolagents>=0.1.0"]
 # Bundled extra: pull in every framework adapter dependency at once.
 adapters = [
     "google-adk>=1.28.1,<2",
     "langchain-core>=0.3.0",
-    "pydantic-ai>=1.56.0,<2",
+    "pydantic-ai>=1.56.0,<3",
     "smolagents>=0.1.0",
 ]
 # Phase 7 — local-model enrichment optional deps. The ``enrichment`` extra
