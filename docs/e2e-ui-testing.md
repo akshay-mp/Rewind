@@ -4,7 +4,7 @@
 > against the seeded dev store. Each step has a screenshot attached.
 
 - **Date:** 2026-07-01
-- **Build:** `rewind` v0.1.0 (Phases P0–P8 complete)
+- **Build:** `rewind` v0.1.1 (Phases P0–P8 complete)
 - **Backend:** `scripts/dev_seed_serve.py` on `http://127.0.0.1:8484`
 - **Frontend:** `pnpm dev` Vite dev server on `http://127.0.0.1:5173/ui/`
 - **Seed data:** 1 trace (`dddd…00000001`) · 3 branches (`root`, `left-variant`, `right-variant`) · 2 eval runs (`golden` baseline + `candidate`)

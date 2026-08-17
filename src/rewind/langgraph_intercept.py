@@ -978,7 +978,10 @@ def _restore_unserializable(original: Any, edited: Any) -> Any:
         and isinstance(edited, list)
         and len(original) == len(edited)
     ):
-        return [_restore_unserializable(o, e) for o, e in zip(original, edited)]
+        return [
+            _restore_unserializable(o, e)
+            for o, e in zip(original, edited, strict=True)
+        ]
     if original is None or isinstance(original, (str, int, float, bool)):
         return edited
     if isinstance(edited, str) and edited in (repr(original), str(original)):

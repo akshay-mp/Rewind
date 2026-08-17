@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tomllib
+from pathlib import Path
 
 from click.testing import CliRunner
 
-from rewind import __version__
+import rewind
 from rewind.cli import cli
 
 
 def test_version_constant_matches_module() -> None:
-    assert __version__ == "0.1.0"
+    project_file = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with project_file.open("rb") as file:
+        project_version = tomllib.load(file)["project"]["version"]
+    assert rewind.__version__ == project_version
 
 
 def test_python_m_rewind_version() -> None:
@@ -23,7 +28,7 @@ def test_python_m_rewind_version() -> None:
         text=True,
         check=True,
     )
-    assert __version__ in (proc.stdout + proc.stderr)
+    assert rewind.__version__ in (proc.stdout + proc.stderr)
 
 
 def test_serve_is_registered_subcommand() -> None:

@@ -18,7 +18,7 @@ For an application-managed install, pin the published distribution in its
 `requirements.txt`:
 
 ```text
-rewind-debugger==0.1.0
+rewind-debugger==0.1.1
 ```
 
 Then install the application requirements with:
@@ -108,7 +108,7 @@ and verify it manually. TestPyPI does not necessarily contain all runtime
 dependencies, so keep PyPI as the extra index:
 
 ```bash
-RELEASE_VERSION=0.1.0  # Set this to project.version before each release.
+RELEASE_VERSION=0.1.1  # Set this to project.version before each release.
 python -m venv /tmp/rewind-testpypi-verify
 /tmp/rewind-testpypi-verify/bin/python -m pip install \
   --index-url https://test.pypi.org/simple/ \

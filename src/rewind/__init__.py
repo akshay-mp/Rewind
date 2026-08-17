@@ -10,7 +10,7 @@ from rewind.agents import AgentDefinition, Rewind, RewindContext
 from rewind.checkpoint import checkpoint
 from rewind.tool_intercept import tool
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 rewind = Rewind()
 __all__ = [
     "AgentDefinition",
