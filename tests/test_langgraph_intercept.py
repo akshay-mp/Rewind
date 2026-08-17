@@ -703,3 +703,56 @@ def test_non_json_tool_inputs_serialize_and_forward_unchanged(
     assert span.raw_attributes["gen_ai.tool.input"]["args"][0]["runtime"] == (
         "<ToolRuntime fixture>"
     )
+
+
+def test_edited_tool_args_restore_runtime_objects(store: TraceStore, trace_id: str) -> None:
+    """Editing a runtime-injected tool keeps the ToolRuntime object.
+
+    The debugger shows ``ToolRuntime`` as its repr; the edited JSON echoes
+    that string back. The dispatch must restore the original object (only
+    the genuinely edited values change) so the live tool still executes.
+    """
+    _seed_trace(store, trace_id, [])
+
+    class _Runtime:
+        tool_call_id = "call_42"
+
+        def __repr__(self) -> str:
+            return "<ToolRuntime fixture>"
+
+    received: dict[str, Any] = {}
+
+    class _RuntimeTool(BaseTool):
+        name: str = "stateful"
+        description: str = "Uses injected runtime."
+
+        def _run(self, payload: Any = None, run_manager: Any = None, **kwargs: Any) -> str:
+            runtime = kwargs.get("runtime")
+            received["runtime"] = runtime
+            received["tool_call_id"] = getattr(runtime, "tool_call_id", None)
+            received["payload"] = payload
+            return "ok"
+
+    tool = _RuntimeTool()
+    channel = ThreadBridgeChannel()
+    runtime = _Runtime()
+
+    with patch(), replay_ctx(
+        store, trace_id, mode=ReplayMode.INTERACTIVE, approval=channel
+    ):
+        approver = _start_approver(
+            channel,
+            Decision(
+                kind=DecisionKind.EDIT,
+                # Exactly what the browser sends back: args with the edited
+                # payload and the runtime object's repr string.
+                args=[{"payload": "edited", "runtime": repr(runtime)}],
+            ),
+        )
+        result = tool.invoke({"payload": "original", "runtime": runtime})
+        approver.join(timeout=2)
+
+    assert result == "ok"
+    assert received["payload"] == "edited"  # the edit executed
+    assert received["runtime"] is runtime  # untouched object restored
+    assert received["tool_call_id"] == "call_42"

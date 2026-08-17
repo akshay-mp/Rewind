@@ -944,12 +944,43 @@ def _apply_tool_edit(
 
     The step payload carries the tool input as ``args[0]``, so the edited
     positional list replaces the input when present; edited kwargs merge over
-    the originals.
+    the originals. Non-JSON injected objects the editor echoed back as their
+    repr (e.g. langchain's ``ToolRuntime``) are restored from the original
+    call, so editing a runtime-injected tool's visible args still executes.
     """
     edited_input = input
     if decision.args is not None and len(decision.args) >= 1:
-        edited_input = decision.args[0]
+        edited_input = _restore_unserializable(input, decision.args[0])
     edited_kwargs = dict(kwargs)
     if decision.kwargs is not None:
-        edited_kwargs.update(decision.kwargs)
+        for key, value in decision.kwargs.items():
+            edited_kwargs[key] = _restore_unserializable(kwargs.get(key), value)
     return edited_input, edited_kwargs
+
+
+def _restore_unserializable(original: Any, edited: Any) -> Any:
+    """Deep-restore original objects the JSON editor could not round-trip.
+
+    The debugger shows non-JSON injected args as their ``repr``; an edited
+    payload therefore echoes those strings back verbatim. Wherever an edited
+    leaf is exactly the repr of a non-JSON original, the original object is
+    reinstated — untouched runtime state survives the edit while genuinely
+    edited values pass through unchanged.
+    """
+    if isinstance(original, dict) and isinstance(edited, dict):
+        restored = dict(edited)
+        for key, value in original.items():
+            if key in restored:
+                restored[key] = _restore_unserializable(value, restored[key])
+        return restored
+    if (
+        isinstance(original, (list, tuple))
+        and isinstance(edited, list)
+        and len(original) == len(edited)
+    ):
+        return [_restore_unserializable(o, e) for o, e in zip(original, edited)]
+    if original is None or isinstance(original, (str, int, float, bool)):
+        return edited
+    if isinstance(edited, str) and edited in (repr(original), str(original)):
+        return original
+    return edited
