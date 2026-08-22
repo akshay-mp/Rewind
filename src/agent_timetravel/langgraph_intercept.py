@@ -12,7 +12,7 @@ model and tool shares: subclasses override ``_generate`` / ``_run``, not
 ``invoke``, and ``bind_tools`` bindings delegate to ``bound.invoke``. During a
 :class:`func:`timetravel.replay`` context each intercepted call:
 
-* pauses at the stepping gate (:func:`timetravel.stepping.gate_async` /
+* pauses at the stepping gate (:func:`agent_timetravel.stepping.gate_async` /
   :func:`gate_sync`) so the workbench can approve / edit / mock / stop it;
 * is served from a matching recorded span when one sits at the cursor
   (zero outbound traffic) — or forwarded live and captured in
@@ -20,14 +20,14 @@ model and tool shares: subclasses override ``_generate`` / ``_run``, not
 * raises :class:`~timetravel.replay.ReplayError` on a frozen divergence.
 
 With no active replay session every call passes through unchanged. Models
-already wrapped by :func:`timetravel.adapters.langgraph.replay_chat_model` are
+already wrapped by :func:`agent_timetravel.adapters.langgraph.replay_chat_model` are
 skipped (their ``_generate`` owns the replay contract), and tools whose
 underlying function carries the ``@timetravel.tool()`` marker keep that wrapper's
 dispatch instead.
 
 The module never imports ``langchain_core`` at load — only inside
 :func:`patch` — matching the lazy-import contract of
-:mod:`timetravel.openai_intercept`.
+:mod:`agent_timetravel.openai_intercept`.
 """
 
 from __future__ import annotations

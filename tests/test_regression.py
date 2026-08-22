@@ -4,8 +4,8 @@ Covers:
 
 * ``run_frozen_verification`` — the deterministic frozen-replay core.
 * Storage CRUD for ``regression_cases`` + ``regression_runs``.
-* The regression-case + run HTTP endpoints in :mod:`timetravel.eval_api`.
-* :class:`timetravel.suite_runner.SuiteRunner` — concurrent execution + progress.
+* The regression-case + run HTTP endpoints in :mod:`agent_timetravel.eval_api`.
+* :class:`agent_timetravel.suite_runner.SuiteRunner` — concurrent execution + progress.
 """
 
 from __future__ import annotations

@@ -211,7 +211,7 @@ class Checkpoint(TimeTravelModel):
     Lifecycle:
 
     * Captured on first live forward (BRANCH / FULL_RERUN past the cursor) —
-      the agent calls ``timetravel.checkpoint(name, payload=...)`` and TimeTravel
+      the agent calls ``agent_timetravel.checkpoint(name, payload=...)`` and TimeTravel
       persists the payload under ``(branch_id, name, cursor_index)``.
     * Served on subsequent FROZEN replays at the same cursor position — the
       checkpoint's ``payload`` is returned to the agent without re-running

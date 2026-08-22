@@ -6,7 +6,7 @@ shows the three-line wiring pattern:
 1. Write your agent as an ``async def`` runner that takes a
    :class:`~timetravel.replay.ReplaySession` and drives the agent to completion.
 2. Register it with :func:`timetravel.stepping_api.register_runner`.
-3. Start the server with ``timetravel ui`` and open the browser to step through.
+3. Start the server with ``agent-timetravel ui`` and open the browser to step through.
 
 The example agent here is deliberately minimal — two LLM calls back-to-back
 via a stubbed OpenAI client, no real model required. In a real session you
@@ -16,13 +16,13 @@ interceptors built into TimeTravel would pause at each LLM call automatically.
 Run it::
 
     # 1. Seed a trace to step through (or reuse one you already captured).
-    timetravel replay <trace_id> --db ~/.timetravel/timetravel.db  # read-only, just loads it
+    agent-timetravel replay <trace_id> --db ~/.agent-timetravel/timetravel.db  # read-only, just loads it
 
     # 2. Start the stepping server with this runner registered.
-    python examples/interactive_stepping.py --db ~/.timetravel/timetravel.db
+    python examples/interactive_stepping.py --db ~/.agent-timetravel/timetravel.db
 
     # 3. In another terminal, run the UI.
-    timetravel ui --db ~/.timetravel/timetravel.db
+    agent-timetravel ui --db ~/.agent-timetravel/timetravel.db
 
     # 4. Open http://127.0.0.1:8484/ui, click "sessions", enter the trace id
     #    + runner ref ("example") and click "start session". The agent will
@@ -66,7 +66,7 @@ from agent_timetravel.stepping_api import register_runner
 async def _example_runner(session: ReplaySession) -> None:
     """Drive a two-step agent, pausing at each LLM call via the gate.
 
-    Uses :func:`timetravel.stepping.gate_async` directly so the example is
+    Uses :func:`agent_timetravel.stepping.gate_async` directly so the example is
     framework-free. In a real agent you wouldn't call this — the
     OpenAI/PydanticAI interceptor would, on every ``chat.completions.create``
     or ``model.request`` call.
@@ -133,7 +133,7 @@ def main() -> int:
     parser.add_argument(
         "--db",
         default=str(__import__("pathlib").Path.home() / ".timetravel" / "agent_timetravel.db"),
-        help="Path to the timetravel SQLite DB (default: ~/.timetravel/timetravel.db).",
+        help="Path to the timetravel SQLite DB (default: ~/.agent-timetravel/timetravel.db).",
     )
     parser.add_argument(
         "--host",

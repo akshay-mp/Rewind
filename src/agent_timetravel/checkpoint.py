@@ -1,4 +1,4 @@
-"""``timetravel.checkpoint()`` — capture and restore agent-visible state.
+"""``agent_timetravel.checkpoint()`` — capture and restore agent-visible state.
 
 Phase 4's contract is that an agent which mutates the world (filesystem,
 database, third-party APIs) can re-run under ``FROZEN`` replay and produce

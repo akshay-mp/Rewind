@@ -1,6 +1,6 @@
 """Unit tests for the Phase 1.1 checkpoint state inspector API.
 
-Covers the two read endpoints added to :mod:`timetravel.timeline`:
+Covers the two read endpoints added to :mod:`agent_timetravel.timeline`:
 
 - ``GET /api/v1/traces/{trace_id}/branches/{branch_id}/checkpoints``
 - ``GET /api/v1/branches/{branch_id}/checkpoints/{name}``

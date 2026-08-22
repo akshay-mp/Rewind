@@ -6,11 +6,11 @@ contract that must hold even when none of the five agent frameworks is
 installed:
 
 1. Each adapter module imports **cleanly** without its framework present
-   (verifies the lazy-import contract — ``timetravel --version`` stays fast).
+   (verifies the lazy-import contract — ``agent-timetravel --version`` stays fast).
 2. Each adapter's ``__all__`` exposes the documented public surface.
 3. Calling each factory without the framework installed raises
    :class:`AdapterError` with a helpful install hint.
-4. The pure helpers in :mod:`timetravel.adapters._common`
+4. The pure helpers in :mod:`agent_timetravel.adapters._common`
    (:func:`build_live_span`, :func:`assert_not_frozen`) and the
    framework-specific message-flattening helpers behave correctly for
    every shape the recorded payloads can take.

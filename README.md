@@ -55,11 +55,11 @@ So TimeTravel does **not** need its own capture proxy. It needs:
 ```bash
 pip install agent-timetravel
 # The wheel includes the built timeline UI; no separate frontend build is needed.
-timetravel serve --port 4318 --db ./timetravel.db
+agent-timetravel serve --port 4318 --db ./timetravel.db
 # Point your OTel/OpenInference-instrumented agent at:
 #   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 # Run a trace, then inspect it in the browser:
-timetravel ui --port 8484 --db ./timetravel.db
+agent-timetravel ui --port 8484 --db ./timetravel.db
 # → http://127.0.0.1:8484/ui
 ```
 
@@ -75,7 +75,7 @@ async def answer(question: str, context: TimeTravelContext | None = None) -> str
     return question
 ```
 
-Run `timetravel dev app:timetravel` to expose the agent list and interactive
+Run `agent-timetravel dev app:timetravel` to expose the agent list and interactive
 sessions at the local UI. Direct calls to `answer(...)` remain ordinary
 pass-through calls; `TimeTravelContext` is injected only for workbench runs.
 For a custom title or separate registry, use:
@@ -116,7 +116,7 @@ exported graph:
 
 ```bash
 pip install agent-timetravel[langgraph]   # or: pip install -e /path/to/timetravel[langgraph]
-timetravel app:main                          # ≡ timetravel dev app:main
+agent-timetravel app:main                          # ≡ agent-timetravel dev app:main
 ```
 
 `app:main` may be a `timetravel.TimeTravel` registry, a compiled LangGraph graph /
@@ -130,10 +130,10 @@ step-by-step debugger.
 
 ```bash
 # Read-only inspection (prints cursor + branch info):
-timetravel replay <trace_id> --mode frozen --db ./timetravel.db
+agent-timetravel replay <trace_id> --mode frozen --db ./timetravel.db
 
 # Branch from span index 4 and go live from there:
-timetravel replay <trace_id> --branch-at 4 --mode branch --db ./timetravel.db
+agent-timetravel replay <trace_id> --branch-at 4 --mode branch --db ./timetravel.db
 ```
 
 ### From Python (the load-bearing integration point)
@@ -142,7 +142,7 @@ timetravel replay <trace_id> --branch-at 4 --mode branch --db ./timetravel.db
 from agent_timetravel.replay import replay
 from agent_timetravel.storage import TraceStore
 
-store = TraceStore("~/.timetravel/db.sqlite")
+store = TraceStore("~/.agent-timetravel/timetravel.db")
 
 # Frozen replay — zero outbound calls, deterministic:
 with replay(store, trace_id="<trace>", mode="frozen"):
@@ -189,14 +189,14 @@ pip install agent-timetravel[adapters]         # all four
 ```
 
 Without an extra installed, the corresponding factory raises
-`timetravel.adapters.<fw>.AdapterError` with an actionable install hint at call
-time. `timetravel --version` and `import timetravel.adapters.<fw>` both succeed
+`agent_timetravel.adapters.<fw>.AdapterError` with an actionable install hint at call
+time. `agent-timetravel --version` and `import agent_timetravel.adapters.<fw>` both succeed
 without any framework installed.
 
 ### Eval a replay candidate against a baseline (Phase 5.5)
 
 ```bash
-timetravel eval suite.yaml --db ./timetravel.db --suite-name my-suite
+agent-timetravel eval suite.yaml --db ./timetravel.db --suite-name my-suite
 # exit 0 = PASS, 1 = FAIL, 2 = ERROR/validation
 ```
 
@@ -224,14 +224,14 @@ it is not the primary decorator-first usage path.
 ## Development
 
 ```bash
-# from timetravel/
+# from agent_timetravel/
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 # full quality gate (run before commit)
-ruff check src/timetravel tests
-pylint src/timetravel/
-mypy --strict src/timetravel
+ruff check src/agent_timetravel tests
+pylint src/agent_timetravel/
+mypy --strict src/agent_timetravel
 python -m pytest tests --no-cov -q
 
 # per-phase security scan (ruff S-rules + bandit, deepsec if available)
@@ -251,7 +251,7 @@ for the live workbench checks.
 
 ```
 timetravel/
-  src/timetravel/          Python package
+  src/agent_timetravel/          Python package
     adapters/          Phase 6 — per-framework replay wrappers (adk, crewai,
                        pydantic_ai, smolagents, langgraph) + shared _common.py
     receiver.py        OTLP/HTTP ingest (Phase 1)

@@ -13,7 +13,7 @@ recorded output instead of calling the live function.
 
 Matching is *content-based*: a tool invocation matches a recorded span iff
 
-* ``span.kind`` is :attr:`~timetravel.enums.SpanKind.TOOL` or :data:`.MCP`
+* ``span.kind`` is :attr:`~agent_timetravel.enums.SpanKind.TOOL` or :data:`.MCP`
 * ``span.name`` equals the wrapper's ``name``
 * the recorded ``gen_ai.tool.input`` JSON hashes-equal the live call args
   (see :func:`_tool_args_hash` for the deterministic normaliser).
@@ -24,7 +24,7 @@ When the live call diverges (different args, or cursor exhausted):
 * BRANCH / FULL_RERUN modes: call through and capture the new TOOL span
   under the active branch via :meth:`~timetravel.replay.ReplaySession.record_new`.
 
-Reentrancy: same contract as :mod:`timetravel.openai_intercept` — each replay
+Reentrancy: same contract as :mod:`agent_timetravel.openai_intercept` — each replay
 session is a contextvar, so the Phase 5.5 eval harness can fan out
 concurrent determinism checks without cross-contaminating cursors.
 """
@@ -140,7 +140,7 @@ def _dispatch_sync_tool(
       developer can APPROVE, EDIT the tool args, STOP, or STEP_ONCE. An EDIT
       rewrites ``args``/``kwargs`` before the cache lookup so a divergent
       edit naturally falls into the live-forward path. Requires a
-      :class:`~timetravel.stepping.ThreadBridgeChannel` (sync blocking) — an
+      :class:`~agent_timetravel.stepping.ThreadBridgeChannel` (sync blocking) — an
       async-only channel raises ``SteppingStopped`` with an actionable hint.
     """
     # pylint: disable=import-outside-toplevel
@@ -220,7 +220,7 @@ def _step_tool(
     """Interactive stepping gate for the sync tool path.
 
     Returns the (possibly edited) args/kwargs. Raises
-    :class:`~timetravel.stepping.SteppingStopped` on STOP. A no-op when no
+    :class:`~agent_timetravel.stepping.SteppingStopped` on STOP. A no-op when no
     approval channel is attached.
     """
     # pylint: disable=import-outside-toplevel

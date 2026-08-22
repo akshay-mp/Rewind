@@ -7,8 +7,8 @@ flowchart TB
         direction TB
 
         subgraph Packaging["Packaging (MODIFIED — pyproject.toml)"]
-            Scripts["[project.scripts]<br/>timetravel = timetravel.cli:main"]
-            DefaultDB["Default db = ~/.timetravel/timetravel.db<br/>(mkdir on first use)"]
+            Scripts["[project.scripts]<br/>timetravel = agent_timetravel.cli:main"]
+            DefaultDB["Default db = ~/.agent-timetravel/timetravel.db<br/>(mkdir on first use)"]
             Extras["[project.optional-dependencies]<br/>enrichment = transformers, psutil"]
             Sdist["[tool.hatch.build.targets.sdist]<br/>include docs/ examples/ scripts/"]
         end
@@ -39,13 +39,13 @@ flowchart TB
         direction LR
         CLI["agent_timetravel.cli — serve / ui / enrich / render-template / replay / eval"]
         Receiver["receiver.py — POST /v1/traces"]
-        Store[("storage.py — TraceStore<br/>~/.timetravel/timetravel.db")]
+        Store[("storage.py — TraceStore<br/>~/.agent-timetravel/timetravel.db")]
         Engine["replay.py — ReplaySession"]
         Enrich["enrichment.py — enrich_span"]
     end
 
     %% Packaging wiring
-    Scripts -->|"pipx install agent-timetravel<br/>→ timetravel serve"| CLI
+    Scripts -->|"pipx install agent-timetravel<br/>→ agent-timetravel serve"| CLI
     DefaultDB -->|"auto-mkdir on first write"| Store
     Extras -.->|"lazy import"| Enrich
 

@@ -1,6 +1,6 @@
 """Turn a bare LangGraph graph (or any langchain runnable) into a workbench app.
 
-``timetravel dev app:main`` — and the ``timetravel app:main`` shorthand — accepts not
+``agent-timetravel dev app:main`` — and the ``agent-timetravel app:main`` shorthand — accepts not
 just a :class:`timetravel.TimeTravel` registry but the objects a LangGraph project
 naturally exports:
 

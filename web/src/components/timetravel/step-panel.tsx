@@ -900,7 +900,7 @@ export function StepPanel({ sessionId, step, stepNumber, pricing, canTimeTravel,
               </Button>
             )}
 
-            {/* 2. Blue: Step Back / TimeTravel */}
+            {/* 2. Blue: Step Back / Agent Timetravel */}
             <Button
               size="sm"
               variant="outline"
@@ -909,7 +909,7 @@ export function StepPanel({ sessionId, step, stepNumber, pricing, canTimeTravel,
               className="border-sky-400/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25 hover:text-white font-medium shadow-sm"
               title="Restore the previous captured step without rerunning the agent"
             >
-              <CornerUpLeft className="mr-1.5 size-4" /> Step Back / TimeTravel
+              <CornerUpLeft className="mr-1.5 size-4" /> Step Back / Agent Timetravel
             </Button>
 
             {!isTool && (

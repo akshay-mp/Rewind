@@ -23,7 +23,7 @@ consulting the active :class:`~timetravel.replay.ReplaySession`:
 * No active session → delegate to the wrapped model verbatim.
 
 The factory pattern mirrors the other adapters: ``Model`` is lazily
-imported inside the factory so ``timetravel --version`` stays fast without
+imported inside the factory so ``agent-timetravel --version`` stays fast without
 ``pydantic-ai`` installed.
 """
 
@@ -83,7 +83,7 @@ def replay_model(
         raise AdapterError(
             "agent_timetravel.adapters.pydantic_ai requires `pydantic-ai`; install it via "
             "`pip install agent-timetravel[pydantic-ai]` or use the generic OpenAI "
-            "monkey-patch (timetravel.openai_intercept.patch)."
+            "monkey-patch (agent_timetravel.openai_intercept.patch)."
         ) from exc
 
     class _ReplayModel(Model):  # type: ignore[misc]
@@ -181,7 +181,7 @@ def replay_model(
             """Interactive stepping gate for the async ``request`` path.
 
             Returns the (possibly edited) message list. Raises
-            :class:`~timetravel.stepping.SteppingStopped` on STOP. A pure no-op
+            :class:`~agent_timetravel.stepping.SteppingStopped` on STOP. A pure no-op
             when no approval channel is attached — the common path stays
             unchanged.
             """

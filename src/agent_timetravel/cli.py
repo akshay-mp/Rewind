@@ -1,6 +1,6 @@
 """Top-level TimeTravel CLI.
 
-Phase 0 exposes only ``timetravel --version``. Phase 1 adds ``serve``; Phase 2
+Phase 0 exposes only ``agent-timetravel --version``. Phase 1 adds ``serve``; Phase 2
 adds ``ui``; Phase 3 adds ``replay``; Phase 4 adds ``checkpoint``; P5.5
 adds ``eval``; Phase 7 adds ``enrich`` and ``render-template``.
 """
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from agent_timetravel.storage import TraceStore
 
 
-#: Default bind address for ``timetravel serve``. Loopback only — this is a
+#: Default bind address for ``agent-timetravel serve``. Loopback only — this is a
 #: local-only debug surface; binding to 0.0.0.0 requires an explicit flag and
 #: is documented as riskier in the Phase 1 threat model.
 _DEFAULT_HOST = "127.0.0.1"
@@ -39,7 +39,7 @@ _DEFAULT_DB = Path.home() / ".agent-timetravel" / "timetravel.db"
 def _ensure_default_db_path(db_path: Path) -> Path:
     """If ``db_path`` is under the default ``~/.timetravel/``, create the dir.
 
-    Phase 8 contract: ``pipx install`` → ``timetravel serve`` must not fail just
+    Phase 8 contract: ``pipx install`` → ``agent-timetravel serve`` must not fail just
     because ``~/.timetravel/`` doesn't exist yet. Only auto-creates the default
     path (a user passing ``--db /tmp/foo.db`` is on their own — explicit).
     """
@@ -49,10 +49,10 @@ def _ensure_default_db_path(db_path: Path) -> Path:
 
 
 class _TimeTravelGroup(click.Group):
-    """Click group that accepts ``timetravel app:main`` as a dev shorthand.
+    """Click group that accepts ``agent-timetravel app:main`` as a dev shorthand.
 
     A first token that isn't a known command but looks like ``MODULE:OBJECT``
-    reroutes to ``dev``, so ``timetravel app:main`` ≡ ``timetravel dev app:main`` —
+    reroutes to ``dev``, so ``agent-timetravel app:main`` ≡ ``agent-timetravel dev app:main`` —
     the one-command entrypoint for running a foreign LangGraph app under the
     workbench. Known command names always win.
     """
@@ -109,7 +109,7 @@ def serve(host: str, port: int, db_path: Path) -> None:
     Listens on ``host:port`` and persists every received span into ``--db``.
     Use ``CTRL+C`` to stop. See ``docs/wiring/`` for how to point agents here.
     """
-    # Imported lazily so ``timetravel --version`` does not pay the FastAPI import
+    # Imported lazily so ``agent-timetravel --version`` does not pay the FastAPI import
     # cost, and so the import-time graph stays shallow for testing.
     # pylint: disable=import-outside-toplevel
     import uvicorn
@@ -122,14 +122,14 @@ def serve(host: str, port: int, db_path: Path) -> None:
     store = TraceStore(db_path=str(db_path))
     app = create_app(store)
     click.echo(
-        f"timetravel serve → http://{host}:{port}/v1/traces  "
+        f"agent-timetravel serve → http://{host}:{port}/v1/traces  "
         f"(db={db_path}, version={__version__})",
         err=True,
     )
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
-#: Default port for ``timetravel ui``. Distinct from the OTLP receiver port
+#: Default port for ``agent-timetravel ui``. Distinct from the OTLP receiver port
 #: (4318) so both can run side-by-side in dev or be split for production.
 #: Mirrors Streamlit's 8501 by convention for "developer UI port".
 _DEFAULT_UI_PORT = 8484
@@ -197,7 +197,7 @@ def ui(host: str, port: int, otlp_port: int, db_path: Path) -> None:
     store = TraceStore(db_path=str(db_path))
     app = create_app(store)
     click.echo(
-        f"timetravel ui → http://{host}:{port}/ui  "
+        f"agent-timetravel ui → http://{host}:{port}/ui  "
         f"(db={db_path}, version={__version__})",
         err=True,
     )
@@ -226,10 +226,10 @@ def ui(host: str, port: int, otlp_port: int, db_path: Path) -> None:
     help="Do not auto-open the workbench UI in a browser once the server is up.",
 )
 def dev(application: str, host: str, port: int, db_path: Path, no_open: bool) -> None:
-    """Run an app under the TimeTravel workbench, e.g. ``timetravel dev my_app:main``.
+    """Run an app under the TimeTravel workbench, e.g. ``agent-timetravel dev my_app:main``.
 
     The target may be a ``timetravel.TimeTravel`` registry, a compiled LangGraph
-    graph / langchain runnable, or a plain callable. ``timetravel app:main``
+    graph / langchain runnable, or a plain callable. ``agent-timetravel app:main``
     (without ``dev``) is accepted as shorthand.
     """
     if ":" not in application:
@@ -240,7 +240,7 @@ def dev(application: str, host: str, port: int, db_path: Path, no_open: bool) ->
     module_name, object_name = application.split(":", 1)
     # Resolve the module from the caller's working directory first — the
     # same behaviour as ``uvicorn app:app`` / ``langgraph dev``, so
-    # ``timetravel app:main`` works from inside the target project.
+    # ``agent-timetravel app:main`` works from inside the target project.
     cwd = str(Path.cwd())
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
@@ -281,7 +281,7 @@ def dev(application: str, host: str, port: int, db_path: Path, no_open: bool) ->
     app = create_app(TraceStore(str(db_path)), registry=registry)
     url = f"http://{_browser_host(host)}:{port}/ui"
     click.echo(
-        f"timetravel dev → {url} "
+        f"agent-timetravel dev → {url} "
         f"({len(registry.agents)} agents, db={db_path})",
         err=True,
     )
@@ -366,7 +366,7 @@ def replay(
     session (optionally forked), and prints the cursor + branch id + the
     equivalent frozen query. To actually drive replay through an agent loop,
     use the :func:`timetravel.replay` context manager from Python — the CLI is
-    for inspection and CI integration (`timetravel replay <id>` exits non-zero
+    for inspection and CI integration (`agent-timetravel replay <id>` exits non-zero
     if the trace cannot be loaded).
 
     Streaming / interactive driving lands with Phase 5 polish.
@@ -449,9 +449,9 @@ def eval_cmd(
 
     \b
     Examples:
-      timetravel eval tests/fixtures/suite.yaml --db timetravel.db
-      timetravel eval suite.yaml --no-save           # dry-run, prints verdicts only
-      timetravel eval suite.yaml --suite-name dev    # override name
+      agent-timetravel eval tests/fixtures/suite.yaml --db timetravel.db
+      agent-timetravel eval suite.yaml --no-save           # dry-run, prints verdicts only
+      agent-timetravel eval suite.yaml --suite-name dev    # override name
     """
     # pylint: disable=import-outside-toplevel
     import asyncio
@@ -466,7 +466,7 @@ def eval_cmd(
     try:
         suite = parse_suite_from_yaml(suite_yaml)
     except SuiteValidationError as exc:
-        click.echo(f"timetravel eval: suite validation failed: {exc}", err=True)
+        click.echo(f"agent-timetravel eval: suite validation failed: {exc}", err=True)
         raise click.exceptions.Exit(2) from exc
     if suite_name is not None:
         suite = EvalSuite(
@@ -481,7 +481,7 @@ def eval_cmd(
     try:
         result = asyncio.run(evaluate(suite, store=store))
     except SuiteValidationError as exc:
-        click.echo(f"timetravel eval: suite validation failed: {exc}", err=True)
+        click.echo(f"agent-timetravel eval: suite validation failed: {exc}", err=True)
         raise click.exceptions.Exit(2) from exc
 
     if persist:
@@ -565,16 +565,16 @@ def main() -> None:
 
 @cli.group()
 def checkpoint() -> None:
-    """Inspect state snapshots captured by :func:`timetravel.checkpoint`.
+    """Inspect state snapshots captured by :func:`agent_timetravel.checkpoint`.
 
     Phase 4 added named state checkpoints to the replay engine: an agent
-    that mutates the world can call ``timetravel.checkpoint(name, payload)``
+    that mutates the world can call ``agent_timetravel.checkpoint(name, payload)``
     inside a re-run, and FETCH the same state back on subsequent FROZEN
     runs without re-running the side effect.
 
     This group is read-only: it lets you list and dump snapshots for a
     given trace/branch. Captures happen via the agent calling
-    :func:`timetravel.checkpoint` inside an active replay session.
+    :func:`agent_timetravel.checkpoint` inside an active replay session.
     """
 
 
@@ -641,7 +641,7 @@ def _print_checkpoints_for_branch(
     fixtures can call it directly without going through click.
 
     Args:
-        store: A :class:`~timetravel.storage.TraceStore` instance.
+        store: A :class:`~agent_timetravel.storage.TraceStore` instance.
         bid: Branch UUID to list checkpoints for.
     """
     cps: list[Checkpoint] = store.list_checkpoints(bid)
@@ -756,15 +756,15 @@ def enrich(
 ) -> None:
     """Apply Phase 7 local-model enrichment to every span in a trace/branch.
 
-    Walks every span, calls :func:`timetravel.enrichment.enrich_span`, and
+    Walks every span, calls :func:`agent_timetravel.enrichment.enrich_span`, and
     persists the updated ``raw_attributes`` back into the store. Idempotent —
     re-running with the same flags produces the same output.
 
     \b
     Examples:
-      timetravel enrich <trace>                           # quant only (default)
-      timetravel enrich <trace> --vram                    # quant + GPU sample
-      timetravel enrich <trace> --branch <uuid> --no-quant
+      agent-timetravel enrich <trace>                           # quant only (default)
+      agent-timetravel enrich <trace> --vram                    # quant + GPU sample
+      agent-timetravel enrich <trace> --branch <uuid> --no-quant
     """
     # pylint: disable=import-outside-toplevel
     from uuid import UUID
@@ -801,7 +801,7 @@ def enrich(
         store.insert_span(span, branch_id=bid)
         enriched += 1
     click.echo(
-        f"timetravel enrich → enriched {enriched} span(s) "
+        f"agent-timetravel enrich → enriched {enriched} span(s) "
         f"(quant={parse_quant}, vram={sample_vram_flag})",
         err=True,
     )

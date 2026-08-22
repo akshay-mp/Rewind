@@ -21,7 +21,7 @@ while consulting the active :class:`~timetravel.replay.ReplaySession`:
   :class:`~timetravel.replay.ReplayError`.
 * No active session → delegate to the wrapped model verbatim.
 
-Lazy import inside the factory keeps ``timetravel --version`` fast without
+Lazy import inside the factory keeps ``agent-timetravel --version`` fast without
 ``smolagents`` installed.
 """
 
@@ -75,7 +75,7 @@ def replay_model(
         raise AdapterError(
             "agent_timetravel.adapters.smolagents requires `smolagents`; install it via "
             "`pip install agent-timetravel[smolagents]` or use the generic OpenAI "
-            "monkey-patch (timetravel.openai_intercept.patch)."
+            "monkey-patch (agent_timetravel.openai_intercept.patch)."
         ) from exc
 
     class _ReplayModel(Model):  # type: ignore[misc]

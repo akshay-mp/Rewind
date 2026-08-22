@@ -14,31 +14,31 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Rewind × Deep Research — time-travel debugging for AI agents",
+  title: "Agent Timetravel × Deep Research — time-travel debugging for AI agents",
   description:
     "Capture a LangChain deep-research run, step down through the recorded spans, edit a prompt, and step up — only the divergent tail calls the live model.",
   keywords: [
-    "Rewind",
+    "Agent Timetravel",
     "LangChain",
     "Deep Research",
     "LangGraph",
     "agent debugging",
     "prompt engineering",
   ],
-  authors: [{ name: "Rewind × Deep Research demo" }],
+  authors: [{ name: "Agent Timetravel × Deep Research demo" }],
   icons: {
     icon: "/rewind.svg",
   },
   openGraph: {
-    title: "Rewind × Deep Research",
+    title: "Agent Timetravel × Deep Research",
     description:
       "Time-travel debugging for a LangChain deep-research agent.",
-    siteName: "Rewind × Deep Research",
+    siteName: "Agent Timetravel × Deep Research",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Rewind × Deep Research",
+    title: "Agent Timetravel × Deep Research",
     description:
       "Time-travel debugging for a LangChain deep-research agent.",
   },

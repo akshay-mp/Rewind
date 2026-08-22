@@ -12,7 +12,7 @@ sequenceDiagram
     Note over A,DB: Setup: trace seeded with N LLM spans.<br/>ReplaySession opened in FROZEN mode. No framework installed at import time.
 
     Note over A,DB: Stage 0 — module import (no framework required)
-    A->>F: import timetravel.adapters.adk  (or any of the four)
+    A->>F: import agent_timetravel.adapters.adk  (or any of the four)
     Note right of F: NO framework import happens<br/>at module load. Only at factory call.
 
     Note over A,DB: Stage 1 — factory call (framework resolved lazily)

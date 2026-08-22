@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# demo-services.sh — manage the Rewind demo services as macOS LaunchAgents.
+# demo-services.sh — manage the Agent Timetravel demo services as macOS LaunchAgents.
 #
 # This is the FIX for "macOS keeps killing localhost". launchd owns the
 # processes, so they survive: terminal/IDE quits, App Nap, screen sleep, and
@@ -13,7 +13,7 @@
 #   ./demo-services.sh logs [r|w]  tail logs: r=receiver, w=web (default: both)
 #
 # Agents:
-#   com.akshaymp.rewind.receiver  → rewind serve on :4318
+#   com.akshaymp.rewind.receiver  → agent-timetravel serve on :4318
 #   com.akshaymp.rewind.webdemo   → next dev on :3000
 #
 # NOTE: this does NOT manage the model (Unsloth Studio / llama-server).
@@ -32,7 +32,7 @@ PLIST_DIR="$HOME/Library/LaunchAgents"
 uid_gui() { echo "gui/$(id -u)"; }
 
 do_start() {
-  echo "▶ starting Rewind receiver (:4318)…"
+  echo "▶ starting Agent Timetravel receiver (:4318)…"
   launchctl bootstrap "$(uid_gui)" "$PLIST_DIR/$RECEIVER.plist" 2>/dev/null \
     && echo "  loaded" \
     || echo "  already loaded (or rerun stop first)"
@@ -52,7 +52,7 @@ do_start() {
 do_stop() {
   echo "▶ stopping web UI…"
   launchctl bootout "$(uid_gui)/$WEBDEMO" 2>/dev/null && echo "  stopped" || echo "  not loaded"
-  echo "▶ stopping Rewind receiver…"
+  echo "▶ stopping Agent Timetravel receiver…"
   launchctl bootout "$(uid_gui)/$RECEIVER" 2>/dev/null && echo "  stopped" || echo "  not loaded"
 }
 

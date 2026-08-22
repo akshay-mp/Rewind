@@ -15,7 +15,7 @@ flowchart TB
         DB[("agent_timetravel.db<br/>traces, spans, branches")]
 
         subgraph ReplayPlane["Replay control plane (NEW)"]
-            CLI["timetravel replay CLI<br/>--branch-at, --mode, --label"]
+            CLI["agent-timetravel replay CLI<br/>--branch-at, --mode, --label"]
             Session["ReplaySession<br/>contextvars + cursor"]
             Branch["fork<br/>insert_branch + seed cache"]
         end

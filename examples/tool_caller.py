@@ -11,7 +11,7 @@ and as a copy-paste base for richer tool agents.
 Run::
 
     # in terminal 1:
-    timetravel serve
+    agent-timetravel serve
 
     # in terminal 2:
     pip install openai openinference-instrumentation-openai opentelemetry-sdk
@@ -130,7 +130,7 @@ def main() -> int:
     # find the trace by filtering for "tool_caller demo" in the UI's
     # search box.
     print(
-        "\nTrace shipped to timetravel serve. "
+        "\nTrace shipped to agent-timetravel serve. "
         "Open http://127.0.0.1:8484/ui/ to inspect."
     )
     return 0

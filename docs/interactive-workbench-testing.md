@@ -65,7 +65,7 @@ workbench invocation, official OpenAI Python SDK Chat Completions calls
 that SDK is configured for an OpenAI-compatible endpoint. LangGraph /
 langchain apps get the same auto-activation: every `BaseChatModel` and
 `BaseTool` `invoke`/`ainvoke` inside the run is stepped, replayed, and
-captured — `timetravel app:main` accepts a bare compiled graph as the launch
+captured — `agent-timetravel app:main` accepts a bare compiled graph as the launch
 target. Other framework replay adapters remain explicit. Generic decorator
 auto-activation for CrewAI, PydanticAI, ADK, and SmolAgents is currently
 unavailable; the

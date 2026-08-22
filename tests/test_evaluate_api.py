@@ -1,4 +1,4 @@
-"""Unit tests for ``timetravel.eval_api`` — the Phase 5.5 HTTP surface.
+"""Unit tests for ``agent_timetravel.eval_api`` — the Phase 5.5 HTTP surface.
 
 Mirrors the pattern of ``tests/test_timeline.py``: real FastAPI app via
 ``TestClient``, real ``TraceStore`` at a temp path, and isolated fixture

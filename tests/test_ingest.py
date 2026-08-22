@@ -1,4 +1,4 @@
-"""Unit tests for ``timetravel.ingest`` — pure protobuf → Span decoding.
+"""Unit tests for ``agent_timetravel.ingest`` — pure protobuf → Span decoding.
 
 These tests do **not** spin up a server: they call the pure decode functions
 directly on constructed proto messages. Fidelity (the Phase 1 exit criterion)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run vulnerability scans for a Rewind phase.
+"""Run vulnerability scans for an Agent Timetravel phase.
 
 Per the user's requirement, each phase must be scanned for code vulnerabilities
 with DeepSec. ``deepsec`` is not currently provisioned in this environment (it

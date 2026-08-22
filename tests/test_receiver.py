@@ -1,4 +1,4 @@
-"""Unit tests for ``timetravel.receiver`` — FastAPI OTLP/HTTP surface.
+"""Unit tests for ``agent_timetravel.receiver`` — FastAPI OTLP/HTTP surface.
 
 We use FastAPI's ``TestClient`` so tests stay synchronous and the receiver
 never binds a real socket. The store points at a temp path so each test is

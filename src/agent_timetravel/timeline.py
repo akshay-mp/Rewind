@@ -1,11 +1,11 @@
 """Read-only timeline API for the Phase 2 UI.
 
 This module exposes the query surface the timeline UI consumes. It is a
-**strict read-only API** — unlike :mod:`timetravel.receiver`, no endpoint here
+**strict read-only API** — unlike :mod:`agent_timetravel.receiver`, no endpoint here
 mutates the database. This separation is intentional and pinned by tests:
 
-- ``timetravel.receiver`` = **ingest surface** (write-only from the UI's POV).
-- ``timetravel.timeline`` = **query surface** for the timeline UI and future TUI.
+- ``agent_timetravel.receiver`` = **ingest surface** (write-only from the UI's POV).
+- ``agent_timetravel.timeline`` = **query surface** for the timeline UI and future TUI.
 
 Endpoints
 ---------
@@ -19,7 +19,7 @@ Endpoints
 Output models
 -------------
 ``TraceSummary`` / ``SpanView`` are render-friendly projections of the Phase 0
-domain models. They are intentionally separate from :class:`timetravel.models.Span`
+domain models. They are intentionally separate from :class:`agent_timetravel.models.Span`
 so the wire shape can shift without touching the storage layer's pydantic
 contract. ``SpanView`` flattens the most useful fixed fields onto the
 top-level JSON object and keeps ``raw_attributes`` intact for the inspector's
@@ -92,7 +92,7 @@ class TraceSummary(BaseModel):
 class SpanView(BaseModel):
     """A single span rendered for the inspector.
 
-    The structured fields mirror :class:`timetravel.models.Span` minus
+    The structured fields mirror :class:`agent_timetravel.models.Span` minus
     ``trace_id`` (redundant in the per-span response). ``raw_attributes`` is
     left untouched — the UI toggles between the rendered view and raw JSON.
     """
@@ -164,12 +164,12 @@ class SearchResponse(BaseModel):
 
 
 class BranchNodeView(BaseModel):
-    """Recursive branch tree node — one per :class:`timetravel.models.Branch`.
+    """Recursive branch tree node — one per :class:`agent_timetravel.models.Branch`.
 
     Used by the timeline UI's branch picker. ``children`` is recursive; the
     root node has ``parent_branch_id is None``.
 
-    Field shape mirrors :class:`timetravel.diff.BranchNode` 1:1 — the
+    Field shape mirrors :class:`agent_timetravel.diff.BranchNode` 1:1 — the
     duplication is the cost of a clean layer split (pure dataclass vs
     Pydantic BaseModel). Pylint's duplicate-code detector flags it; the
     alternative (sharing one type across layers) would couple the diff
@@ -274,7 +274,7 @@ class CreateBranchResponse(BaseModel):
 class CheckpointView(BaseModel):
     """One checkpoint row rendered for the inspector.
 
-    Mirrors :class:`timetravel.models.Checkpoint` 1:1. The ``payload`` is the
+    Mirrors :class:`agent_timetravel.models.Checkpoint` 1:1. The ``payload`` is the
     full agent-visible state snapshot captured at the cursor; the list
     endpoint includes it so the UI can render captured state without a
     second round-trip per checkpoint.
@@ -421,7 +421,7 @@ class StepReviewView(BaseModel):
 class DAGNodeView(BaseModel):
     """One node in the execution DAG (recursive).
 
-    Mirrors :class:`timetravel.dag.DAGNode`. ``children`` is recursive; root
+    Mirrors :class:`agent_timetravel.dag.DAGNode`. ``children`` is recursive; root
     nodes have ``parent_span_id is None``.
     """
 
@@ -841,7 +841,7 @@ def _register_routes(app: FastAPI) -> None:  # pylint: disable=too-many-statemen
         spans 0..branch_at_index from its parent + its own subsequent
         spans). The first divergence is identified by comparing
         ``(kind, messages_hash, tools_hash)`` — see
-        :func:`timetravel.diff.span_diff`.
+        :func:`agent_timetravel.diff.span_diff`.
         """
         store: TraceStore = request.app.state.store
         _ensure_trace_exists(store, trace_id)
@@ -879,7 +879,7 @@ def _register_routes(app: FastAPI) -> None:  # pylint: disable=too-many-statemen
 
         Pulls ``gen_ai.response`` (OpenInference convention) or
         ``raw_response`` from each span's ``raw_attributes``, extracts the
-        assistant message text, and runs :func:`timetravel.diff.message_diff`.
+        assistant message text, and runs :func:`agent_timetravel.diff.message_diff`.
         """
         store: TraceStore = request.app.state.store
         left_span = store.get_span(timetravel_id)
@@ -913,7 +913,7 @@ def _register_routes(app: FastAPI) -> None:  # pylint: disable=too-many-statemen
     ) -> CreateBranchResponse:
         """Create a new branch row — the *\"Branch from here\"* action.
 
-        Persists a :class:`timetravel.models.Branch` row whose
+        Persists a :class:`agent_timetravel.models.Branch` row whose
         ``parent_branch_id`` defaults to the trace root when omitted.
         The branch is ``frozen`` by default (bookkeeping only); to drive
         it live, call :func:`timetravel.replay.replay` from Python with the
@@ -1244,11 +1244,11 @@ def _branch_node_view(node: BranchNode) -> BranchNodeView:
 
 
 def _dag_node_view(node: Any) -> Any:  # noqa: ANN401
-    """Recursively project a :class:`timetravel.dag.DAGNode` into the wire shape.
+    """Recursively project a :class:`agent_timetravel.dag.DAGNode` into the wire shape.
 
     Typed ``Any`` to avoid importing :class:`DAGNode` at module top (the dag
     module is tiny and the projection is structural). The runtime shape is
-    guaranteed by :func:`timetravel.dag.build_dag`.
+    guaranteed by :func:`agent_timetravel.dag.build_dag`.
     """
     cls = DAGNodeView
     return cls(

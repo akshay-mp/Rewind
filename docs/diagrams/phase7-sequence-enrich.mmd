@@ -1,5 +1,5 @@
 sequenceDiagram
-    %% Phase 7 — `timetravel enrich TRACE` command sequence.
+    %% Phase 7 — `agent-timetravel enrich TRACE` command sequence.
     %% Drives every span in a trace (or branch) through enrich_span.
 
     autonumber
@@ -11,7 +11,7 @@ sequenceDiagram
     participant SV as sample_vram()
     participant Ops as NVIDIA-smi<br/>macmon · psutil
 
-    U->>CLI: timetravel enrich TRACE<br/>[--branch B] [--sample-vram]
+    U->>CLI: agent-timetravel enrich TRACE<br/>[--branch B] [--sample-vram]
     Note over CLI: resolve target spans<br/>(root branch vs B)
     CLI->>Store: get_trace(T) ⟵ branch_id=None<br/>else get_spans(T, branch_id=B)
     Store-->>CLI: list[Span]

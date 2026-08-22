@@ -131,7 +131,7 @@ function TopBar() {
             </div>
             <div>
               <div className="text-sm font-semibold leading-tight flex items-center gap-2">
-                TimeTravel Debugger
+                Agent Timetravel Debugger
                 <Badge variant="outline" className="text-[10px] py-0 border-emerald-500/30 text-emerald-400">
                   Step-by-Step
                 </Badge>

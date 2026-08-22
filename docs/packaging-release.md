@@ -1,8 +1,8 @@
 # Packaging and Release
 
-TimeTravel publishes a Python wheel and source distribution. The wheel contains
-the production Vite build under `timetravel/_ui`, so `pip install agent-timetravel` is
-enough to run `timetravel ui`. A checkout still falls back to `web/dist` for local
+Agent Timetravel publishes a Python wheel and source distribution. The wheel contains
+the production Vite build under `agent_timetravel/_ui`, so `pip install agent-timetravel` is
+enough to run `agent-timetravel ui`. A checkout still falls back to `web/dist` for local
 development.
 
 ## Build locally
@@ -18,7 +18,7 @@ For an application-managed install, pin the published distribution in its
 `requirements.txt`:
 
 ```text
-agent-timetravel==0.1.2
+agent-timetravel==0.2.0
 ```
 
 Then install the application requirements with:
@@ -27,19 +27,21 @@ Then install the application requirements with:
 python -m pip install -r requirements.txt
 ```
 
-The distribution name is `agent-timetravel`, but the Python import package and
-public API remain `timetravel`:
+The distribution name is `agent-timetravel`, and the Python import package is
+`agent_timetravel`:
 
 ```python
 from agent_timetravel import TimeTravel, TimeTravelContext, timetravel
 ```
 
-The `timetravel` CLI and the `timetravel` decorator object are unchanged. Optional
+The compatibility `timetravel` CLI alias and the `timetravel` decorator object remain
+available. The primary CLI is `agent-timetravel`. Optional
 framework support is installed with an extra, for example
 `agent-timetravel[adk]`.
+The default database path is `~/.agent-timetravel/timetravel.db`.
 
 The smoke test builds both artifacts, checks that the wheel contains
-`timetravel/_ui` and the sdist contains `web/dist`, rejects environment files,
+`agent_timetravel/_ui` and the sdist contains `web/dist`, rejects environment files,
 builds a wheel from the sdist, and runs the installed wheel from an isolated
 temporary directory. It verifies package import, CLI help, and `/ui/` without
 using the checkout's `web/dist`.
@@ -68,13 +70,13 @@ name immediately because PyPI and TestPyPI availability can change.
 
    - PyPI project name: `agent-timetravel`
    - GitHub owner: `akshay-mp`
-   - GitHub repository: `TimeTravel`
+   - GitHub repository: `agent-timetravel`
    - Workflow filename: `release.yml`
    - Environment name: `pypi`
 
 3. On TestPyPI, open
    <https://test.pypi.org/manage/account/publishing/> and add a pending
-   publisher with the same owner and repository, workflow filename
+   publisher with the same owner and repository (`agent-timetravel`), workflow filename
    `testpypi.yml`, and environment name `testpypi`.
 
 No PyPI token or GitHub secret is used. The publish jobs request the GitHub
@@ -85,7 +87,7 @@ workflow, and environment above.
 
 1. Build and verify the frontend and Python artifacts locally.
 2. Update `project.version` in `pyproject.toml`.
-3. Create and push the matching tag, for example `v0.1.2`.
+3. Create and push the matching tag, for example `v0.2.0`.
 
 The tag workflow fails before publishing when the tag version does not match
 `project.version`. It publishes through PyPI Trusted Publishing with GitHub
@@ -108,7 +110,7 @@ and verify it manually. TestPyPI does not necessarily contain all runtime
 dependencies, so keep PyPI as the extra index:
 
 ```bash
-RELEASE_VERSION=0.1.2  # Set this to project.version before each release.
+RELEASE_VERSION=0.2.0  # Set this to project.version before each release.
 python -m venv /tmp/timetravel-testpypi-verify
 /tmp/timetravel-testpypi-verify/bin/python -m pip install \
   --index-url https://test.pypi.org/simple/ \
@@ -116,7 +118,7 @@ python -m venv /tmp/timetravel-testpypi-verify
   "agent-timetravel==${RELEASE_VERSION}"
 /tmp/timetravel-testpypi-verify/bin/python -c \
   "from importlib.metadata import version; from agent_timetravel import TimeTravel, TimeTravelContext, timetravel; assert version('agent-timetravel') == '${RELEASE_VERSION}'; print('TestPyPI import ok')"
-/tmp/timetravel-testpypi-verify/bin/timetravel --version
+/tmp/timetravel-testpypi-verify/bin/agent-timetravel --version
 ```
 
 This is a manual post-publish check only; the workflow does not automate a

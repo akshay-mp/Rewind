@@ -18,11 +18,11 @@ else
   echo "$(x) model backend    : DOWN — start Unsloth Studio / load Qwen3.6"
 fi
 
-# 2. Rewind OTLP receiver.
+# 2. Agent Timetravel OTLP receiver.
 if curl -s -o /dev/null -m 2 http://127.0.0.1:4318/healthz 2>/dev/null; then
-  echo "$(c) rewind receiver  : :4318  (captures spans → /tmp/rewind-demo.db)"
+  echo "$(c) Agent Timetravel receiver : :4318  (captures spans → /tmp/rewind-demo.db)"
 else
-  echo "$(x) rewind receiver  : DOWN — run: source .venv/bin/activate && rewind serve"
+  echo "$(x) Agent Timetravel receiver : DOWN — run: source .venv/bin/activate && agent-timetravel serve"
 fi
 
 # 3. Web demo UI.

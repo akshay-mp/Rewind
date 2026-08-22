@@ -1,4 +1,4 @@
-"""Unit tests for ``timetravel.timeline`` — the Phase 2 read-only API.
+"""Unit tests for ``agent_timetravel.timeline`` — the Phase 2 read-only API.
 
 We exercise the full surface of ``mount_timeline`` through FastAPI's
 ``TestClient``: list traces, fetch a trace, list spans with filters, search,

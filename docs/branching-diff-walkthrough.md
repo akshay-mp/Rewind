@@ -34,8 +34,8 @@ second LLM call diverge.
 ### Step 1 — Capture and open
 
 ```bash
-timetravel serve &
-timetravel ui &
+agent-timetravel serve &
+agent-timetravel ui &
 python examples/tool_caller.py
 ```
 
@@ -122,7 +122,7 @@ another), the diff surfaces a `quant_diverges` badge on the diverging
 span. This catches the silent quality regression where lower-VRAM
 hardware downgrades a run without changing any prompts.
 
-Run `timetravel enrich TRACE --sample-vram` to additionally capture one-shot
+Run `agent-timetravel enrich TRACE --sample-vram` to additionally capture one-shot
 VRAM samples per LLM span — those appear next to each span in the UI and
 are surfaceable in the diff.
 
@@ -133,7 +133,7 @@ are surfaceable in the diff.
 | See what an agent would have done with a different prompt | Branch from the relevant LLM span, edit the message, Run live. |
 | Find the first divergence between two captured runs | Open both traces, click Diff. |
 | Verify a model swap didn't break anything | Diff before/after; check `quant_diverges` flag. |
-| Roll back a side-effecting agent | Use `timetravel.checkpoint()` in your agent + Phase 4's rollback handler. |
+| Roll back a side-effecting agent | Use `agent_timetravel.checkpoint()` in your agent + Phase 4's rollback handler. |
 | Bulk-test 50 prompt variants | See [`docs/phases/phase-5.5.md`](./phases/phase-5.5.md) for the eval harness. |
 
 ## What you cannot do with branching
@@ -142,7 +142,7 @@ are surfaceable in the diff.
   the recorded tool result; the actual filesystem / API / database
   call is **not** re-executed. This is deliberate — replay is for
   inspection, not for re-running side effects. For side-effecting
-  agents, see Phase 4's `timetravel.checkpoint()`.
+  agents, see Phase 4's `agent_timetravel.checkpoint()`.
 - **You can't branch a streaming generation mid-token.** Branching
   granularity is per-span, not per-chunk. (Streaming fixtures are
   chunk-level inside a span, but the branch point itself is always a

@@ -16,7 +16,7 @@ Flows covered (per ``docs/implementation_plan.md`` §1.5):
 * **forward** — APPROVE on a tool serves the cached output, no live call.
 
 Tool stepping is the genuinely sync interception surface; it uses
-:class:`~timetravel.stepping.ThreadBridgeChannel` with a background approver
+:class:`~agent_timetravel.stepping.ThreadBridgeChannel` with a background approver
 thread (mirrors ``tests/test_tool_intercept.py``). The LLM stepping path
 is async-only and is covered by ``test_stepping.py`` at the unit level
 and ``test_openai_intercept.py``; here we focus on the full

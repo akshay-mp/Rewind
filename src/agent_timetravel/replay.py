@@ -1,9 +1,9 @@
 """Phase 3 — Time-travel replay engine.
 
-This module is **pure logic**. It depends only on :class:`timetravel.storage.TraceStore`
-and :mod:`timetravel.models`; it does **not** import OpenAI, LangGraph, or any
-network client. The interceptors in :mod:`timetravel.openai_intercept`,
-:mod:`timetravel.tool_intercept`, and :mod:`timetravel.adapters.langgraph` layer on
+This module is **pure logic**. It depends only on :class:`agent_timetravel.storage.TraceStore`
+and :mod:`agent_timetravel.models`; it does **not** import OpenAI, LangGraph, or any
+network client. The interceptors in :mod:`agent_timetravel.openai_intercept`,
+:mod:`agent_timetravel.tool_intercept`, and :mod:`agent_timetravel.adapters.langgraph` layer on
 top of the contracts defined here.
 
 Two concepts:
@@ -99,7 +99,7 @@ class CallSignature:
     to :meth:`Responder.respond_or_forward`.
 
     ``messages_hash`` is the canonical hash of the request messages (see
-    :func:`timetravel.models.hash_payload`). ``tools_hash`` is the hash of the
+    :func:`agent_timetravel.models.hash_payload`). ``tools_hash`` is the hash of the
     tool schema list. Together they identify the *call* without re-reading
     the (potentially large) request body.
     """
@@ -160,10 +160,10 @@ class ReplaySession:
       ``[0, cursor)`` have been consumed; the next call signature is matched
       against ``spans[cursor]``.
     * ``mode`` — how to handle call divergences (see :class:`ReplayMode`).
-    * ``approval`` — optional :class:`~timetravel.stepping.ApprovalChannel`.
+    * ``approval`` — optional :class:`~agent_timetravel.stepping.ApprovalChannel`.
       When ``mode is INTERACTIVE`` and this is non-``None``, every
       intercepted LLM/tool call pauses at the stepping gate and awaits a
-      :class:`~timetravel.stepping.Decision` from the channel. ``None`` for
+      :class:`~agent_timetravel.stepping.Decision` from the channel. ``None`` for
       FROZEN/BRANCH/FULL — stepping is a no-op there.
 
     The session is **reentrant and isolated by branch_id** — the Phase 5.5
@@ -207,7 +207,7 @@ class ReplaySession:
         fixture set).
 
         ``approval`` attaches a stepping channel; see
-        :func:`~timetravel.stepping.gate_async` for the pause semantics.
+        :func:`~agent_timetravel.stepping.gate_async` for the pause semantics.
         """
         trace = store.get_trace(trace_id)
         if trace is None:
@@ -258,7 +258,7 @@ class ReplaySession:
         carry a parent via ``Branch.parent_branch_id`` — duplicating
         thousands of rows per fork would inflate the DB and would conflict
         with the inherited-prefix union exposed by
-        :meth:`~timetravel.storage.TraceStore.get_spans`.
+        :meth:`~agent_timetravel.storage.TraceStore.get_spans`.
 
         Forking mode:
 
@@ -329,7 +329,7 @@ class ReplaySession:
     def advance_cursor_to(self, index: int) -> None:
         """Move the cursor to ``index`` after a non-LLM (tool/MCP) cache hit.
 
-        Used by :mod:`timetravel.tool_intercept` when it matches a TOOL span
+        Used by :mod:`agent_timetravel.tool_intercept` when it matches a TOOL span
         by name+args-hash (out-of-order w.r.t. the LLM ``messages_hash``
         cursor). The lookup is forward-only: ``index`` must be within
         ``[cursor, len(spans)]``; spans below the current cursor are
@@ -398,7 +398,7 @@ class ReplaySession:
     # Branch introspection
     # ------------------------------------------------------------------
     def trace_summary(self) -> Trace:
-        """Return a :class:`~timetravel.models.Trace` view of this branch's spans.
+        """Return a :class:`~agent_timetravel.models.Trace` view of this branch's spans.
 
         Used by tests and the timeline API to query a branch as its own
         distinct timeline.
@@ -455,8 +455,8 @@ def replay(
       trace's ``root_branch_id``.
     * ``approval`` — attach a stepping channel. Combined with
       ``mode=INTERACTIVE`` this pauses every intercepted LLM/tool call at
-      :func:`~timetravel.stepping.gate_async` until the channel yields a
-      :class:`~timetravel.stepping.Decision`. Ignored for non-INTERACTIVE modes.
+      :func:`~agent_timetravel.stepping.gate_async` until the channel yields a
+      :class:`~agent_timetravel.stepping.Decision`. Ignored for non-INTERACTIVE modes.
 
     Sessions are stored in a :class:`contextvars.ContextVar`, so nested or
     concurrent ``with replay(...)`` blocks are isolated per task. The Phase

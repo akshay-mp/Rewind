@@ -1,7 +1,7 @@
 """FastAPI mountable routes for the Phase B stepping server.
 
 The HTTP/SSE transport that lets a browser drive an interactive step-through
-session. Pairs with :mod:`timetravel.stepping` (the primitive) — this module
+session. Pairs with :mod:`agent_timetravel.stepping` (the primitive) — this module
 provides the server-side glue: a runner registry, an SSE-backed approval
 channel, and three endpoints.
 
@@ -19,10 +19,10 @@ Architecture
 The agent runs server-side in a background ``asyncio.Task`` spawned by
 ``POST /sessions``. The task opens a :func:`timetravel.replay.replay` context
 with an :class:`SSEApprovalChannel` attached; each paused call pushes a
-:class:`~timetravel.stepping.Step` onto the channel. The SSE endpoint drains
+:class:`~agent_timetravel.stepping.Step` onto the channel. The SSE endpoint drains
 the channel's pending-step queue; ``POST /decide`` resolves it. The task
 stays alive across requests — it does **not** block the spawning POST
-(unlike :mod:`timetravel.eval_api`'s fire-and-wait ``POST /evals``).
+(unlike :mod:`agent_timetravel.eval_api`'s fire-and-wait ``POST /evals``).
 
 Runner registry
 ---------------
@@ -597,7 +597,7 @@ class DecisionRequest(BaseModel):
 class RunControlView(BaseModel):
     """Wire shape for server-owned run-control intent (Phase 1.2).
 
-    Mirrors :class:`timetravel.stepping.RunControlIntent`. ``PATCH``ing this
+    Mirrors :class:`agent_timetravel.stepping.RunControlIntent`. ``PATCH``ing this
     object mid-run lets the UI say "pause after this step" or "run until
     breakpoint" in a way that survives a page refresh or SSE reconnect —
     the intent lives on the session row, not in volatile browser state.
@@ -833,8 +833,8 @@ def _spawn_runner_task(
 def mount_stepping(app: FastAPI, registry: TimeTravel | None = None) -> None:
     """Register the stepping-server API routes on ``app``.
 
-    Mirrors :func:`timetravel.timeline.mount_timeline` and
-    :func:`timetravel.eval_api.mount_eval` — same app.state.store accessor, same
+    Mirrors :func:`agent_timetravel.timeline.mount_timeline` and
+    :func:`agent_timetravel.eval_api.mount_eval` — same app.state.store accessor, same
     exception conventions. Mount after eval so the read API is available
     first.
     """
@@ -1016,7 +1016,7 @@ def mount_stepping(app: FastAPI, registry: TimeTravel | None = None) -> None:
 
         The source session is not modified. The new branch's captured spans
         are persisted under a fresh ``branch_id``; the existing
-        :func:`~timetravel.diff` surface can compare the two timelines.
+        :func:`~agent_timetravel.diff` surface can compare the two timelines.
         """
         if not _is_valid_uuid(session_id):
             raise HTTPException(

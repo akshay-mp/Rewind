@@ -36,12 +36,12 @@ captured under a new branch id.
 
 | Framework | Adapter factory | Wraps | Import extra |
 |---|---|---|---|
-| **LangGraph** | `timetravel.adapters.langgraph.replay_chat_model` | `BaseChatModel._generate` (sync + async) | `pip install agent-timetravel[langgraph]` |
-| **Google ADK** | `timetravel.adapters.adk.replay_llm` | `BaseLlm.generate_content_async` | `pip install agent-timetravel[adk]` |
-| **CrewAI** | `timetravel.adapters.crewai.replay_llm` | `BaseLLM.call[_async]`, `get_response[_async]` | `pip install crewai` |
-| **PydanticAI** | `timetravel.adapters.pydantic_ai.replay_model` | `Model.request[_stream]` | `pip install agent-timetravel[pydantic-ai]` |
-| **SmolAgents** | `timetravel.adapters.smolagents.replay_model` | `Model.__call__`, `generate`, `astream` | `pip install agent-timetravel[smolagents]` |
-| **Generic OpenAI** | `timetravel.replay` ctxmgr (monkey-patch fallback) | `openai.resources.chat.completions.Completions.create` (sync + async + streaming) | None — always available |
+| **LangGraph** | `agent_timetravel.adapters.langgraph.replay_chat_model` | `BaseChatModel._generate` (sync + async) | `pip install agent-timetravel[langgraph]` |
+| **Google ADK** | `agent_timetravel.adapters.adk.replay_llm` | `BaseLlm.generate_content_async` | `pip install agent-timetravel[adk]` |
+| **CrewAI** | `agent_timetravel.adapters.crewai.replay_llm` | `BaseLLM.call[_async]`, `get_response[_async]` | `pip install crewai` |
+| **PydanticAI** | `agent_timetravel.adapters.pydantic_ai.replay_model` | `Model.request[_stream]` | `pip install agent-timetravel[pydantic-ai]` |
+| **SmolAgents** | `agent_timetravel.adapters.smolagents.replay_model` | `Model.__call__`, `generate`, `astream` | `pip install agent-timetravel[smolagents]` |
+| **Generic OpenAI** | `agent_timetravel.replay` ctxmgr (monkey-patch fallback) | `openai.resources.chat.completions.Completions.create` (sync + async + streaming) | None — always available |
 
 The **generic OpenAI** path is the fallback when no framework-specific
 adapter exists. It's the only path that uses monkey-patching; the
@@ -52,8 +52,8 @@ are the recommended path for any supported framework.
 
 ### LangGraph  *(pattern origin — Phase 3)*
 
-> **Workbench runs no longer need this wrapper.** `timetravel dev` /
-> `timetravel app:main` auto-activates LangGraph interception (every
+> **Workbench runs no longer need this wrapper.** `agent-timetravel dev` /
+> `agent-timetravel app:main` auto-activates LangGraph interception (every
 > `BaseChatModel` / `BaseTool` invoke, stepped and captured). The factory
 > below remains for replay contexts you drive yourself from Python.
 
@@ -142,7 +142,7 @@ adapters for any multi-threaded agent.
 | If your framework… | Use |
 |---|---|
 | Is in the adapter matrix above | The framework-specific adapter. Always preferred. |
-| Uses the OpenAI SDK directly (no framework) | The generic `timetravel.replay()` ctxmgr. |
+| Uses the OpenAI SDK directly (no framework) | The generic `agent_timetravel.replay()` ctxmgr. |
 | Uses a non-OpenAI LLM client (Anthropic, Cohere, custom HTTP) | The generic ctxmgr won't apply. Either write a thin adapter (see `docs/phases/phase-6.md` §6.1 for the pattern) or use the eval harness (`docs/phases/phase-5.5.md`) to score variants without replay. |
 
 ## Troubleshooting

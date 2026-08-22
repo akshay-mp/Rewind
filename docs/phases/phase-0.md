@@ -22,11 +22,11 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| Domain models | `src/timetravel/models.py` | `Span`, `Trace`, `Branch`, `TimeTravelModel` + `hash_payload`. Pydantic v2, `extra="forbid"`. |
-| Enums | `src/timetravel/enums.py` | `SpanKind` (`gen_ai.llm/tool/mcp/agent`), `ReplayMode` (frozen/branch/full), `SpanStatus`. |
-| Classifier | `src/timetravel/classify.py` | Defensive map from raw GenAI/OpenInference attrs → `SpanKind`. Unclassifiable → `UNKNOWN` (never dropped). |
-| Storage | `src/timetravel/storage.py` | `TraceStore`: SQLite + WAL, foreign keys, explicit transactions. Verbatim `raw_attributes` JSON column. |
-| CLI scaffold | `src/timetravel/cli.py` | `timetravel --version` / `timetravel version`. Phase 1 adds `serve`. |
+| Domain models | `src/agent_timetravel/models.py` | `Span`, `Trace`, `Branch`, `TimeTravelModel` + `hash_payload`. Pydantic v2, `extra="forbid"`. |
+| Enums | `src/agent_timetravel/enums.py` | `SpanKind` (`gen_ai.llm/tool/mcp/agent`), `ReplayMode` (frozen/branch/full), `SpanStatus`. |
+| Classifier | `src/agent_timetravel/classify.py` | Defensive map from raw GenAI/OpenInference attrs → `SpanKind`. Unclassifiable → `UNKNOWN` (never dropped). |
+| Storage | `src/agent_timetravel/storage.py` | `TraceStore`: SQLite + WAL, foreign keys, explicit transactions. Verbatim `raw_attributes` JSON column. |
+| CLI scaffold | `src/agent_timetravel/cli.py` | `agent-timetravel --version` / `agent-timetravel version`. Phase 1 adds `serve`. |
 | Packaging | `pyproject.toml` | hatchling build, `agent-timetravel` console script, dev extras (ruff/pylint/mypy/pytest). |
 
 ### 1.2 The no-fidelity-loss contract (the core invariant)
@@ -212,7 +212,7 @@ sequenceDiagram
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| EC1 | `python -m timetravel --version` runs | ✅ | `timetravel, version 0.1.0` |
+| EC1 | `python -m agent-timetravel --version` runs | ✅ | `timetravel, version 0.1.0` |
 | EC2 | 3-span trace (1 LLM + 1 tool + 1 agent) round-trips SQLite → identical | ✅ | `tests/test_models.py` (3 tests) |
 | EC3 | mypy `--strict` + ruff clean | ✅ | see §4.4 |
 
@@ -223,15 +223,15 @@ sequenceDiagram
 | `tests/test_enums_models.py` | 7 | Enum uniqueness, semconv value pinning, `extra="forbid"`, `hash_payload` determinism, signature match, validation errors. |
 | `tests/test_classify.py` | 6 | Classifier maps OpenInference/GenAI keys → `SpanKind`; unknowns preserved not dropped. |
 | `tests/test_models.py` | 3 | **Exit-criterion round-trip**, byte-fidelity, parent→child linking. |
-| `tests/test_cli.py` | 2 | `__version__` constant; `python -m timetravel --version` subprocess. |
+| `tests/test_cli.py` | 2 | `__version__` constant; `python -m agent-timetravel --version` subprocess. |
 | **Total** | **18** | **18 passing, 0 failing** |
 
 ### 4.3 Quality gates
 
 ```
 ruff check src tests   → All checks passed!
-pylint  src/timetravel     → 10.00/10
-mypy    src/timetravel     → Success: no issues found in 7 source files
+pylint  src/agent_timetravel     → 10.00/10
+mypy    src/agent_timetravel     → Success: no issues found in 7 source files
 pytest                 → 18 passed
 pytest -W error::ResourceWarning  → 18 passed (no connection leaks)
 ```
@@ -315,12 +315,12 @@ source ../.venv/bin/activate    # or: python -m venv .venv && pip install -e ".[
 
 # quality gates (all must pass)
 ruff check src tests
-pylint src/timetravel
-mypy src/timetravel
+pylint src/agent_timetravel
+mypy src/agent_timetravel
 pytest
 
 # version smoke
-python -m timetravel --version
+python -m agent-timetravel --version
 
 # security
 python scripts/security_scan.py --phase 0
@@ -334,9 +334,9 @@ timetravel/
 ├── README.md                 # OTel-in / replay-out architecture summary
 ├── .python-version           # 3.11
 ├── .gitignore
-├── src/timetravel/
+├── src/agent_timetravel/
 │   ├── __init__.py           # __version__ = "0.1.0"
-│   ├── __main__.py           # python -m timetravel entrypoint
+│   ├── __main__.py           # python -m agent_timetravel entrypoint
 │   ├── cli.py                # click group + version
 │   ├── enums.py              # SpanKind / ReplayMode / SpanStatus (StrEnum)
 │   ├── models.py             # Span / Trace / Branch / TimeTravelModel / hash_payload
@@ -368,7 +368,7 @@ Phase 1's only job is **writing into** the schema Phase 0 froze:
 - The **fidelity contract** (`raw_attributes` byte-for-byte) is already
   enforceable as a Phase 1 exit criterion because `raw_attributes_bytes()`
   exists.
-- The CLI group is wired; Phase 1 adds `timetravel serve --otlp-port 4318 --db ...`.
+- The CLI group is wired; Phase 1 adds `agent-timetravel serve --otlp-port 4318 --db ...`.
 
 ### 6.4 Decisions Phase 1 must NOT revisit
 

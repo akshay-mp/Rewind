@@ -5,7 +5,7 @@ Covers the Phase 4 plan exit criteria:
 1. **1000-step synthetic trace rewrites from step 500 in <2s.**
    (``test_phase4_perf_1000_step_rewrite_under_2_seconds``)
 
-2. **An agent using ``timetravel.checkpoint()`` restores full state after a
+2. **An agent using ``agent_timetravel.checkpoint()`` restores full state after a
    timetravel.** (``test_phase4_e2e_checkpoint_capture_then_frozen_restore``)
 
 3. **A trace with 100k+ spans loads its timeline without OOM.**
@@ -226,7 +226,7 @@ def test_phase4_e2e_checkpoint_capture_then_frozen_restore(
 ) -> None:
     """Plan §Phase 4 exit criterion (2) — verbatim:
 
-    > An agent using ``timetravel.checkpoint()`` restores full state after a
+    > An agent using ``agent_timetravel.checkpoint()`` restores full state after a
     > timetravel.
 
     Three-act structure:
@@ -386,7 +386,7 @@ def _git(cwd: Path, *args: str) -> str:
 
     S603/S607 silenced: hard-coded command, no user input. ``git`` resolves
     via PATH which is fine for tests (production code in
-    :mod:`timetravel.rollback.git` uses absolute discovery).
+    :mod:`agent_timetravel.rollback.git` uses absolute discovery).
     """
     cmd = ["git", *args]  # trusted, see docstring
     result = subprocess.run(  # noqa: S603 - test helper, trusted input

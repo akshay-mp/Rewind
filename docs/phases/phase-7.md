@@ -26,9 +26,9 @@
 
 | Surface | File | What it does |
 |---|---|---|
-| Core enrichment module | `src/timetravel/enrichment.py` (NEW, ~370 lines) | Pure-Python module with no hard deps. Three capabilities: GGUF-quant parsing, chat-template rendering, one-shot VRAM sampling. Single entry point `enrich_span(span, *, parse_model_quant, sample_gpu) -> Span` mutates `raw_attributes` in place. |
-| Diff auto-flag | `src/timetravel/diff.py` (MODIFIED) | New `quant_diverges: bool` field on the frozen `SpanDiff` dataclass. `_detect_quant_divergence(left, right)` fires when the same base model appears on two branches with different quant suffixes. |
-| CLI surface | `src/timetravel/cli.py` (MODIFIED) | Two new commands: `timetravel enrich TRACE [--branch B] [--parse-quant] [--sample-vram]` — walks spans, calls `enrich_span`, persists via `insert_span`. And `timetravel render-template TRACE INDEX` — renders the post-template prompt for one LLM span. |
+| Core enrichment module | `src/agent_timetravel/enrichment.py` (NEW, ~370 lines) | Pure-Python module with no hard deps. Three capabilities: GGUF-quant parsing, chat-template rendering, one-shot VRAM sampling. Single entry point `enrich_span(span, *, parse_model_quant, sample_gpu) -> Span` mutates `raw_attributes` in place. |
+| Diff auto-flag | `src/agent_timetravel/diff.py` (MODIFIED) | New `quant_diverges: bool` field on the frozen `SpanDiff` dataclass. `_detect_quant_divergence(left, right)` fires when the same base model appears on two branches with different quant suffixes. |
+| CLI surface | `src/agent_timetravel/cli.py` (MODIFIED) | Two new commands: `agent-timetravel enrich TRACE [--branch B] [--parse-quant] [--sample-vram]` — walks spans, calls `enrich_span`, persists via `insert_span`. And `agent-timetravel render-template TRACE INDEX` — renders the post-template prompt for one LLM span. |
 | mypy override | `pyproject.toml` (MODIFIED) | New `[[tool.mypy.overrides]]` block for `transformers.*` and `psutil.*` — both optional, both lazy-imported. Replaces fragile inline `# type: ignore[import-not-found]` codes (which mypy can flip between `import-not-found` and `import-untyped` depending on whether stubs are installed). |
 | Test suite | `tests/test_enrichment.py` (NEW) + `tests/test_diff.py` (MODIFIED) | 13 new tests: 5 enrichment families (parser, precedence, render fallback, hermetic VRAM sampler, orchestrator) + 8 quant_diverges variants. |
 
@@ -36,11 +36,11 @@
 
 `enrichment.py` has **zero hard imports** of `transformers`, `psutil`,
 `nvidia-ml`, or any GPU SDK. The only non-stdlib import is
-`timetravel.models.Span`. Every external capability is reached via a
+`agent_timetravel.models.Span`. Every external capability is reached via a
 lazy `import` inside the relevant function body, wrapped in
 `try/except ImportError`. The contract:
 
-1. **Import never fails.** `import timetravel.enrichment` works in a
+1. **Import never fails.** `import agent_timetravel.enrichment` works in a
    bare-minimum Python install with zero optional deps.
 2. **Capability gracefully degrades.** No transformers → fallback
    `[role] content` rendering. No GPU probe available →
@@ -52,7 +52,7 @@ lazy `import` inside the relevant function body, wrapped in
 
 This matches the **lazy-import-in-factory pattern** codified in
 `/memories/repo/timetravel-project-conventions.md` §"Adapter rule" — the
-same reason `timetravel --version` stays fast without any agent framework
+same reason `agent-timetravel --version` stays fast without any agent framework
 installed.
 
 ### 1.3 Three new `raw_attributes` keys (no schema bump)
@@ -135,7 +135,7 @@ string — what the tokenizer actually consumes. Two paths:
   Not byte-faithful, but adequate for spotting missing/extra
   messages and role typos in the diff UI.
 
-`timetravel render-template TRACE INDEX` exercises this for any recorded
+`agent-timetravel render-template TRACE INDEX` exercises this for any recorded
 LLM span, returning the rendered string to stdout.
 
 ---
@@ -147,20 +147,20 @@ flowchart TB
     %% Phase 7 architecture — local-model enrichment.
     subgraph P7["Phase 7 — delivered"]
         direction TB
-        subgraph EnrichMod["src/timetravel/enrichment.py (NEW — pure-Python)"]
+        subgraph EnrichMod["src/agent_timetravel/enrichment.py (NEW — pure-Python)"]
             ParseQuant["parse_quant(model_name) -> QuantInfo"]
             QuantFromSpan["quant_from_span(span) -> QuantInfo"]
             RenderTpl["render_chat_template(messages, model_name) -> str"]
             SampleVram["sample_vram() -> VramSample"]
             EnrichSpan["enrich_span(span, ...) -> Span"]
         end
-        subgraph DiffMod["src/timetravel/diff.py (MODIFIED)"]
+        subgraph DiffMod["src/agent_timetravel/diff.py (MODIFIED)"]
             QuantDiv["_detect_quant_divergence(left, right)"]
             SpanDiff["SpanDiff.quant_diverges: bool"]
         end
-        subgraph CLI2["src/timetravel/cli.py (MODIFIED)"]
-            CMDenrich["timetravel enrich TRACE [--branch B]"]
-            CMDrender["timetravel render-template TRACE INDEX"]
+        subgraph CLI2["src/agent_timetravel/cli.py (MODIFIED)"]
+            CMDenrich["agent-timetravel enrich TRACE [--branch B]"]
+            CMDrender["agent-timetravel render-template TRACE INDEX"]
         end
     end
     subgraph External["Optional external deps"]
@@ -181,7 +181,7 @@ Source: `docs/diagrams/phase7-architecture.mmd`.
 
 ## 3. Sequence Diagrams
 
-### 3.1 `timetravel enrich TRACE` — walks every LLM span and annotates it
+### 3.1 `agent-timetravel enrich TRACE` — walks every LLM span and annotates it
 
 ```mermaid
 sequenceDiagram
@@ -193,7 +193,7 @@ sequenceDiagram
     participant PQ as parse_quant()
     participant SV as sample_vram()
     participant Ops as NVIDIA-smi / macmon / psutil
-    U->>CLI: timetravel enrich TRACE [--branch B] [--sample-vram]
+    U->>CLI: agent-timetravel enrich TRACE [--branch B] [--sample-vram]
     CLI->>Store: get_trace(T) or get_spans(T, branch_id=B)
     Store-->>CLI: list[Span]
     loop each span
@@ -273,14 +273,14 @@ assertion. The test monkeypatches `shutil.which` to always return
 
 | Criterion | Verification |
 |---|---|
-| Local-model metadata (quant, VRAM, chat template) visible alongside spans | `timetravel enrich` + `timetravel render-template` CLI commands round-trip (manually exercisable from README quickstart); raw_attributes keys land under `timetravel.local.*` namespace |
+| Local-model metadata (quant, VRAM, chat template) visible alongside spans | `agent-timetravel enrich` + `agent-timetravel render-template` CLI commands round-trip (manually exercisable from README quickstart); raw_attributes keys land under `timetravel.local.*` namespace |
 | Q4 vs Q8 trace of same model is diffable with quant metadata per span | `tests/test_diff.py::test_quant_diverges_fires_for_different_quant_attribute` — asserts `SpanDiff.quant_diverges is True` |
 | VRAM samples appear alongside spans when sampler is enabled | `tests/test_enrichment.py::test_enrich_span_writes_vram_attrs_when_sampling` — when `sample_gpu=True` and sampler returns a populated sample, both `timetravel.local.vram_mib` and `timetravel.local.gpu_pct` attrs are written |
 
 ### 4.4 Coverage & gates
 
 ```
-coverage: branch=True, source=src/timetravel
+coverage: branch=True, source=src/agent_timetravel
 ruff   : E,F,W,I,B,UP,C4,SIM,RUF,S,A,ANN,PT  →  All checks passed!
 pylint : 10.00/10                            →  2 broad-exception-caught inline disables (intentional fallback paths)
 mypy   : --strict                            →  Success: no issues in 29 files
@@ -311,7 +311,7 @@ Phase 7 introduces **zero** additional HTTP clients, sockets, or
 remote procedure calls. The only network-capable code path is the
 optional `AutoTokenizer.from_pretrained()` call — which fetches model
 weights/tokenizer config from the HuggingFace Hub **only when** the
-operator passes `--model <hf-repo-id>` to `timetravel render-template`
+operator passes `--model <hf-repo-id>` to `agent-timetravel render-template`
 AND has `transformers` installed AND has the model in cache or
 network access. This is the same egress operators already authorise
 when using `transformers` directly; TimeTravel adds nothing new.
@@ -340,7 +340,7 @@ applies unchanged for the receiver / replay API.
 
 | If you're… | Start here |
 |---|---|
-| Adding a new GGUF quant format | Edit `_QUANT_RE` in `src/timetravel/enrichment.py`. **Test via Python REPL before running lint** — see `/memories/repo/timetravel-phase7-done.md` lesson: `(?:_K_[SM]))` silently unbalanced parentheses only fire at `re.compile` time, not write time. Add a case to `test_parse_quant_*`. |
+| Adding a new GGUF quant format | Edit `_QUANT_RE` in `src/agent_timetravel/enrichment.py`. **Test via Python REPL before running lint** — see `/memories/repo/timetravel-phase7-done.md` lesson: `(?:_K_[SM]))` silently unbalanced parentheses only fire at `re.compile` time, not write time. Add a case to `test_parse_quant_*`. |
 | Wiring enrichment into a new UI surface | Read `enrich_span` — it's the only entry point. Keys are `timetravel.local.quant`, `timetravel.local.vram_mib`, `timetravel.local.gpu_pct`. UI badges should be additive (read-only); never override OpenInference's `gen_ai.*` payload. |
 | Adding a new divergence check | Follow the `_detect_quant_divergence` pattern: a pure helper that reads `quant_from_span` per side, computes a divergence bool, attaches it to `SpanDiff`. All SpanDiff fields are `bool = False` defaults so old callers don't break. |
 | Fixing `mypy --strict` on a new optional dep | Add a `[[tool.mypy.overrides]]` block in `pyproject.toml` rather than scattering `# type: ignore` codes — see `/memories/repo/timetravel-project-conventions.md` §"Mypy override pattern". Inline codes drift between `import-not-found` and `import-untyped` across venvs. |
@@ -348,7 +348,7 @@ applies unchanged for the receiver / replay API.
 
 ### 6.2 Phase 7 → Phase 8 dependencies unlocked
 
-- `timetravel enrich` / `timetravel render-template` are now CLI-stable;
+- `agent-timetravel enrich` / `agent-timetravel render-template` are now CLI-stable;
   Phase 8 packaging lists them in the README quickstart.
 - The `transformers` and `psutil` mypy overrides in `pyproject.toml`
   are referenced by Phase 8's `[project.optional-dependencies]`

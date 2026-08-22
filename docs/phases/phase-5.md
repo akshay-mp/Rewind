@@ -35,16 +35,16 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| `diff.py` pure-logic engine | `src/timetravel/diff.py` | **Source of truth for the entire feature.** No I/O — three pure functions (`span_diff`, `message_diff`, `branch_tree`) over plain dataclasses (`SpanPair`, `SpanDiff`, `MessageDiff`, `MessageFragment`, `BranchNode`). Frozen, slots, `__all__`-exported. |
-| `BranchNodeView` + request/response models | `src/timetravel/timeline.py` | Pydantic v2 view models for the HTTP surface. `BranchNodeView` has recursive `children: list[BranchNodeView]`; `model_rebuild()` is called at module level because the recursion can't be resolved at class-definition time. |
-| `branch_tree` storage helper | `src/timetravel/storage.py` (delta) | A single CTE-backed `SELECT` that joins `spans` to `branches` via `parent_branch_id` and reconstructs the recursive tree. Returns raw rows; the pure-logic `diff.branch_tree(...)` then assembles them into a `BranchNode` tree. |
-| Three Phase 5 HTTP routes | `src/timetravel/timeline.py` | `GET  /api/v1/traces/{trace_id}/branches`, `GET  /api/v1/traces/{trace_id}/diff?left=...&right=...`, `GET  /api/v1/spans/{timetravel_id}/message-diff?other=...`, `POST /api/v1/traces/{trace_id}/branches`. |
+| `diff.py` pure-logic engine | `src/agent_timetravel/diff.py` | **Source of truth for the entire feature.** No I/O — three pure functions (`span_diff`, `message_diff`, `branch_tree`) over plain dataclasses (`SpanPair`, `SpanDiff`, `MessageDiff`, `MessageFragment`, `BranchNode`). Frozen, slots, `__all__`-exported. |
+| `BranchNodeView` + request/response models | `src/agent_timetravel/timeline.py` | Pydantic v2 view models for the HTTP surface. `BranchNodeView` has recursive `children: list[BranchNodeView]`; `model_rebuild()` is called at module level because the recursion can't be resolved at class-definition time. |
+| `branch_tree` storage helper | `src/agent_timetravel/storage.py` (delta) | A single CTE-backed `SELECT` that joins `spans` to `branches` via `parent_branch_id` and reconstructs the recursive tree. Returns raw rows; the pure-logic `diff.branch_tree(...)` then assembles them into a `BranchNode` tree. |
+| Three Phase 5 HTTP routes | `src/agent_timetravel/timeline.py` | `GET  /api/v1/traces/{trace_id}/branches`, `GET  /api/v1/traces/{trace_id}/diff?left=...&right=...`, `GET  /api/v1/spans/{timetravel_id}/message-diff?other=...`, `POST /api/v1/traces/{trace_id}/branches`. |
 | `BranchTree.tsx` | `web/src/components/BranchTree.tsx` | Recursive render of the trace's branch tree. Each row has two explicit pick buttons — **`← left`** and **`right →`** — that drive the diff. Plus a `fork ⎇` button per row to open the fork modal. |
 | `DiffView.tsx` | `web/src/components/DiffView.tsx` | Side-by-side span-pair rendering with a `⟶ branch point` marker on the first divergence. Per-row `msg diff` button opens a `MessageDiffBlock` that lazily fetches the token-level diff. |
 | `Timeline.tsx` branches mode + fork modal | `web/src/components/Timeline.tsx` (delta) | A new top-of-page CSS toggle between **`timeline`** and **`branches ⎇`** modes. Hold the `leftBranchId` / `rightBranchId` state and renders `<BranchTree>` + `<DiffView>` in a 2-column CSS grid. The fork modal collects `(parent, label, branch_at_index)` and posts. |
 | `SpanInspector.tsx` bridge | `web/src/components/SpanInspector.tsx` (delta) | When the user inspects a span that's not on root, an "view branches / diff ⎇" button switches the timeline into branches mode so they can compare the span's branch against siblings. |
 | Dev seeder | `scripts/dev_seed_serve.py` | Operator-only. Builds a deterministic 3-branch trace (root + left-variant + right-variant at index 0 with one diverged LLM span each: *"I can write Python and Rust fluently."* vs *"…Python and Go fluently."*) against a tmp SQLite DB and serves it via uvicorn. **Not in the test suite — used only for manual UI verification.** |
-| Public surface | `src/timetravel/__init__.py` (delta) | Re-exports `span_diff`, `message_diff`, `branch_tree`, `SpanPair`, `SpanDiff`, `MessageDiff`, `MessageFragment`, `BranchNode` so downstream SDK callers can reuse the engine without going through HTTP. |
+| Public surface | `src/agent_timetravel/__init__.py` (delta) | Re-exports `span_diff`, `message_diff`, `branch_tree`, `SpanPair`, `SpanDiff`, `MessageDiff`, `MessageFragment`, `BranchNode` so downstream SDK callers can reuse the engine without going through HTTP. |
 
 ### 1.2 Why `diff.py` is pure (and that's load-bearing)
 
@@ -263,18 +263,18 @@ message diffs the user will never look at.
 
 | Module | Coverage |
 |---|---|
-| `src/timetravel/diff.py` | **100%** — pure functions, no I/O, no exception paths to skip. The `_is_first_divergence` field-setter is reachable in every test that asserts divergence. |
-| `src/timetravel/timeline.py` (Phase 5 routes only) | ~90% of the four Phase 5 routes. Uncovered branches are the 404 → banner translations handled in `test_diff_api.py` but not via every route's exact prefix. |
-| `src/timetravel/storage.py` (`branch_tree` rows) | **100%** of the new CTE — the empty-trace and missing-root paths are covered by `test_diff.py::test_branch_tree_*`. |
+| `src/agent_timetravel/diff.py` | **100%** — pure functions, no I/O, no exception paths to skip. The `_is_first_divergence` field-setter is reachable in every test that asserts divergence. |
+| `src/agent_timetravel/timeline.py` (Phase 5 routes only) | ~90% of the four Phase 5 routes. Uncovered branches are the 404 → banner translations handled in `test_diff_api.py` but not via every route's exact prefix. |
+| `src/agent_timetravel/storage.py` (`branch_tree` rows) | **100%** of the new CTE — the empty-trace and missing-root paths are covered by `test_diff.py::test_branch_tree_*`. |
 
 ### 4.4 Lint / type gates (mirror CI)
 
 Backend:
 
 ```text
-ruff check src/timetravel tests            -> All checks passed!
-pylint src/timetravel                       -> 10.00/10
-mypy --strict src/timetravel                -> Success: no issues found in 21 source files
+ruff check src/agent_timetravel tests            -> All checks passed!
+pylint src/agent_timetravel                       -> 10.00/10
+mypy --strict src/agent_timetravel                -> Success: no issues found in 21 source files
 pytest                                  -> 209 passed, 1 warning in 64s
 python scripts/security_scan.py --phase 5
   ruff S      -> rc=0
@@ -332,7 +332,7 @@ operator-only and explicitly not in the test suite.
 ### 5.3 Phase 5 scanner run
 
 ```text
-[scan] phase=5 src=src/timetravel out=.deepsec/phase5
+[scan] phase=5 src=src/agent_timetravel out=.deepsec/phase5
   ruff S      -> rc=0
   bandit      -> rc=0
   deepsec     -> SKIPPED (deepsec not on PATH; ruff S + bandit were run)
@@ -439,7 +439,7 @@ Engine invariants every downstream caller can rely on:
 
 If you want, say, `tokens_changed` on `SpanPair`:
 
-1. Add the field to `SpanPair` in `src/timetravel/diff.py` (frozen + slots +
+1. Add the field to `SpanPair` in `src/agent_timetravel/diff.py` (frozen + slots +
    `field(default=...)` for backward compat).
 2. Populate it in `span_diff` — the loop already iterates pairs.
 3. Add it to `SpanPairView` in `timeline.py`.

@@ -1,16 +1,16 @@
-"""Unit tests for the Phase 5 :mod:`timetravel.diff` engine.
+"""Unit tests for the Phase 5 :mod:`agent_timetravel.diff` engine.
 
 Three families of tests pin the three Phase 5 exit criteria:
 
-1. :func:`timetravel.diff.span_diff` — *"Diffing two branches marks exactly which
+1. :func:`agent_timetravel.diff.span_diff` — *"Diffing two branches marks exactly which
    span first diverged"*.
-2. :func:`timetravel.diff.message_diff` — *"Token-level message diff renders
+2. :func:`agent_timetravel.diff.message_diff` — *"Token-level message diff renders
    add/remove/change correctly"*.
-3. :func:`timetravel.diff.branch_tree` — *"branch tree view"* (storage-level flat
+3. :func:`agent_timetravel.diff.branch_tree` — *"branch tree view"* (storage-level flat
    list → renderable tree).
 
-The tests in this file are **pure** — they construct :class:`~timetravel.models.Span`
-and :class:`~timetravel.models.Branch` directly, no SQLite. Cross-layer behaviour
+The tests in this file are **pure** — they construct :class:`~agent_timetravel.models.Span`
+and :class:`~agent_timetravel.models.Branch` directly, no SQLite. Cross-layer behaviour
 lives in ``tests/test_diff_api.py`` (HTTP) and the integration suite.
 """
 

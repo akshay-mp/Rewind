@@ -184,7 +184,7 @@ def _capture_live_span(
     response: Any,
     signature_model: str,
 ) -> None:
-    """Build a :class:`~timetravel.models.Span` for a live-forwarded call.
+    """Build a :class:`~agent_timetravel.models.Span` for a live-forwarded call.
 
     Persisted under ``session.branch_id`` so the live tail queries as a
     distinct branch timeline.
@@ -262,7 +262,7 @@ def patch() -> Iterator[None]:
     except ImportError as exc:  # pragma: no cover - exercised only without openai
         raise InterceptError(
             "agent_timetravel.replay requires the `openai` package; install it or use the "
-            "adapter path (timetravel.adapters.<framework>)."
+            "adapter path (agent_timetravel.adapters.<framework>)."
         ) from exc
 
     from agent_timetravel.replay import active_session
@@ -411,7 +411,7 @@ async def _complete_step(
     """Emit a step_completed event with the response text (the verify loop).
 
     Extracts the assistant content from the raw payload and forwards it to
-    :func:`timetravel.stepping.complete_step` so the UI can show what the model
+    :func:`agent_timetravel.stepping.complete_step` so the UI can show what the model
     returned before the developer chooses next/back/stop. A no-op when no
     channel is attached.
     """
@@ -623,7 +623,7 @@ async def _step_async(
     """Interactive stepping gate for the async Chat Completions path.
 
     Returns the (possibly edited) kwargs. Raises
-    :class:`~timetravel.stepping.SteppingStopped` on STOP. A no-op when no
+    :class:`~agent_timetravel.stepping.SteppingStopped` on STOP. A no-op when no
     approval channel is attached.
     """
     # pylint: disable=import-outside-toplevel

@@ -24,7 +24,7 @@ flowchart TB
         subgraph Deps["pyproject wiring (NEW)"
             extras["[project.optional-dependencies]<br/>adk · crewai · pydantic-ai · smolagents · adapters"]
             mypyOvr["[[tool.mypy.overrides]]<br/>ignore_missing_imports=true<br/>google.adk.* · crewai.* · pydantic_ai.* · smolagents.*"]
-            pylintGlob["[tool.pylint.'src/timetravel/adapters/**']<br/>disable protected-access<br/>import-outside-toplevel · too-many-*"]
+            pylintGlob["[tool.pylint.'src/agent_timetravel/adapters/**']<br/>disable protected-access<br/>import-outside-toplevel · too-many-*"]
         end
     end
 

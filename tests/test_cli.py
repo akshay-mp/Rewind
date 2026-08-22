@@ -1,4 +1,4 @@
-"""Tests for the CLI: ``python -m timetravel --version`` runs (Phase 0)."""
+"""Tests for the CLI: ``python -m agent-timetravel --version`` runs (Phase 0)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def test_version_constant_matches_module() -> None:
 
 
 def test_python_m_timetravel_version() -> None:
-    """Phase 0 exit criterion: ``python -m timetravel --version`` runs."""
+    """Phase 0 exit criterion: ``python -m agent-timetravel --version`` runs."""
     proc = subprocess.run(
         [sys.executable, "-m", "agent_timetravel", "--version"],
         capture_output=True,
@@ -32,7 +32,7 @@ def test_python_m_timetravel_version() -> None:
 
 
 def test_serve_is_registered_subcommand() -> None:
-    """Phase 1: ``timetravel serve`` is wired up and accepts --host/--port/--db."""
+    """Phase 1: ``agent-timetravel serve`` is wired up and accepts --host/--port/--db."""
     runner = CliRunner()
     result = runner.invoke(cli, ["serve", "--help"])
     assert result.exit_code == 0
@@ -51,7 +51,7 @@ def test_serve_help_advertises_default_port() -> None:
 
 
 def test_ui_is_registered_subcommand() -> None:
-    """Phase 2: ``timetravel ui`` is wired up and accepts --host/--port/--db."""
+    """Phase 2: ``agent-timetravel ui`` is wired up and accepts --host/--port/--db."""
     runner = CliRunner()
     result = runner.invoke(cli, ["ui", "--help"])
     assert result.exit_code == 0

@@ -7,7 +7,7 @@ UI artifact onto the same app. Exposes:
 - ``POST /v1/traces`` — accepts OTLP/HTTP in either protobuf
   (``Content-Type: application/x-protobuf``) or JSON
   (``Content-Type: application/json``) form. The body is decoded, mapped to
-  TimeTravel ``Span``s, and persisted via :class:`timetravel.storage.TraceStore`.
+  TimeTravel ``Span``s, and persisted via :class:`agent_timetravel.storage.TraceStore`.
 - ``GET /healthz`` — liveness probe used by the wiring docs' smoke test.
 - ``GET /api/v1/...`` — read-only timeline API (mounted in Phase 2).
 - ``GET /ui/...`` — static timeline UI artifact (Phase 2; graceful 404).
@@ -68,7 +68,7 @@ def create_app(store: TraceStore, registry: TimeTravel | None = None) -> FastAPI
 
     The store is injected (not constructed inside the handler) so tests can
     pass a temp-path store, and so the app can be re-used across replays.
-    Mounts the read-only timeline API (:func:`timetravel.timeline.mount_timeline`)
+    Mounts the read-only timeline API (:func:`agent_timetravel.timeline.mount_timeline`)
     and serves the static UI artifact if it has been built.
     """
     app = FastAPI(

@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`timetravel.checkpoint` (Phase 4).
+"""Unit tests for :mod:`agent_timetravel.checkpoint` (Phase 4).
 
 Covers the three paths in the behaviour matrix:
 
@@ -149,7 +149,7 @@ def test_checkpoint_captured_payload_restores_on_subsequent_frozen(
     """A checkpoint captured in a BRANCH run is served back in FROZEN.
 
     This is the headline Phase 4 contract: an agent using
-    ``timetravel.checkpoint`` restores full state after a timetravel.
+    ``agent_timetravel.checkpoint`` restores full state after a timetravel.
     """
     from agent_timetravel.enums import ReplayMode
 

@@ -1,4 +1,4 @@
-"""Unit tests for ``timetravel eval`` (the Phase 5.5 CLI subcommand).
+"""Unit tests for ``agent-timetravel eval`` (the Phase 5.5 CLI subcommand).
 
 Uses Click's ``CliRunner`` to drive the command end-to-end against a
 real ``TraceStore`` at a temp path and a real file-based YAML suite.
@@ -114,7 +114,7 @@ scenarios:
 
 
 def test_eval_help_lists_options() -> None:
-    """`timetravel eval --help` advertises --db, --save/--no-save, --suite-name."""
+    """`agent-timetravel eval --help` advertises --db, --save/--no-save, --suite-name."""
     runner = CliRunner()
     result = runner.invoke(cli, ["eval", "--help"])
     assert result.exit_code == 0

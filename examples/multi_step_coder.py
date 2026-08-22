@@ -17,7 +17,7 @@ diverged.
 
 Run::
 
-    timetravel serve
+    agent-timetravel serve
     python examples/multi_step_coder.py
 """
 

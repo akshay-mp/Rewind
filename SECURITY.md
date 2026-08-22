@@ -11,7 +11,7 @@ release before requesting a fix where possible.
 
 Please use GitHub's private vulnerability reporting feature through the
 repository's **Security** tab or [New private vulnerability
-report](https://github.com/akshay-mp/Rewind/security/advisories/new). Do not
+report](https://github.com/akshay-mp/agent-timetravel/security/advisories/new). Do not
 report suspected vulnerabilities in public GitHub issues, pull requests, or
 discussion posts.
 

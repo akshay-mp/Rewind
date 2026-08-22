@@ -2,7 +2,7 @@
 
 > **Status:** ✅ Complete · **Exit criteria:** all three verified (see QA)
 > **Scope:** Expose a working local OTLP/HTTP receiver. Any OpenInference-
-> instrumented agent can ship to `timetravel serve`, and every span round-trips
+> instrumented agent can ship to `agent-timetravel serve`, and every span round-trips
 > through SQLite with verbatim `raw_attributes` fidelity and correct
 > parent → child linking.
 
@@ -24,11 +24,11 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| Pure proto decoder | `src/timetravel/ingest.py` | `decode_export_request` (protobuf) → `ExportTraceServiceRequest`; `decode_export_request_json` (JSON); `spans_from_request` flattens to a `list[Span]`. No I/O. |
-| Attribute unwrapping | `src/timetravel/ingest.py` | `anyvalue_to_python` & `attrs_to_dict` fully unwrap the OTel `AnyValue` oneof (string/bool/int/double/bytes/array/kvlist/unset). |
-| Wire surface | `src/timetravel/receiver.py` | FastAPI app: `POST /v1/traces` (protobuf + JSON), `GET /healthz`. Returns OTLP-spec empty protobuf on success with `x-timetravel-spans-accepted` header. |
-| **Ingestion contract** | `src/timetravel/receiver.py::_persist` | Groups spans by trace_id, upserts a trace row per group, inserts every span on the root branch. Multi-span batches in one request handled atomically. |
-| CLI serve command | `src/timetravel/cli.py::serve` | `timetravel serve --host 127.0.0.1 --port 4318 --db ./timetravel.db`. Loopback-default; lazy-imports `uvicorn` so `timetravel --version` stays fast. |
+| Pure proto decoder | `src/agent_timetravel/ingest.py` | `decode_export_request` (protobuf) → `ExportTraceServiceRequest`; `decode_export_request_json` (JSON); `spans_from_request` flattens to a `list[Span]`. No I/O. |
+| Attribute unwrapping | `src/agent_timetravel/ingest.py` | `anyvalue_to_python` & `attrs_to_dict` fully unwrap the OTel `AnyValue` oneof (string/bool/int/double/bytes/array/kvlist/unset). |
+| Wire surface | `src/agent_timetravel/receiver.py` | FastAPI app: `POST /v1/traces` (protobuf + JSON), `GET /healthz`. Returns OTLP-spec empty protobuf on success with `x-timetravel-spans-accepted` header. |
+| **Ingestion contract** | `src/agent_timetravel/receiver.py::_persist` | Groups spans by trace_id, upserts a trace row per group, inserts every span on the root branch. Multi-span batches in one request handled atomically. |
+| CLI serve command | `src/agent_timetravel/cli.py::serve` | `agent-timetravel serve --host 127.0.0.1 --port 4318 --db ./timetravel.db`. Loopback-default; lazy-imports `uvicorn` so `agent-timetravel --version` stays fast. |
 | Dev dependency | `types-protobuf` | mypy stubs for `google.protobuf.*`; declared in `[project.optional-dependencies].dev`. |
 
 ### 1.2 The no-fidelity-loss contract (re-established)
@@ -94,7 +94,7 @@ in [`docs/diagrams/phase0-er-schema.mmd`](../diagrams/phase0-er-schema.mmd).
 ```mermaid
 flowchart TB
     subgraph P1Delivered["Phase 1 — delivered (green)"]
-        CLI["timetravel serve"]
+        CLI["agent-timetravel serve"]
         Receiver["FastAPI receiver"]
         Ingest["ingest.py"]
         Classify["classify_span"]
@@ -176,17 +176,17 @@ Source: [`docs/diagrams/phase1-sequence-ingest.mmd`](../diagrams/phase1-sequence
 ### 3.2 Integration test lifecycle
 
 Phase 1's integration test exercises the **whole stack** through a real
-`subprocess.Popen` of `python -m timetravel serve`. It is the only test that
+`subprocess.Popen` of `python -m agent-timetravel serve`. It is the only test that
 can catch a CLI wiring regression on its own.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant T as Test
-    participant S as timetravel serve
+    participant S as agent-timetravel serve
     participant C as client code
     participant D as timetravel.db
-    T->>S: spawn python -m timetravel serve
+    T->>S: spawn python -m agent-timetravel serve
     T->>C: wait_for_health poll
     loop until healthz 200
         C->>S: GET /healthz
@@ -212,7 +212,7 @@ Source: [`docs/diagrams/phase1-sequence-integration.mmd`](../diagrams/phase1-seq
 
 | # | Exit criterion | Status | Evidence |
 |---|---|---|---|
-| 1 | A real OpenInference-instrumented agent produces a queryable trace in TimeTravel. | ✅ | `tests/integration/test_e2e_ingest.py::TestEndToEndIngest::test_three_span_agent_trace_round_trips_with_fidelity` — a 3-span agent trace is built with OpenInference attrs, shipped to a live `timetravel serve`, reloaded via `TraceStore.get_trace`. |
+| 1 | A real OpenInference-instrumented agent produces a queryable trace in TimeTravel. | ✅ | `tests/integration/test_e2e_ingest.py::TestEndToEndIngest::test_three_span_agent_trace_round_trips_with_fidelity` — a 3-span agent trace is built with OpenInference attrs, shipped to a live `agent-timetravel serve`, reloaded via `TraceStore.get_trace`. |
 | 2 | Hash of `span.attributes['gen_ai.prompt']` matches the source byte-for-byte. | ✅ | `assert hash_payload(source_prompt) == hash_payload(source_messages_str)` (last assertion of the integration test). Also covered in isolation by `tests/test_ingest.py::TestFidelity::test_messages_hash_matches_source_payload`. |
 | 3 | Span linking (parent → child) round-trips for a multi-step agent. | ✅ | `by_span_id[_LLM_HEX].parent_span_id == _AGENT_HEX` and likewise for the tool span; root's `parent_span_id is None`. |
 
@@ -232,7 +232,7 @@ Source: [`docs/diagrams/phase1-sequence-integration.mmd`](../diagrams/phase1-seq
 
 | File | Test | What it covers |
 |---|---|---|
-| `tests/integration/test_e2e_ingest.py` | `TestEndToEndIngest::test_three_span_agent_trace_round_trips_with_fidelity` | Real `subprocess.Popen(`python -m timetravel serve`)`, real socket, real on-disk SQLite; all 3 exit criteria above. |
+| `tests/integration/test_e2e_ingest.py` | `TestEndToEndIngest::test_three_span_agent_trace_round_trips_with_fidelity` | Real `subprocess.Popen(`python -m agent-timetravel serve`)`, real socket, real on-disk SQLite; all 3 exit criteria above. |
 
 **Run modes:**
 - Fast: `pytest` → 56 unit tests, integration deselected (~0.24 s).
@@ -243,11 +243,11 @@ Source: [`docs/diagrams/phase1-sequence-integration.mmd`](../diagrams/phase1-seq
 
 | Module | Stmts | Miss | Branch | Cover |
 |---|---|---|---|---|
-| `src/timetravel/ingest.py` | 111 | 2 | 36 | **99 %** — the two misses are the defensive `except DecodeError` paths that require malformed framing (annotated `pragma: no cover`). |
-| `src/timetravel/receiver.py` | 46 | 0 | 12 | **100 %** |
-| `src/timetravel/classify.py` | 31 | 4 | 20 | 82 % (Phase 0 plateau — error paths). |
-| `src/timetravel/storage.py` | 89 | 11 | 4 | 86 % (Phase 0 — UPSERT/branch paths unexercised yet). |
-| `src/timetravel/cli.py` | 29 | 10 | 2 | 65 % — the `uvicorn.run` block is unreachable from unit tests; covered by the integration test which spawns the binary instead. |
+| `src/agent_timetravel/ingest.py` | 111 | 2 | 36 | **99 %** — the two misses are the defensive `except DecodeError` paths that require malformed framing (annotated `pragma: no cover`). |
+| `src/agent_timetravel/receiver.py` | 46 | 0 | 12 | **100 %** |
+| `src/agent_timetravel/classify.py` | 31 | 4 | 20 | 82 % (Phase 0 plateau — error paths). |
+| `src/agent_timetravel/storage.py` | 89 | 11 | 4 | 86 % (Phase 0 — UPSERT/branch paths unexercised yet). |
+| `src/agent_timetravel/cli.py` | 29 | 10 | 2 | 65 % — the `uvicorn.run` block is unreachable from unit tests; covered by the integration test which spawns the binary instead. |
 | **TOTAL (9 files)** | 406 | 39 | 88 | **89 %** |
 
 ### 4.5 Quality gates — final Phase 1 run
@@ -297,12 +297,12 @@ carry over unchanged.
 | **SSRF via `gen_ai.prompt` containing link URLs** | Future Phase 3 replay engine | n/a (not yet built) | n/a | Not applicable in Phase 1: receiver never calls out to any LLM/URL, only writes to disk. |
 | **SQL injection** | Span attribute text containing `'` etc. | very low | n/a | All SQLite writes use parameterised statements (`?` placeholders) via `TraceStore`. There are zero string-formatted SQL writes. Pinned by `tests/test_models.py::test_raw_attributes_byte_fidelity`. |
 | **Prototype pollution / attribute-shadowing** | Resource `service.name` shadowed by span `service.name` | low | Display confusion | Documented contract: span attrs win on conflict. Honoured at `_span_from_proto`. |
-| **Subprocess escape** | CLI invokes `python -m timetravel` in a way that could be hijacked | very low | n/a | The `serve` command spawns no further subprocesses; uvicorn is in-process. Unit-tested `test_serve_*` confirms only documented options are accepted. |
+| **Subprocess escape** | CLI invokes `python -m agent_timetravel` in a way that could be hijacked | very low | n/a | The `serve` command spawns no further subprocesses; uvicorn is in-process. Unit-tested `test_serve_*` confirms only documented options are accepted. |
 
 ### 5.2 Phase 1 scanner run
 
 ```text
-[scan] phase=1 src=src/timetravel out=.deepsec/phase1
+[scan] phase=1 src=src/agent_timetravel out=.deepsec/phase1
   ruff S      -> rc=0
   bandit      -> rc=0
   deepsec     -> SKIPPED (deepsec not on PATH; ruff S + bandit were run)
@@ -318,7 +318,7 @@ when present on `PATH`. To enable:
 
 ```bash
 # Provision deepsec (operator responsibility) then:
-python scripts/security_scan.py --phase 1 --src src/timetravel --out .deepsec
+python scripts/security_scan.py --phase 1 --src src/agent_timetravel --out .deepsec
 ```
 
 If `deepsec` is missing, the scan completes with `ruff` S rules + `bandit`
@@ -341,10 +341,10 @@ A regression in either is a Phase 1 → 2 security drift and will fail CI.
 
 ```bash
 # Start the local OTLP/HTTP receiver (defaults: 127.0.0.1:4318, ./timetravel.db)
-timetravel serve
+agent-timetravel serve
 
 # Override host / port / db
-timetravel serve --port 4319 --db /tmp/timetravel.db
+agent-timetravel serve --port 4319 --db /tmp/timetravel.db
 
 # Probe it
 curl http://127.0.0.1:4318/healthz      # {"status":"ok"}
@@ -356,20 +356,20 @@ pytest
 pytest -m integration
 
 # Full quality gate sweep (mirror CI)
-ruff check src/timetravel tests/
-pylint src/timetravel
-mypy --strict src/timetravel/
+ruff check src/agent_timetravel tests/
+pylint src/agent_timetravel
+mypy --strict src/agent_timetravel/
 pytest -m "" tests/ tests/integration
-python scripts/security_scan.py --phase 1 --src src/timetravel --out .deepsec
+python scripts/security_scan.py --phase 1 --src src/agent_timetravel --out .deepsec
 ```
 
 ### 6.2 File inventory (Phase 1 deltas)
 
 | Path | Type | Notes |
 |---|---|---|
-| `src/timetravel/ingest.py` | **new** (293 lines) | Pure proto → Span decoder. No I/O. |
-| `src/timetravel/receiver.py` | **new** (132 lines) | FastAPI surface, `create_app(store)`. |
-| `src/timetravel/cli.py` | modified | `serve` subcommand added. |
+| `src/agent_timetravel/ingest.py` | **new** (293 lines) | Pure proto → Span decoder. No I/O. |
+| `src/agent_timetravel/receiver.py` | **new** (132 lines) | FastAPI surface, `create_app(store)`. |
+| `src/agent_timetravel/cli.py` | modified | `serve` subcommand added. |
 | `pyproject.toml` | modified | `types-protobuf` + `bandit` in dev deps; mypy override widened to `opentelemetry.proto.*` + `google.protobuf.*`. |
 | `tests/test_ingest.py` | **new** | 26 unit tests. |
 | `tests/test_receiver.py` | **new** | 10 unit tests. |
@@ -386,7 +386,7 @@ python scripts/security_scan.py --phase 1 --src src/timetravel --out .deepsec
 - Add a **Timeline UI** that reads `timetravel.db` directly. Likely Streamlit
   for v1 (plan §6 Phase 2); the storage layer already supports
   `TraceStore.get_trace` and `list_branches`, which is the read surface.
-- Add a new CLI subcommand, probably `timetravel ui` (port default `8501`),
+- Add a new CLI subcommand, probably `agent-timetravel ui` (port default `8501`),
   mirroring the `serve` pattern. **Do not** change `serve` — its surface is
   now the contract OpenInference wiring docs will be written against.
 - Treat the receiver as **frozen** for additions: any new endpoint belongs
@@ -410,7 +410,7 @@ python scripts/security_scan.py --phase 1 --src src/timetravel --out .deepsec
 
 - **Per-framework wiring docs.** Deferred to Phase 2 (see §4.6). The
   canonical pattern is shaped by the integration test: build an OTLP
-  `ExportTraceServiceRequest`, `urlopen` it to `timetravel serve`. Per-SDK
+  `ExportTraceServiceRequest`, `urlopen` it to `agent-timetravel serve`. Per-SDK
   boilerplate (OpenAI/ADK/LangGraph/CrewAI/PydanticAI/SmolAgents/MCP)
   will be a separate `docs/wiring/` tree.
 - **Body-size cap + concurrency tuning.** Currently uvicorn defaults.

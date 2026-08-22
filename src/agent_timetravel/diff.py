@@ -4,7 +4,7 @@ Phase 5's payoff: compare two timelines and surface the precise point of
 divergence, then drill down to token-level LLM-response diffs.
 
 This module is intentionally **pure** — no SQLite, no FastAPI, no SDK. It
-takes :class:`~timetravel.models.Span` lists in and produces render-friendly
+takes :class:`~agent_timetravel.models.Span` lists in and produces render-friendly
 :class:`SpanDiff` / :class:`MessageDiff` payloads out. Storage and API
 layers compose on top.
 
@@ -450,11 +450,11 @@ class BranchNode:
     """
 
     # pylint: disable=too-many-instance-attributes, duplicate-code
-    # The seven fixed fields mirror ``timetravel.models.Branch`` verbatim;
+    # The seven fixed fields mirror ``agent_timetravel.models.Branch`` verbatim;
     # ``children`` is structurally required for the tree shape. Collapsing
     # any field into a sub-struct would obscure the 1:1 mapping with the
     # storage row and the wire shape. The duplicate-code detector flags
-    # the field list against ``timetravel.timeline.BranchNodeView`` — the
+    # the field list against ``agent_timetravel.timeline.BranchNodeView`` — the
     # duplication is the cost of a clean layer split (pure dataclass for
     # the diff engine vs Pydantic BaseModel for the HTTP wire shape).
     branch_id: UUID

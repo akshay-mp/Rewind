@@ -1,4 +1,4 @@
-"""End-to-end integration test: ``timetravel ui`` serves the timeline UI.
+"""End-to-end integration test: ``agent-timetravel ui`` serves the timeline UI.
 
 Phase 2 exit criterion (plan §6):
 
@@ -156,7 +156,7 @@ def web_dist_built() -> None:
 
 @pytest.fixture(scope="module")
 def ui_server(web_dist_built: None, tmp_path_factory: pytest.TempPathFactory) -> str:
-    """Boot ``timetravel ui`` against a temp DB; return the base URL.
+    """Boot ``agent-timetravel ui`` against a temp DB; return the base URL.
 
     Returns the base URL once /healthz is up. Spawns the subprocess with the
     same Python interpreter so the venv (and its ``timetravel`` install) is used.

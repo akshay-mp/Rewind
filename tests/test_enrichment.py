@@ -1,4 +1,4 @@
-"""Unit tests for the Phase 7 :mod:`timetravel.enrichment` module.
+"""Unit tests for the Phase 7 :mod:`agent_timetravel.enrichment` module.
 
 Four families pin the Phase 7 exit criteria:
 

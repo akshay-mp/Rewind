@@ -1,6 +1,6 @@
 """Pluggable rollback handlers for filesystem-anchored agent state.
 
-Phase 4 guarantees "an agent using :func:`timetravel.checkpoint` restores full
+Phase 4 guarantees "an agent using :func:`agent_timetravel.checkpoint` restores full
 state after a timetravel". Checkpoints cover *arbitrary state captured by the
 agent itself*; this module covers *state the agent writes to the filesystem*.
 

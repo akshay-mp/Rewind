@@ -5,7 +5,7 @@
 > the world** — filesystem commits, DB writes, external API calls.
 > Phase 3 assumed span outputs were sufficient ground truth; Phase 4
 > adds two opt-in mechanisms so that's no longer required:
-> (1) **`timetravel.checkpoint(name, payload)`** — a context manager that
+> (1) **`agent_timetravel.checkpoint(name, payload)`** — a context manager that
 > symmetrically *restores* recorded state on FROZEN replay and *captures*
 > it on BRANCH/FULL forward, and
 > (2) **`RollbackHandler`** — a Protocol that snapshots the working tree
@@ -34,13 +34,13 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| `CheckpointToken` + `checkpoint()` ctxmgr | `src/timetravel/checkpoint.py` | The single entry point agents use. Restores recorded state on FROZEN, captures on BRANCH/FULL, **no-op when no session active**. Symmetric API regardless of mode. |
-| `Checkpoint` dataclass | `src/timetravel/models.py` | `(trace_id, branch_id DEFAULT NULL, name, cursor_index, label, payload: JSONObject, created_at)`. UNIQUE over `(branch_id, name)` so each branch has at most one snapshot per name. |
-| `checkpoints` table + `iter_spans` | `src/timetravel/storage.py` | `SCHEMA_VERSION` bumped 1→2. Migration is `CREATE TABLE IF NOT EXISTS`, so existing v1 DBs upgrade cleanly on first open. `iter_spans(..., page_size=N)` yields spans in pages so 100k-span timelines never load into memory at once. |
-| `RollbackHandler` Protocol | `src/timetravel/rollback/base.py` | Two-method symmetric Protocol: `on_branch(branch_id)` snapshot, `on_timetravel(branch_id)` restore. Both **idempotent** by contract — unknown `branch_id` in `on_timetravel` is a no-op, never an error. |
-| `GitRollbackHandler` | `src/timetravel/rollback/git.py` | Reference implementation using a HEAD-anchor + stash strategy. Handles commits as well as working-tree changes — not just uncommitted deltas. |
-| CLI inspect/recover | `src/timetravel/cli.py` | `timetravel checkpoint list <trace-id>` and `timetravel checkpoint restore <trace-id> <name>`. Read-only operations for developers — *production* restore is via the SDK (inside `replay`), not the CLI. |
-| Public surface | `src/timetravel/__init__.py` | Re-exports `checkpoint`, `CheckpointToken`, `RollbackHandler`, `RollbackError`, `GitRollbackHandler`. |
+| `CheckpointToken` + `checkpoint()` ctxmgr | `src/agent_timetravel/checkpoint.py` | The single entry point agents use. Restores recorded state on FROZEN, captures on BRANCH/FULL, **no-op when no session active**. Symmetric API regardless of mode. |
+| `Checkpoint` dataclass | `src/agent_timetravel/models.py` | `(trace_id, branch_id DEFAULT NULL, name, cursor_index, label, payload: JSONObject, created_at)`. UNIQUE over `(branch_id, name)` so each branch has at most one snapshot per name. |
+| `checkpoints` table + `iter_spans` | `src/agent_timetravel/storage.py` | `SCHEMA_VERSION` bumped 1→2. Migration is `CREATE TABLE IF NOT EXISTS`, so existing v1 DBs upgrade cleanly on first open. `iter_spans(..., page_size=N)` yields spans in pages so 100k-span timelines never load into memory at once. |
+| `RollbackHandler` Protocol | `src/agent_timetravel/rollback/base.py` | Two-method symmetric Protocol: `on_branch(branch_id)` snapshot, `on_timetravel(branch_id)` restore. Both **idempotent** by contract — unknown `branch_id` in `on_timetravel` is a no-op, never an error. |
+| `GitRollbackHandler` | `src/agent_timetravel/rollback/git.py` | Reference implementation using a HEAD-anchor + stash strategy. Handles commits as well as working-tree changes — not just uncommitted deltas. |
+| CLI inspect/recover | `src/agent_timetravel/cli.py` | `agent-timetravel checkpoint list <trace-id>` and `agent-timetravel checkpoint restore <trace-id> <name>`. Read-only operations for developers — *production* restore is via the SDK (inside `replay`), not the CLI. |
+| Public surface | `src/agent_timetravel/__init__.py` | Re-exports `checkpoint`, `CheckpointToken`, `RollbackHandler`, `RollbackError`, `GitRollbackHandler`. |
 
 ### 1.2 The two orthogonal mechanisms
 
@@ -69,7 +69,7 @@ failure modes. They compose but are independent:
 
 ### 1.3 Why `checkpoint()` is a ctxmgr (and not a callback)
 
-A decorator (`@timetravel.checkpoint("name")`) was the original sketch in
+A decorator (`@agent_timetravel.checkpoint("name")`) was the original sketch in
 the plan but discarded because:
 
 1. **No scope mismatch.** A ctxmgr's `__exit__` always runs even on
@@ -295,7 +295,7 @@ git CLI and working tree.
 
 ## 3. Sequence Diagrams
 
-### 3.1 `timetravel.checkpoint()` — restore / capture decision tree
+### 3.1 `agent_timetravel.checkpoint()` — restore / capture decision tree
 
 ```mermaid
 sequenceDiagram
@@ -353,7 +353,7 @@ Source: [`docs/diagrams/phase4-sequence-checkpoint.mmd`](../diagrams/phase4-sequ
 sequenceDiagram
     autonumber
     participant U as User or eval harness
-    participant CLI as timetravel replay CLI
+    participant CLI as agent-timetravel replay CLI
     participant S as ReplaySession
     participant H as GitRollbackHandler
     participant G as git CLI local
@@ -425,7 +425,7 @@ Source: [`docs/diagrams/phase4-sequence-rollback.mmd`](../diagrams/phase4-sequen
 | Exit criterion | Verification |
 |---|---|
 | **A 1000-step synthetic trace rewrites from step 500 in <2s** (fixtures served, no live call). | `tests/integration/test_checkpoint_e2e.py::test_phase4_perf_1000_step_rewrite_under_2_seconds` — builds a 1000-LLM-span trace, forks at span 500, inserts 500 divergent spans under the new `branch_id`, then asserts the storage round-trip + timeline-materialize completes well under 2s on the dev machine baseline. |
-| **An agent using `timetravel.checkpoint()` restores full state after a timetravel.** | `tests/integration/test_checkpoint_e2e.py::test_phase4_e2e_checkpoint_capture_then_frozen_restore` — a BRANCH run captures a checkpoint with `token.capture({"committed": True, "sha": ...})` and persists to the `checkpoints` table; a subsequent FROZEN run of the same branch restores the snapshot via `token.restored == True` and the agent's side-effect body is **not** re-invoked. |
+| **An agent using `agent_timetravel.checkpoint()` restores full state after a timetravel.** | `tests/integration/test_checkpoint_e2e.py::test_phase4_e2e_checkpoint_capture_then_frozen_restore` — a BRANCH run captures a checkpoint with `token.capture({"committed": True, "sha": ...})` and persists to the `checkpoints` table; a subsequent FROZEN run of the same branch restores the snapshot via `token.restored == True` and the agent's side-effect body is **not** re-invoked. |
 | **A trace with 100k+ spans loads its timeline without OOM.** | `tests/integration/test_checkpoint_e2e.py::test_phase4_perf_100k_spans_iter_no_oom` — inserts 100,000 spans, iterates via `store.iter_spans(trace_id, page_size=1000)`, asserts `tracemalloc.get_traced_memory()` peak stays under 50 MiB. (Phase 1-2 `get_spans()` would have held the full serialized list in memory.) |
 
 **Bonus end-to-end coverage** (not in the plan, but pins the full stack):
@@ -450,17 +450,17 @@ Source: [`docs/diagrams/phase4-sequence-rollback.mmd`](../diagrams/phase4-sequen
 
 | Module | Coverage |
 |---|---|
-| `src/timetravel/checkpoint.py` | **100%** |
-| `src/timetravel/rollback/base.py` | **100%** |
-| `src/timetravel/rollback/git.py` | **81%** — uncovered branches are exception-translation paths (`subprocess.TimeoutExpired`, missing-binary `FileNotFoundError` → `RollbackError`) exercised only when git is unavailable; the happy path + unknown-ref fallback are covered |
-| `src/timetravel/storage.py` | **96%** — gap is the schema-migration branch for v1→v2 on an *empty* DB, which is exercised by integration but not counted by coverage on the first run |
+| `src/agent_timetravel/checkpoint.py` | **100%** |
+| `src/agent_timetravel/rollback/base.py` | **100%** |
+| `src/agent_timetravel/rollback/git.py` | **81%** — uncovered branches are exception-translation paths (`subprocess.TimeoutExpired`, missing-binary `FileNotFoundError` → `RollbackError`) exercised only when git is unavailable; the happy path + unknown-ref fallback are covered |
+| `src/agent_timetravel/storage.py` | **96%** — gap is the schema-migration branch for v1→v2 on an *empty* DB, which is exercised by integration but not counted by coverage on the first run |
 
 ### 4.4 Lint / type gates (mirror CI)
 
 ```text
-ruff check src/timetravel tests            -> All checks passed!
-pylint src/timetravel                       -> 10.00/10
-mypy --strict src/timetravel                -> Success: no issues found in 20 source files
+ruff check src/agent_timetravel tests            -> All checks passed!
+pylint src/agent_timetravel                       -> 10.00/10
+mypy --strict src/agent_timetravel                -> Success: no issues found in 20 source files
 pytest                                  -> 173 passed, 1 warning in 62s
 python scripts/security_scan.py --phase 4
   ruff S      -> rc=0
@@ -499,7 +499,7 @@ Phase 1-3 surfaces are unchanged. Phase 4 adds **two** new surfaces:
 
 ### 5.2 Subprocess surface hygiene (NEW in Phase 4)
 
-`src/timetravel/rollback/git.py` is the **first phase that executes a
+`src/agent_timetravel/rollback/git.py` is the **first phase that executes a
 subprocess** (Phases 1-3 are pure Python + SQLite + a same-process HTTP
 server). The threat model here is narrow but real:
 
@@ -531,7 +531,7 @@ server). The threat model here is narrow but real:
 ### 5.3 Phase 4 scanner run
 
 ```text
-[scan] phase=4 src=src/timetravel out=.deepsec/phase4
+[scan] phase=4 src=src/agent_timetravel out=.deepsec/phase4
   ruff S      -> rc=0
   bandit      -> rc=0
   deepsec     -> SKIPPED (deepsec not on PATH; ruff S + bandit were run)
@@ -631,7 +631,7 @@ with replay(store, TRACE_ID, mode=ReplayMode.BRANCH, branch_at=5,
 - `on_branch(branch_id)` — synchronous at `fork()` entry, before the
   agent body runs. Raises `RollbackError` if git fails — the
   `with replay(...)` block propagates and the agent never starts.
-- `on_timetravel(branch_id)` — explicit timetravel (CLI `timetravel checkpoint
+- `on_timetravel(branch_id)` — explicit timetravel (CLI `agent-timetravel checkpoint
   restore`, or via future Phase 6 web UI). Not invoked automatically at
   `with`-block exit; the agent's branch work is preserved for inspection
   until the caller decides to timetravel.
@@ -640,11 +640,11 @@ with replay(store, TRACE_ID, mode=ReplayMode.BRANCH, branch_at=5,
 
 ```bash
 # Inspect recorded checkpoints for a trace (any branch or a specific one):
-timetravel checkpoint list <trace-id> [--db ./timetravel.db]
-timetravel checkpoint list <trace-id> --branch <branch_uuid>
+agent-timetravel checkpoint list <trace-id> [--db ./timetravel.db]
+agent-timetravel checkpoint list <trace-id> --branch <branch_uuid>
 
 # Restore a single checkpoint payload to stdout (dev recovery / debugging):
-timetravel checkpoint restore <trace-id> <name> [--db ./timetravel.db]
+agent-timetravel checkpoint restore <trace-id> <name> [--db ./timetravel.db]
 ```
 
 Both subcommands are **read-only** — they never mutate the `checkpoints`
@@ -728,8 +728,8 @@ pytest tests/test_checkpoint.py tests/test_storage_chunking.py tests/test_rollba
 pytest tests/integration/test_checkpoint_e2e.py -m integration
 
 # Quality gate:
-ruff check src/timetravel tests
-pylint src/timetravel
-mypy --strict src/timetravel
+ruff check src/agent_timetravel tests
+pylint src/agent_timetravel
+mypy --strict src/agent_timetravel
 python scripts/security_scan.py --phase 4
 ```

@@ -702,7 +702,7 @@ class TestDecisionKindsPhase1:
     at the channel / stepping-primitive level; these tests verify that
     * the ``DecisionRequest`` Pydantic model accepts the new ``kind`` strings,
     * the ``_build_decision`` helper maps them to the correct
-      :class:`~timetravel.stepping.DecisionKind` enum value,
+      :class:`~agent_timetravel.stepping.DecisionKind` enum value,
     * and the ``reason`` field is preserved on the resulting ``Decision``.
     """
 

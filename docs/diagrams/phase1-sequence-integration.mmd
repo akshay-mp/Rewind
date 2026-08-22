@@ -1,11 +1,11 @@
 sequenceDiagram
     autonumber
     participant T as Test / CI
-    participant S as timetravel serve<br/>(uvicorn subprocess)
+    participant S as agent-timetravel serve<br/>(uvicorn subprocess)
     participant C as client code
     participant D as timetravel.db
 
-    T->>S: spawn python -m timetravel serve --port P
+    T->>S: spawn python -m agent-timetravel serve --port P
     Note over S: bind 127.0.0.1 P<br/>TraceStore point at db path<br/>install FastAPI app
     T->>C: _wait_for_health poll loop
     loop until /healthz 200

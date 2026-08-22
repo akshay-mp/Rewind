@@ -40,19 +40,19 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| Mode selector | `src/timetravel/enums.py::ReplayMode.INTERACTIVE` | A fourth `ReplayMode` value. Purely a selector — the blocking lives in the channel, not here. |
-| Step + Decision dataclasses | `src/timetravel/stepping.py::Step`, `Decision` | `Step` = a pending call (kind + payload + cursor). `Decision` = the human's verdict (APPROVE / EDIT / STOP / STEP_ONCE) with optional override fields (messages, params, args, kwargs, model). |
+| Mode selector | `src/agent_timetravel/enums.py::ReplayMode.INTERACTIVE` | A fourth `ReplayMode` value. Purely a selector — the blocking lives in the channel, not here. |
+| Step + Decision dataclasses | `src/agent_timetravel/stepping.py::Step`, `Decision` | `Step` = a pending call (kind + payload + cursor). `Decision` = the human's verdict (APPROVE / EDIT / STOP / STEP_ONCE) with optional override fields (messages, params, args, kwargs, model). |
 | Channel protocol | `stepping.py::ApprovalChannel` | One async method: `submit(step) -> decision`. Runtime-checkable Protocol so custom channels don't have to inherit. |
 | Asyncio channel | `stepping.py::AsyncioChannel` | In-process `asyncio.Queue` pair for the async adapters and the OpenAI async intercept. |
 | Thread-bridge channel | `stepping.py::ThreadBridgeChannel` | Sync→async bridge via `threading.Event` for the `@timetravel.tool()` path (the only sync-only interception surface). |
 | Gate (the choke point) | `stepping.py::gate_async`, `gate_sync` | The single function every dispatcher calls before `respond_or_forward`. Returns `None` (no-op) unless mode is INTERACTIVE *and* a channel is attached — the zero-regression invariant. |
 | Decision validation | `stepping.py::decide_with_validation` | Rejects self-inconsistent decisions at the channel boundary (EDIT with no override; APPROVE carrying overrides). Bad input fails fast here rather than silently no-op'ing. |
 | Termination exception | `stepping.py::SteppingStopped` | Raised by the dispatcher on STOP. Distinct from `ReplayError` — a normal, developer-initiated termination, not a determinism-contract violation. |
-| Session plumbing | `src/timetravel/replay.py::ReplaySession.approval` | New optional field on the existing `ReplaySession` dataclass. Threaded through `for_root`, `fork` (inherits by default), and the `replay()` context manager. Per-task isolation inherited from the `_active_session` ContextVar. |
-| PydanticAI gate | `src/timetravel/adapters/pydantic_ai.py::_step` | Async gate inserted in `async def request` before `respond_or_forward`. An EDIT rewrites the outbound messages in place. |
-| OpenAI async gate | `src/timetravel/openai_intercept.py::_step_async` | Async gate inserted in `_dispatch_async` before `respond_or_forward`. An EDIT rewrites `messages` / `model` / params in kwargs. |
-| Tool-intercept gate (Phase D) | `src/timetravel/tool_intercept.py::_step_tool` | Sync gate inserted in `_dispatch_sync_tool` before the cache lookup. An EDIT rewrites `args` / `kwargs` before the `args_hash` is computed, so a divergent edit naturally falls into live-forward. |
-| Stepping server (Phase B) | `src/timetravel/stepping_api.py` | FastAPI mount with 7 endpoints (`POST /sessions`, `GET /sessions[/{id}]`, `GET /sessions/{id}/stream` SSE, `POST /sessions/{id}/decide`, `POST /sessions/{id}/restart-from`, `DELETE /sessions/{id}`). Runner registry, `SSEApprovalChannel`, background `asyncio.Task` per session, `interactive_sessions` SQLite table. |
+| Session plumbing | `src/agent_timetravel/replay.py::ReplaySession.approval` | New optional field on the existing `ReplaySession` dataclass. Threaded through `for_root`, `fork` (inherits by default), and the `replay()` context manager. Per-task isolation inherited from the `_active_session` ContextVar. |
+| PydanticAI gate | `src/agent_timetravel/adapters/pydantic_ai.py::_step` | Async gate inserted in `async def request` before `respond_or_forward`. An EDIT rewrites the outbound messages in place. |
+| OpenAI async gate | `src/agent_timetravel/openai_intercept.py::_step_async` | Async gate inserted in `_dispatch_async` before `respond_or_forward`. An EDIT rewrites `messages` / `model` / params in kwargs. |
+| Tool-intercept gate (Phase D) | `src/agent_timetravel/tool_intercept.py::_step_tool` | Sync gate inserted in `_dispatch_sync_tool` before the cache lookup. An EDIT rewrites `args` / `kwargs` before the `args_hash` is computed, so a divergent edit naturally falls into live-forward. |
+| Stepping server (Phase B) | `src/agent_timetravel/stepping_api.py` | FastAPI mount with 7 endpoints (`POST /sessions`, `GET /sessions[/{id}]`, `GET /sessions/{id}/stream` SSE, `POST /sessions/{id}/decide`, `POST /sessions/{id}/restart-from`, `DELETE /sessions/{id}`). Runner registry, `SSEApprovalChannel`, background `asyncio.Task` per session, `interactive_sessions` SQLite table. |
 | Browser UI (Phase C) | `web/src/components/SessionList.tsx`, `SessionDetail.tsx` | The visual debugger. SSE consumer via `EventSource`, step panel with messages/tools/params rendering, edit mode (messages JSON + model), four decision buttons, history sidebar. Wired into `App.tsx` as two new view variants. |
 | Restart-from (Phase E) | `stepping_api.py::restart_from` endpoint | "TimeTravel and play again" — forks a session's branch at a chosen cursor and starts a fresh interactive run. Reuses `ReplaySession.fork` (Phase 5 machinery). |
 | Example runner | `examples/interactive_stepping.py` | Developer-facing worked example: register a runner, start the server, step through in the browser. |
@@ -301,21 +301,21 @@ sequenceDiagram
 
 | Module | Coverage (stepping tests only) | Notes |
 |---|---|---|
-| `src/timetravel/stepping.py` | **87%** | Misses: the `ApproverFn` type alias (re-export only). |
-| `src/timetravel/stepping_api.py` | high | HTTP endpoints + channel mechanics covered by `test_stepping_api.py`. The SSE stream over a real transport is exercised by the browser (Phase C), not TestClient (see Phase B's test-module docstring for why). |
-| `src/timetravel/replay.py` | ~100% with the full suite | The `approval` field, `for_root` / `fork` / `replay()` threading are covered; the broader replay engine is covered by the existing `test_replay.py`. |
-| `src/timetravel/tool_intercept.py` | `_step_tool` covered by 5 Phase D cases | The gate, EDIT args rewrite, STOP, no-channel passthrough, async-only-channel error. |
-| `src/timetravel/enums.py` | full | `INTERACTIVE` covered by the updated uniqueness test. |
+| `src/agent_timetravel/stepping.py` | **87%** | Misses: the `ApproverFn` type alias (re-export only). |
+| `src/agent_timetravel/stepping_api.py` | high | HTTP endpoints + channel mechanics covered by `test_stepping_api.py`. The SSE stream over a real transport is exercised by the browser (Phase C), not TestClient (see Phase B's test-module docstring for why). |
+| `src/agent_timetravel/replay.py` | ~100% with the full suite | The `approval` field, `for_root` / `fork` / `replay()` threading are covered; the broader replay engine is covered by the existing `test_replay.py`. |
+| `src/agent_timetravel/tool_intercept.py` | `_step_tool` covered by 5 Phase D cases | The gate, EDIT args rewrite, STOP, no-channel passthrough, async-only-channel error. |
+| `src/agent_timetravel/enums.py` | full | `INTERACTIVE` covered by the updated uniqueness test. |
 | `web/src/components/SessionList.tsx`, `SessionDetail.tsx` | manual | No frontend test runner in the project; verified via `pnpm typecheck` + `pnpm lint` + `pnpm build` + manual UX pass. |
 
 ### 4.4 Lint / type gates
 
 ```text
-$ ruff check src/timetravel tests
+$ ruff check src/agent_timetravel tests
 All checks passed!
 
-$ mypy --strict --python-version 3.12 src/timetravel
-src/timetravel/adapters/langgraph.py:92: error: Unused "type: ignore" comment  [unused-ignore]
+$ mypy --strict --python-version 3.12 src/agent_timetravel
+src/agent_timetravel/adapters/langgraph.py:92: error: Unused "type: ignore" comment  [unused-ignore]
 Found 1 error in 1 file (checked 31 source files)
 ```
 
@@ -325,9 +325,9 @@ mismatch in the existing code, not introduced here). All Phase 9 files are
 mypy-clean.
 
 ```text
-$ pylint src/timetravel/stepping.py src/timetravel/stepping_api.py src/timetravel/replay.py \
-         src/timetravel/openai_intercept.py src/timetravel/tool_intercept.py \
-         src/timetravel/adapters/pydantic_ai.py src/timetravel/enums.py src/timetravel/storage.py
+$ pylint src/agent_timetravel/stepping.py src/agent_timetravel/stepping_api.py src/agent_timetravel/replay.py \
+         src/agent_timetravel/openai_intercept.py src/agent_timetravel/tool_intercept.py \
+         src/agent_timetravel/adapters/pydantic_ai.py src/agent_timetravel/enums.py src/agent_timetravel/storage.py
 Your code has been rated at 10.00/10 (previous run: 10.00/10, +0.00)
 ```
 
@@ -374,7 +374,7 @@ wrapped model (existing). No new attack vectors from I/O.
 
 ```text
 $ python scripts/security_scan.py --phase 9
-[scan] phase=9 src=.../src/timetravel out=.../.deepsec/phase9
+[scan] phase=9 src=.../src/agent_timetravel out=.../.deepsec/phase9
   ruff S      -> rc=0
   bandit      -> rc=0
   deepsec     -> SKIPPED (deepsec not on PATH; skipping (ruff S + bandit were run).)
@@ -399,7 +399,7 @@ An initial draft used `assert channel is not None` (stepping.py) and
 security scanner's `ruff --select S` invocation tripped S101 on both (the
 project configures `ignore = ["S101"]` globally, but `--select S` overrides
 ignores — every existing phase's scan runs the same way). The project has
-zero `assert` statements in `src/timetravel/` by convention; the asserts were
+zero `assert` statements in `src/agent_timetravel/` by convention; the asserts were
 replaced with explicit `RuntimeError` raises so the checks survive
 `python -O`. This is documented here so the next phase doesn't reintroduce
 them.
@@ -413,7 +413,7 @@ them.
 Phase 9 adds no new dependencies. The existing development setup applies:
 
 ```bash
-# from timetravel/
+# from agent_timetravel/
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ```
@@ -462,9 +462,9 @@ bridges browser POSTs to decisions. See `AsyncioChannel` and
 ### 6.5 Quality gate
 
 ```bash
-ruff check src/timetravel tests
-pylint src/timetravel/
-mypy --strict src/timetravel
+ruff check src/agent_timetravel tests
+pylint src/agent_timetravel/
+mypy --strict src/agent_timetravel
 python -m pytest tests --no-cov -q
 python scripts/security_scan.py --phase 9
 ```

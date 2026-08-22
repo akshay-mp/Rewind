@@ -53,7 +53,7 @@ ADKInstrumentor().instrument()
 
 Captures `google.adk.models.BaseLlm.generate_content_async`. **Replay
 adapter**: [`docs/replay-adapters.md`](./replay-adapters.md#adk) — wrap
-your ADK `BaseLlm` with `timetravel.adapters.adk.replay_llm(real_model)` to
+your ADK `BaseLlm` with `agent_timetravel.adapters.adk.replay_llm(real_model)` to
 get time-travel branching in debug mode.
 
 ---
@@ -71,11 +71,11 @@ LangchainInstrumentor().instrument()
 
 Captures `langchain_core.language_models.BaseChatModel` invocations,
 LangGraph node transitions, and LangChain tool calls. **Workbench
-auto-activation**: during a `timetravel dev` / `timetravel app:main` run, TimeTravel
+auto-activation**: during a `agent-timetravel dev` / `agent-timetravel app:main` run, TimeTravel
 patches `BaseChatModel` / `BaseTool` `invoke`/`ainvoke` itself — every LLM
 and tool call pauses in the step-by-step debugger with no app changes.
 **Replay adapter** (for replay outside the workbench):
-`timetravel.adapters.langgraph.replay_chat_model(model)` — see
+`agent_timetravel.adapters.langgraph.replay_chat_model(model)` — see
 [`docs/replay-adapters.md`](./replay-adapters.md#langgraph).
 
 ---
@@ -92,7 +92,7 @@ CrewAIInstrumentor().instrument()
 ```
 
 Captures `BaseLLM.call[_async]` / `get_response[_async]`. **Replay
-adapter**: `timetravel.adapters.crewai.replay_llm(llm)` — see
+adapter**: `agent_timetravel.adapters.crewai.replay_llm(llm)` — see
 [`docs/replay-adapters.md`](./replay-adapters.md#crewai).
 
 ---
@@ -109,7 +109,7 @@ PydanticAIInstrumentor().instrument()
 ```
 
 Captures `pydantic_ai.models.Model.request[_stream]`. **Replay adapter**:
-`timetravel.adapters.pydantic_ai.replay_model(model)` — see
+`agent_timetravel.adapters.pydantic_ai.replay_model(model)` — see
 [`docs/replay-adapters.md`](./replay-adapters.md#pydanticai).
 
 ---
@@ -126,7 +126,7 @@ SmolagentsInstrumentor().instrument()
 ```
 
 Captures `smolagents.models.Model.__call__`, `generate`, and `astream`.
-**Replay adapter**: `timetravel.adapters.smolagents.replay_model(model)` —
+**Replay adapter**: `agent_timetravel.adapters.smolagents.replay_model(model)` —
 see [`docs/replay-adapters.md`](./replay-adapters.md#smolagents).
 
 ---
@@ -180,6 +180,6 @@ export OPENINFERENCE_CAPTURE_MESSAGE_CONTENT=true
 A busy agent loop produces a lot of spans. Two mitigations:
 
 1. `OTEL_BSP_MAX_QUEUE_SIZE=10000` — caps the in-flight batch.
-2. Delete `~/.timetravel/timetravel.db` between projects — TimeTravel doesn't ship a
+2. Delete `~/.agent-timetravel/timetravel.db` between projects — TimeTravel doesn't ship a
    retention policy in v1; an operator's local SQLite file is the
    single source of truth.

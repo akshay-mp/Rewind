@@ -1,8 +1,8 @@
 """Unit tests for Phase 2.1 — durable experiment record API.
 
 Covers the prompt-version, assertion-profile, and step-review endpoints
-added to :mod:`timetravel.timeline` (and the backing CRUD in
-:mod:`timetravel.storage`).
+added to :mod:`agent_timetravel.timeline` (and the backing CRUD in
+:mod:`agent_timetravel.storage`).
 
 - ``POST/GET /api/v1/traces/{trace_id}/prompt-versions``
 - ``PUT /api/v1/prompt-versions/{id}/result``

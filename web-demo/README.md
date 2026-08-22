@@ -1,6 +1,6 @@
-# Rewind × Deep Research — web demo
+# Agent Timetravel × Deep Research — web demo
 
-The polished, browser-based debugger for Rewind. A three-panel UI:
+The polished, browser-based debugger for Agent Timetravel. A three-panel UI:
 
 - **Left** — span timeline (numbered nodes, role badges, latency, live/cached).
 - **Right** — span detail (system prompt + user input + output) with a
@@ -10,7 +10,7 @@ The polished, browser-based debugger for Rewind. A three-panel UI:
 
 It runs a flattened 8-step deep-research agent (clarify → brief → supervisor →
 researcher × 2 → complete → final report) against a local model via the
-OpenAI-compatible API, and mirrors each span into Rewind's OTLP receiver so
+OpenAI-compatible API, and mirrors each span into Agent Timetravel's OTLP receiver so
 the Python engine sees the same run.
 
 > **For the full step-by-step run guide, see
@@ -19,7 +19,7 @@ the Python engine sees the same run.
 ## Quick start
 
 ```bash
-cd rewind/web-demo/
+cd agent-timetravel/web-demo/
 
 # Point at your local model server (Unsloth / Ollama / OpenAI-compatible).
 cat > .env.local <<'EOF'
@@ -60,15 +60,15 @@ src/
     rewind/diff-view.tsx           Side-by-side branch diff
     ui/                            shadcn/ui primitives
 public/
-  rewind.svg                       The Rewind mark (favicon + in-app logo)
+  rewind.svg                       The Agent Timetravel mark (favicon + in-app logo)
 ```
 
 ## Notes
 
 - The agent calls `openai.ChatCompletion.create` against `OPENAI_BASE_URL`.
   Switch backends (Unsloth ↔ Ollama ↔ OpenAI) by changing env vars only.
-- Each live span is mirrored to Rewind's receiver as a `gen_ai.llm` span so
-  `rewind ui` and the Python engine see the same data. The mirror is
+- Each live span is mirrored to Agent Timetravel's receiver as a `gen_ai.llm` span so
+  `agent-timetravel ui` and the Python engine see the same data. The mirror is
   best-effort: if the receiver is down, this UI still works.
 - Qwen3.x emits `<think>` blocks by default; the agent disables thinking via
   `chat_template_kwargs.enable_thinking=false`.

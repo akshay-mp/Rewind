@@ -6,7 +6,7 @@ pass/fail tally as each case resolves.
 
 Design
 ------
-* Each case runs via :func:`timetravel.evaluate.run_frozen_verification` — the
+* Each case runs via :func:`agent_timetravel.evaluate.run_frozen_verification` — the
   deterministic frozen-replay core. Concurrency is bounded by an
   :class:`asyncio.Semaphore`.
 * Progress is published as an async iterator of :class:`SuiteProgressEvent`

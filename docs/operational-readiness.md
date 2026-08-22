@@ -4,7 +4,7 @@ The TimeTravel workbench keeps operational records on the developer machine.
 Its session controls cover the parts of a pre-production run that need to be
 inspected before an agent reaches a deployed environment. The current
 decorator-first entry point is `from agent_timetravel import TimeTravelContext, timetravel` with
-`@timetravel.agent`; use `timetravel dev app:timetravel` for a local workbench run.
+`@timetravel.agent`; use `agent-timetravel dev app:timetravel` for a local workbench run.
 For a custom title or separate registry, use `from agent_timetravel import TimeTravel,
 TimeTravelContext` and define `timetravel = TimeTravel(title="...")` in your app module;
 existing names such as `debugger` remain supported.
@@ -48,7 +48,7 @@ During a workbench run, official OpenAI Python SDK Chat Completions calls
 including when that SDK is configured for an OpenAI-compatible endpoint.
 LangGraph / langchain apps get the same auto-activation: every
 `BaseChatModel` and `BaseTool` `invoke`/`ainvoke` inside the run is stepped,
-replayed, and captured — `timetravel app:main` accepts a bare compiled graph as
+replayed, and captured — `agent-timetravel app:main` accepts a bare compiled graph as
 the launch target. Replay adapters for Google ADK, CrewAI, PydanticAI, and
 SmolAgents remain explicit; generic decorator auto-activation for them is
 unavailable and reports an actionable wrapper. See

@@ -18,7 +18,7 @@ far richer than the toy demos in ``tool_caller.py`` / ``rag_loop.py``.
 Three phases, each printing a banner + result summary:
 
   A. CAPTURE   — run the agent once live, capture every LLM call as an OTel
-                 span via OpenInference → ``timetravel serve``. Records the seed.
+                 span via OpenInference → ``agent-timetravel serve``. Records the seed.
   B. FROZEN    — re-run the agent under ``timetravel.replay(mode=FROZEN)`` with
                  the OpenAI intercept active. Every LLM call is served from
                  the recorded fixture: **zero outbound traffic**, output
@@ -26,7 +26,7 @@ Three phases, each printing a banner + result summary:
                  "no egress" guarantee exercised on a real agent.
   C. BRANCH    — fork at a researcher span, change the research topic, and
     + DIFF      re-run. The divergent tail goes live (captured under a new
-                 ``branch_id``); ``timetravel.diff.span_diff`` flags the first
+                 ``branch_id``); ``agent_timetravel.diff.span_diff`` flags the first
                  divergent span and ``message_diff`` shows token-level change.
 
 Model backend
@@ -48,7 +48,7 @@ LangChain model was constructed.
 Run::
 
     # 1. start the TimeTravel receiver (terminal 1)
-    timetravel serve
+    agent-timetravel serve
 
     # 2. start your local model server (Unsloth / Ollama)
 
@@ -82,8 +82,8 @@ SEED_TOPIC = "What is time-travel debugging for AI agents, and which tools exist
 #: A divergent topic used in the branch phase (different → different hash → live forward).
 BRANCH_TOPIC = "What are the best local-first agent evaluation harnesses?"
 
-#: Default DB path (matches ``timetravel serve`` default).
-DEFAULT_DB = os.path.expanduser("~/.timetravel/timetravel.db")
+#: Default DB path (matches ``agent-timetravel serve`` default).
+DEFAULT_DB = os.path.expanduser("~/.agent-timetravel/timetravel.db")
 
 #: Researcher span index to branch at. Resolved dynamically from the captured
 #: trace; this is a fallback when the trace shape can't be introspected.
@@ -159,7 +159,7 @@ def _setup_telemetry() -> None:
 
     The OpenInference instrumentor only patches span *creation*; it does not
     wire up an exporter. Without this, spans are created in-memory but never
-    shipped to ``timetravel serve``, so the captured trace is empty. We set it up
+    shipped to ``agent-timetravel serve``, so the captured trace is empty. We set it up
     once, idempotently (a second call is a no-op).
     """
     # pylint: disable=import-outside-toplevel
@@ -212,7 +212,7 @@ def phase_capture(graph: Any, store: Any) -> str | None:
     # The just-captured trace is the newest one in the store.
     traces, _ = store.list_traces(limit=1)
     if not traces:
-        print("\n  ⚠ no trace found in the store — is `timetravel serve` running?")
+        print("\n  ⚠ no trace found in the store — is `agent-timetravel serve` running?")
         print("    Falling back to replay-by-id mode (pass --trace manually).")
         return None
     trace_id = traces[0].trace_id
@@ -346,7 +346,7 @@ def main() -> int:
     graph = _build_graph()
     trace_id = phase_capture(graph, store)
     if trace_id is None:
-        print("\nSkipping replay phases — no captured trace. Start `timetravel serve`.")
+        print("\nSkipping replay phases — no captured trace. Start `agent-timetravel serve`.")
         return 1
 
     phase_frozen(graph, store, trace_id)

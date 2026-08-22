@@ -1,7 +1,7 @@
 """FastAPI mountable routes for the Phase 5.5 eval harness.
 
 Audit directive (§5): put eval routes in their own module rather than
-bloating :mod:`timetravel.timeline`. The harness has its own lifecycle
+bloating :mod:`agent_timetravel.timeline`. The harness has its own lifecycle
 (async, long-running, may persist YAML) and a different access pattern
 (submit-and-poll rather than read-only). Mounting alongside the timeline
 gives the UI one origin to talk to (matches Phase 2's CORS-free design).
@@ -16,7 +16,7 @@ Routes
 
 Concurrency
 -----------
-``POST /api/v1/evals`` runs the suite through :func:`timetravel.evaluate.evaluate`
+``POST /api/v1/evals`` runs the suite through :func:`agent_timetravel.evaluate.evaluate`
 which uses ``asyncio.gather`` + ``Semaphore`` for parallel scenario execution.
 The HTTP handler is sync (FastAPI threadpools it) so the runner uses
 ``asyncio.run`` to drive the coroutine to completion. Long-running suites
@@ -539,9 +539,9 @@ def _build_baseline_diff(
 def mount_eval(app: FastAPI) -> None:
     """Register the eval-harness API routes on ``app``.
 
-    Mirrors :func:`timetravel.timeline.mount_timeline` — same app.state.store
+    Mirrors :func:`agent_timetravel.timeline.mount_timeline` — same app.state.store
     accessor, same exception conventions. Should be called after
-    :func:`~timetravel.timeline.mount_timeline` so the UI can deep-link into
+    :func:`~agent_timetravel.timeline.mount_timeline` so the UI can deep-link into
     branches (the timeline owns ``GET /api/v1/traces/{trace_id}/branches``).
     """
 
@@ -804,7 +804,7 @@ def mount_eval(app: FastAPI) -> None:
 
         The request body is a JSON array of case ids. The response is an SSE
         stream of ``suite_started`` / ``case_done`` / ``suite_finished``
-        events (see :class:`timetravel.suite_runner.SuiteRunner`).
+        events (see :class:`agent_timetravel.suite_runner.SuiteRunner`).
         """
         # pylint: disable=import-outside-toplevel
         from agent_timetravel.suite_runner import SuiteRunner

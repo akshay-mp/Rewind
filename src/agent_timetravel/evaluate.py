@@ -22,7 +22,7 @@ Why pure + async-orchestrator in one file?
     them next to the orchestrator means a reader can scroll from "what does
     ``tool_check`` mean" to "how does the harness actually invoke it" in
     one file. The HTTP + CLI surfaces live in :mod:`timetravel.timeline_api`
-    and :mod:`timetravel.cli`, respectively.
+    and :mod:`agent_timetravel.cli`, respectively.
 
 Concurrency guarantees
 ----------------------
@@ -32,7 +32,7 @@ Parallel safety leans on three Phase 3/4 invariants:
   lives on the dataclass, not on ``TraceStore``). ``ContextVar`` binding
   makes concurrent ``with replay(...)`` blocks task-safe (see
   ``test_replay.py::test_branch_isolation_concurrent_contextvars``).
-* :class:`~timetravel.storage.TraceStore` writes serialise on the SQLite WAL
+* :class:`~agent_timetravel.storage.TraceStore` writes serialise on the SQLite WAL
   lock; concurrent branches share the DB but never collide on rows
   (``branch_id`` is the partition key, ``UNIQUE(branch_id, name)`` on
   checkpoints prevents collisions).
@@ -1043,7 +1043,7 @@ def _default_replay_session_factory(
 
 
 def _candidate_mode_to_replay_mode(mode: CandidateMode) -> ReplayMode:
-    """Translate :class:`CandidateMode` → :class:`~timetravel.enums.ReplayMode`.
+    """Translate :class:`CandidateMode` → :class:`~agent_timetravel.enums.ReplayMode`.
 
     Imported lazily to avoid the enum import cycle at module top
     (enums import everything; evaluate imports enums).
@@ -1182,7 +1182,7 @@ async def evaluate(
         suite: Validated eval suite. ``validate_suite`` is invoked
             *before* any scenario starts; failures raise
             :class:`SuiteValidationError` synchronously (no partial run).
-        store: The :class:`~timetravel.storage.TraceStore` to fork from.
+        store: The :class:`~agent_timetravel.storage.TraceStore` to fork from.
             Tests inject a custom ``factory`` and may pass ``None`` here.
         factory: Override the replay-session opener. Production path
             uses :func:`_default_replay_session_factory`; this hook is
@@ -1649,7 +1649,7 @@ def _usage_cost_usd(usage: dict[str, Any], pricing: dict[str, Any]) -> float:
 
 
 def _utcnow_iso() -> str:
-    """ISO-8601 timestamp helper. Mirrors :mod:`timetravel.models._utcnow_iso`.
+    """ISO-8601 timestamp helper. Mirrors :mod:`agent_timetravel.models._utcnow_iso`.
 
     Re-implemented here to avoid a private-API import (models.py's helper
     is underscore-prefixed and could change).

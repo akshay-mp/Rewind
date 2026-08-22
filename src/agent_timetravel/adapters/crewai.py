@@ -21,7 +21,7 @@ the active :class:`~timetravel.replay.ReplaySession`:
   :class:`~timetravel.replay.ReplayError`.
 * No active session → delegate to the wrapped LLM verbatim.
 
-Lazy import inside the factory keeps ``timetravel --version`` fast without
+Lazy import inside the factory keeps ``agent-timetravel --version`` fast without
 ``crewai`` installed.
 """
 
@@ -75,7 +75,7 @@ def replay_llm(
         raise AdapterError(
             "agent_timetravel.adapters.crewai requires `crewai`; install it via "
             "`pip install crewai` or use the generic OpenAI "
-            "monkey-patch (timetravel.openai_intercept.patch)."
+            "monkey-patch (agent_timetravel.openai_intercept.patch)."
         ) from exc
 
     class _ReplayLLM(BaseLLM):  # type: ignore[misc]

@@ -6,18 +6,18 @@ extends coverage to four more agent frameworks so users can opt into
 replay without falling back to the generic OpenAI monkey-patch. Each
 adapter lives here as its own module:
 
-* :mod:`timetravel.adapters.langgraph` — :func:`replay_chat_model` wraps
+* :mod:`agent_timetravel.adapters.langgraph` — :func:`replay_chat_model` wraps
   a ``langchain_core.BaseChatModel``.
-* :mod:`timetravel.adapters.adk` — :func:`replay_llm` wraps a
+* :mod:`agent_timetravel.adapters.adk` — :func:`replay_llm` wraps a
   ``google.adk.models.llms.BaseLlm``.
-* :mod:`timetravel.adapters.pydantic_ai` — :func:`replay_model` wraps a
+* :mod:`agent_timetravel.adapters.pydantic_ai` — :func:`replay_model` wraps a
   ``pydantic_ai.models.Model``.
-* :mod:`timetravel.adapters.crewai` — :func:`replay_llm` wraps a
+* :mod:`agent_timetravel.adapters.crewai` — :func:`replay_llm` wraps a
   ``crewai.llms.base_llm.BaseLLM``.
-* :mod:`timetravel.adapters.smolagents` — :func:`replay_model` wraps a
+* :mod:`agent_timetravel.adapters.smolagents` — :func:`replay_model` wraps a
   ``smolagents.models.Model``.
 
 Imports remain lazy: the user's project only pays for the framework
-they're actually replaying, and ``timetravel --version`` stays fast when no
+they're actually replaying, and ``agent-timetravel --version`` stays fast when no
 agent framework is installed.
 """

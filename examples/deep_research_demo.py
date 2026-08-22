@@ -9,7 +9,7 @@ local model server (Unsloth / Ollama / OpenAI-compatible).
 Three phases, each printed live:
 
   A. CAPTURE  — 8 LLM calls, each captured as an OTel span via OpenInference.
-  B. FROZEN   — re-run under `timetravel.openai_intercept.patch()` + FROZEN replay.
+  B. FROZEN   — re-run under `agent_timetravel.openai_intercept.patch()` + FROZEN replay.
                 ZERO outbound calls; output matches the seed byte-for-byte.
   C. BRANCH   — fork at the supervisor span, edit the system prompt, re-run.
     + DIFF      The tail goes live; `span_diff` + `message_diff` show the change.
@@ -22,7 +22,7 @@ call, which TimeTravel intercepts at the SDK boundary.
 Run::
 
     # 1. start the TimeTravel receiver
-    timetravel serve --port 4318 --db /tmp/timetravel-demo.db
+    agent-timetravel serve --port 4318 --db /tmp/timetravel-demo.db
 
     # 2. start your local model server (Unsloth Studio / Ollama)
 
@@ -395,7 +395,7 @@ def main() -> int:
     phase_branch(client, captured)
     _banner("DONE")
     print(f"  DB: {DEFAULT_DB}")
-    print("  Open http://127.0.0.1:8484/ui/ (if `timetravel ui` is running) to inspect")
+    print("  Open http://127.0.0.1:8484/ui/ (if `agent-timetravel ui` is running) to inspect")
     print("  the trace + branch tree, or query the DB directly:")
     # Static query (no user input) — S608 is a false positive here.
     print(f"    sqlite3 {DEFAULT_DB} \"SELECT branch_id, kind, name FROM spans "  # noqa: S608

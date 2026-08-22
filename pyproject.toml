@@ -95,10 +95,10 @@ timetravel = "agent_timetravel.cli:main"
 agent-timetravel = "agent_timetravel.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/akshay-mp/TimeTravel"
-Repository = "https://github.com/akshay-mp/TimeTravel"
-Documentation = "https://github.com/akshay-mp/TimeTravel/tree/main/docs"
-Issues = "https://github.com/akshay-mp/TimeTravel/issues"
+Homepage = "https://github.com/akshay-mp/agent-timetravel"
+Repository = "https://github.com/akshay-mp/agent-timetravel"
+Documentation = "https://github.com/akshay-mp/agent-timetravel/tree/main/docs"
+Issues = "https://github.com/akshay-mp/agent-timetravel/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_timetravel"]

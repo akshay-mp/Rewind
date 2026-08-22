@@ -10,7 +10,7 @@ Phase 3 exit criterion (plan §6):
 
 This test exercises the full stack — :class:`TraceStore` on disk, the
 :class:`contextvars.ContextVar` session plumbing, the ``@timetravel.tool``
-decorator, ``timetravel.openai_intercept.patch()``, and the SSE-free
+decorator, ``agent_timetravel.openai_intercept.patch()``, and the SSE-free
 :class:`timetravel.replay.ReplaySession` — *without* touching the network.
 
 We don't spawn the FastAPI receiver here; we pre-seed the store directly

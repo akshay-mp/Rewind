@@ -65,7 +65,7 @@ export function EvalRuns({ onOpenRun }: Props): JSX.Element {
       {!loading && items.length === 0 && error === null && (
         <p className="muted">
           no eval runs yet. Submit a suite via{" "}
-          <code>POST /api/v1/evals</code> or the <code>timetravel eval</code> CLI.
+          <code>POST /api/v1/evals</code> or the <code>agent-timetravel eval</code> CLI.
         </p>
       )}
 

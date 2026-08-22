@@ -15,14 +15,14 @@ land here, all **pure-Python** and **opt-in**:
 3. :func:`sample_vram` — one-shot VRAM / unified-memory sample on Apple
    Silicon (``macmon`` / ``asitop``) or NVIDIA (``nvidia-smi``). Returns
    ``None`` when no sampler is installed; the CLI uses this to poll
-   periodically during a ``timetravel ui`` session and stamp samples against
+   periodically during a ``agent-timetravel ui`` session and stamp samples against
    the current span timestamps.
 
 Design choices
 --------------
 * **No hard dependencies on transformers, macmon, or nvidia-smi.** Each
   helper degrades gracefully when the underlying tool isn't installed.
-  The hard guarantee: ``import timetravel.enrichment`` never fails, regardless
+  The hard guarantee: ``import agent_timetravel.enrichment`` never fails, regardless
   of the local-model toolchain.
 * **No subprocess on import.** ``sample_vram`` only spawns a process when
   called; ``parse_quant`` and ``render_chat_template`` are pure.
@@ -272,7 +272,7 @@ def sample_vram() -> VramSample:
     2. ``asitop`` or ``macmon`` (Apple Silicon — unified memory).
 
     Returns ``VramSample(None, None)`` when no tool is installed. Never
-    raises — this is sampled from the ``timetravel ui`` background thread and
+    raises — this is sampled from the ``agent-timetravel ui`` background thread and
     must not crash the UI loop.
     """
     if shutil.which("nvidia-smi"):
@@ -385,7 +385,7 @@ def enrich_span(
     Chat-template rendering is **not** applied here — it's expensive
     (tokenizer load) and per-span modelling (which message stream?) doesn't
     fit a blanket pass. The CLI exposes it as a separate
-    ``timetravel render-template <span>`` inspection command instead.
+    ``agent-timetravel render-template <span>`` inspection command instead.
     """
     if parse_model_quant:
         quant = quant_from_span(span)

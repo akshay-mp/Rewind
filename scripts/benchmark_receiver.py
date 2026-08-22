@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure Rewind receiver overhead per span (Phase 8 performance gate).
+"""Measure Agent Timetravel receiver overhead per span (Phase 8 performance gate).
 
 The plan requires, as a Phase 8 exit criterion:
 
@@ -9,17 +9,17 @@ The plan requires, as a Phase 8 exit criterion:
 This script produces a small benchmark report addressing both halves:
 
   1. **Receiver overhead** — POST a prebuilt OTLP/HTTP protobuf payload
-     against a live ``rewind serve`` instance and record the per-span
+     against a live ``agent-timetravel serve`` instance and record the per-span
      latency of the receiver (decremented by the wire RTT of an empty
      warmup request). p50, p90, p99 are computed over many iterations.
   2. **Interceptor overhead** — measure the *inactive* replay interceptor
-     (no active ``ReplaySession``). The ``rewind.replay()`` ctxmgr, when
+     (no active ``ReplaySession``). The ``timetravel.replay()`` ctxmgr, when
      not entered, must be a near-zero-overhead pass-through; otherwise
      it would slow down production agents that import it unused.
 
 Usage::
 
-    # receiver benchmark (requires a running ``rewind serve``):
+    # receiver benchmark (requires a running ``agent-timetravel serve``):
     python scripts/benchmark_receiver.py receiver --spans 50 --iters 200
 
     # interceptor benchmark (in-process, no server needed):
@@ -145,7 +145,7 @@ def bench_receiver(
                     print(f"[warmup] unexpected status {r.status}", file=sys.stderr)
         except (urllib.error.URLError, OSError) as exc:
             print(
-                f"[error] cannot reach {url} — is `rewind serve` running? {exc}",
+                f"[error] cannot reach {url} — is `agent-timetravel serve` running? {exc}",
                 file=sys.stderr,
             )
             return {"p50": float("nan"), "p90": float("nan"), "p99": float("nan")}
@@ -233,7 +233,7 @@ def main() -> int:
     p_recv.add_argument(
         "--endpoint",
         default="http://127.0.0.1:4318",
-        help="Base URL of a running rewind serve instance.",
+        help="Base URL of a running agent-timetravel serve instance.",
     )
     p_recv.add_argument(
         "--spans", type=int, default=10, help="Spans per OTLP request."

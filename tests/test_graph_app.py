@@ -1,4 +1,4 @@
-"""``timetravel app:main`` shorthand and bare-graph workbench launch tests."""
+"""``agent-timetravel app:main`` shorthand and bare-graph workbench launch tests."""
 
 from __future__ import annotations
 

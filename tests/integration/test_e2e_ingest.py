@@ -152,14 +152,14 @@ def _three_step_agent_request(source_messages_str: str) -> ts.ExportTraceService
 
 @pytest.fixture
 def running_server(tmp_path: Path):
-    """Spawn ``timetravel serve`` on a random port, yield (port, db_path), tear down.
+    """Spawn ``agent-timetravel serve`` on a random port, yield (port, db_path), tear down.
 
     Marks as integration. Skipped automatically if ``-m "not integration"`` is
     passed (CI convention for fast test runs).
     """
     port = _free_port()
     db_path = tmp_path / f"timetravel_it_{uuid4().hex[:8]}.db"
-    # S603: we spawn our own ``timetravel serve`` binary, never untrusted input.
+    # S603: we spawn our own ``agent-timetravel serve`` binary, never untrusted input.
     proc = subprocess.Popen(  # noqa: S603
         [
             sys.executable,

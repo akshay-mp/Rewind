@@ -16,7 +16,7 @@ pip install -e .
 Verify:
 
 ```bash
-timetravel --version
+agent-timetravel --version
 ```
 
 ## Decorator-first workbench
@@ -31,7 +31,7 @@ async def answer(question: str, context: TimeTravelContext | None = None) -> str
     return question
 ```
 
-Start it with `timetravel dev app:timetravel`. Direct calls to `answer(...)` remain
+Start it with `agent-timetravel dev app:timetravel`. Direct calls to `answer(...)` remain
 ordinary pass-through calls; `TimeTravelContext` is injected only for workbench
 runs. For a custom title or separate registry, use:
 
@@ -47,7 +47,7 @@ Chat Completions calls
 including when that SDK is configured for an OpenAI-compatible endpoint.
 LangGraph / langchain apps get the same auto-activation: every
 `BaseChatModel` and `BaseTool` `invoke`/`ainvoke` is stepped, replayed, and
-captured — and `timetravel app:main` accepts a bare compiled graph as the target
+captured — and `agent-timetravel app:main` accepts a bare compiled graph as the target
 (no TimeTravel-specific code in the app). Replay adapters for the remaining
 frameworks (CrewAI, PydanticAI, ADK, SmolAgents) remain explicit; generic
 decorator auto-activation for them is unavailable and reports an actionable
@@ -59,22 +59,22 @@ For the live verified demo, use the exact local model and UI setup in
 ## 2. Start the receiver
 
 ```bash
-timetravel serve
+agent-timetravel serve
 ```
 
 Output will look like:
 
 ```
-timetravel serve → http://127.0.0.1:4318/v1/traces  (db=~/.timetravel/timetravel.db, version=0.1.2)
+agent-timetravel serve → http://127.0.0.1:4318/v1/traces  (db=~/.agent-timetravel/timetravel.db, version=0.1.2)
 ```
 
 The receiver now accepts OTLP/HTTP at `http://127.0.0.1:4318/v1/traces`
-and persists every span into `~/.timetravel/timetravel.db`.
+and persists every span into `~/.agent-timetravel/timetravel.db`.
 
 ## 3. Open the Timeline UI (second terminal)
 
 ```bash
-timetravel ui
+agent-timetravel ui
 ```
 
 A browser tab opens at `http://127.0.0.1:8484/ui/`. It's empty until
@@ -121,7 +121,7 @@ token-level changes between the two runs.
 - See [`docs/replay-adapters.md`](./replay-adapters.md) to wire replay
   (time-travel) into a debug iteration loop.
 - See [`docs/phases/phase-7.md`](./phases/phase-7.md) for local-model
-  enrichment commands (`timetravel enrich`, `timetravel render-template`).
+  enrichment commands (`agent-timetravel enrich`, `agent-timetravel render-template`).
 
 ## Troubleshooting
 
@@ -129,17 +129,17 @@ token-level changes between the two runs.
 The fastest way is `timetravel --help` to check the DB path, then query it:
 
 ```bash
-sqlite3 ~/.timetravel/timetravel.db "SELECT COUNT(*) FROM traces;"
+sqlite3 ~/.agent-timetravel/timetravel.db "SELECT COUNT(*) FROM traces;"
 ```
 
 If the count is zero, the OTLP exporter isn't reaching TimeTravel — check
-`OTEL_EXPORTER_OTLP_ENDPOINT` and that `timetravel serve` is bound to the same
+`OTEL_EXPORTER_OTLP_ENDPOINT` and that `agent-timetravel serve` is bound to the same
 interface the exporter can reach.
 
-**"receiver says `db=~/.timetravel/timetravel.db` but the file doesn't exist"** —
-that's expected: TimeTravel creates `~/.timetravel/` on first write. If your
+**"receiver says `db=~/.agent-timetravel/timetravel.db` but the file doesn't exist"** —
+that's expected: TimeTravel creates `~/.agent-timetravel/` on first write. If your
 agent hasn't sent a trace yet, the file is not yet created.
 
-**"`timetravel serve` crashes with `Address already in use`"** — another
+**"`agent-timetravel serve` crashes with `Address already in use`"** — another
 timetravel instance (or another process) is on 4318. Use `--port 4319` and
 update `OTEL_EXPORTER_OTLP_ENDPOINT` accordingly.

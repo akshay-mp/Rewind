@@ -37,12 +37,12 @@
 
 | Surface | File | What it does |
 |---|---|---|
-| Pure evaluators | `src/timetravel/evaluate.py` | Five pure functions on `Span[]` + expectation dataclass → `EvaluatorOutcome`. No SQLite, no FastAPI. |
-| Suite spec | `src/timetravel/evaluate.py` | `EvalSuite` / `EvalScenario` dataclasses + `validate_suite()` + `SuiteValidationError`. |
-| Orchestrator | `src/timetravel/evaluate.py::evaluate()` | `asyncio.gather` over per-scenario tasks, bounded by a `Semaphore(concurrency)` and wrapped in `asyncio.wait_for(timeout)`. Reorders results back to suite order before returning. |
-| Persistence | `src/timetravel/storage.py` | SCHEMA_VERSION 2 → 3 (additive `IF NOT EXISTS` migration). Five helpers: `upsert_eval_run`, `get_eval_run`, `list_eval_runs`, `_eval_scenario_from_row`, `delete_eval_run`. |
-| HTTP API | `src/timetravel/eval_api.py::mount_eval(app)` | Five routes (list / create / get / baseline / delete) + pydantic view models mapping the dataclass layer 1:1. Mounted alongside the timeline API on the receiver. |
-| CLI | `src/timetravel/cli.py::eval_cmd` | `timetravel eval suite.yaml --db timetravel.db [--no-save] [--suite-name …]`. Exit codes: `0=PASS`, `1=FAIL`, `2=ERROR/validation`. Optional rich table summary. |
+| Pure evaluators | `src/agent_timetravel/evaluate.py` | Five pure functions on `Span[]` + expectation dataclass → `EvaluatorOutcome`. No SQLite, no FastAPI. |
+| Suite spec | `src/agent_timetravel/evaluate.py` | `EvalSuite` / `EvalScenario` dataclasses + `validate_suite()` + `SuiteValidationError`. |
+| Orchestrator | `src/agent_timetravel/evaluate.py::evaluate()` | `asyncio.gather` over per-scenario tasks, bounded by a `Semaphore(concurrency)` and wrapped in `asyncio.wait_for(timeout)`. Reorders results back to suite order before returning. |
+| Persistence | `src/agent_timetravel/storage.py` | SCHEMA_VERSION 2 → 3 (additive `IF NOT EXISTS` migration). Five helpers: `upsert_eval_run`, `get_eval_run`, `list_eval_runs`, `_eval_scenario_from_row`, `delete_eval_run`. |
+| HTTP API | `src/agent_timetravel/eval_api.py::mount_eval(app)` | Five routes (list / create / get / baseline / delete) + pydantic view models mapping the dataclass layer 1:1. Mounted alongside the timeline API on the receiver. |
+| CLI | `src/agent_timetravel/cli.py::eval_cmd` | `agent-timetravel eval suite.yaml --db timetravel.db [--no-save] [--suite-name …]`. Exit codes: `0=PASS`, `1=FAIL`, `2=ERROR/validation`. Optional rich table summary. |
 | React UI | `web/src/components/EvalRuns.tsx`, `EvalRunDetail.tsx` | List with pagination + verdict pills; detail with per-scenario evaluator outcomes + token rollups + "compare to baseline" flow. |
 | Wire types | `web/src/types.ts` (eval block), `web/src/api.ts` (eval methods) | TypeScript mirrors of every pydantic view model. |
 
@@ -56,7 +56,7 @@ pure evaluator, and assert on the `EvaluatorOutcome`. This means:
   evaluator unit-test classes (47 tests in `test_evaluate.py`) drive
   every expectation path without touching the store.
 * **The engine is reusable from any host.** Today's hosts are the HTTP
-  receiver (`POST /api/v1/evals`) and the CLI (`timetravel eval`). A
+  receiver (`POST /api/v1/evals`) and the CLI (`agent-timetravel eval`). A
   future batch queue can call `evaluate()` directly with the same
   semantics.
 * **The async contract is the only impurity.** `evaluate()` calls back
@@ -183,7 +183,7 @@ flowchart TB
             RoutesDelete["DELETE /api/v1/evals/{id}"]
         end
         subgraph EvalCLI["CLI surface (NEW — cli.py eval_cmd)"]
-            Cli["timetravel eval suite.yaml<br/>--db · --save · --suite-name"]
+            Cli["agent-timetravel eval suite.yaml<br/>--db · --save · --suite-name"]
             CliSummary["_print_eval_summary<br/>rich.table · verdict colour"]
         end
     end
@@ -338,7 +338,7 @@ Source: `docs/diagrams/phase5.5-sequence-baseline.mmd`.
 |---|---|---|
 | `tests/test_evaluate.py` | 47 | All 5 evaluators, suite validation, orchestrator dispatch, serialisation round-trips |
 | `tests/test_evaluate_api.py` | 28 | HTTP contract: create / list / get / baseline diff / delete + YAML parse errors + view models |
-| `tests/test_eval_cli.py` | 9 | `timetravel eval` subcommand: exit codes, --db/--save/--suite-name flags, missing-file path validation |
+| `tests/test_eval_cli.py` | 9 | `agent-timetravel eval` subcommand: exit codes, --db/--save/--suite-name flags, missing-file path validation |
 | `tests/integration/test_eval_parallel_e2e.py` | 6 | **Exit criterion**: 100-scenario parallel run, serial-vs-parallel equivalence, per-scenario isolation, persistence round-trip, single-SKIP isolation |
 
 **84 new unit/integration tests** (47 + 28 + 9) plus 6 dedicated
@@ -369,7 +369,7 @@ parallel-execution integration tests. Total suite after Phase 5.5:
 ### 4.4 Coverage & gates
 
 ```
-coverage: branch=True, source=src/timetravel
+coverage: branch=True, source=src/agent_timetravel
 ruff   : E,F,W,I,B,UP,C4,SIM,RUF,S,A,ANN,PT  →  All checks passed!
 pylint : 10.00/10
 mypy   : --strict                           →  Success: no issues in 23 files
@@ -437,7 +437,7 @@ DoS floor for the eval surface specifically.
 
 | If you're… | Start here |
 |---|---|
-| Adding a new evaluator | `src/timetravel/evaluate.py` — add an expectation dataclass, an evaluator function (pure), wire it into `evaluate()` dispatcher; mirror in `eval_api.py::_evaluator_request_from_dict` and `_Expectation` TypeAlias; add a unit-test class in `tests/test_evaluate.py` |
+| Adding a new evaluator | `src/agent_timetravel/evaluate.py` — add an expectation dataclass, an evaluator function (pure), wire it into `evaluate()` dispatcher; mirror in `eval_api.py::_evaluator_request_from_dict` and `_Expectation` TypeAlias; add a unit-test class in `tests/test_evaluate.py` |
 | Adding a suite knob (e.g. retry policy) | Add to `EvalSuite` dataclass + `validate_suite` + `to_dict`/`from_dict`; bump nothing if additive |
 | Adding a result field | Update the dataclass + `to_dict` + `_EVAL_RESULT_FORMAT_VERSION` *only* if the new field is required (additive fields don't need a bump); extend storage migration helpers + view model |
 | Calling eval from a queue / job runner | `from agent_timetravel.evaluate import evaluate, EvalSuite, parse_suite_from_yaml` — store-async loop, no FastAPI required |
@@ -447,9 +447,9 @@ DoS floor for the eval surface specifically.
 
 ```bash
 # Quality gate (run before commit)
-env -C timetravel ruff check src/timetravel tests && \
-  pylint src/timetravel/ && \
-  mypy --strict src/timetravel && \
+env -C timetravel ruff check src/agent_timetravel tests && \
+  pylint src/agent_timetravel/ && \
+  mypy --strict src/agent_timetravel && \
   python -m pytest tests --no-cov
 
 # UI smoke
@@ -466,7 +466,7 @@ scenarios:
       - kind: token_budget
         expectation: {max_total_tokens: 1000}
 ' > /tmp/suite.yaml
-timetravel eval /tmp/suite.yaml --db /tmp/timetravel.db  # exit 0 = PASS
+agent-timetravel eval /tmp/suite.yaml --db /tmp/timetravel.db  # exit 0 = PASS
 ```
 
 ### 6.3 Known follow-ups (carry into next phase)

@@ -18,7 +18,7 @@ turn. This adapter provides :func:`replay_llm`, a factory that wraps a real
 * No active session → delegate to the wrapped model verbatim.
 
 The factory pattern mirrors the LangGraph adapter: ``BaseLlm`` is lazily
-imported inside the factory so ``timetravel --version`` stays fast without
+imported inside the factory so ``agent-timetravel --version`` stays fast without
 ``google-adk`` installed.
 """
 
@@ -70,7 +70,7 @@ def replay_llm(
         raise AdapterError(
             "agent_timetravel.adapters.adk requires `google-adk`; install it via "
             "`pip install agent-timetravel[adk]` or use the generic OpenAI "
-            "monkey-patch (timetravel.openai_intercept.patch)."
+            "monkey-patch (agent_timetravel.openai_intercept.patch)."
         ) from exc
 
     class _ReplayLlm(BaseLlm):  # type: ignore[misc]

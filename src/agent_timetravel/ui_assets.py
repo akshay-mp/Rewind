@@ -11,10 +11,10 @@ Build workflow
 
     cd web && pnpm install && pnpm build      # → web/dist/index.html + assets/
 
-If the build output is absent we degrade gracefully: ``timetravel serve`` still
+If the build output is absent we degrade gracefully: ``agent-timetravel serve`` still
 runs the OTLP receiver and read API, but ``GET /ui`` returns 404 with a
 short HTML message telling the operator how to build the UI. This means
-fresh clones can ``timetravel serve`` immediately against an OTLP source, see
+fresh clones can ``agent-timetravel serve`` immediately against an OTLP source, see
 spans land in SQLite, and decide later whether to build the UI.
 """
 

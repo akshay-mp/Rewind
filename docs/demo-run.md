@@ -15,7 +15,7 @@ served by Unsloth Studio, in the browser.
 | Component | Purpose | How to check |
 |---|---|---|
 | **Unsloth Studio** serving a model | The LLM backend | `curl localhost:8888/v1/models` → lists a model |
-| **TimeTravel receiver** (`timetravel serve`) | Ingests spans into SQLite | `curl localhost:4318/healthz` → `200` |
+| **TimeTravel receiver** (`agent-timetravel serve`) | Ingests spans into SQLite | `curl localhost:4318/healthz` → `200` |
 | **The web-demo** (`timetravel/web-demo/`) | The polished Next.js UI | `curl localhost:3000` → `200` |
 
 All three run on your machine. Nothing leaves localhost.
@@ -42,18 +42,18 @@ curl http://localhost:8888/v1/models \
 
 ## 2. Start the TimeTravel receiver
 
-Captures every LLM span into `~/.timetravel/timetravel.db` (the Python engine's store):
+Captures every LLM span into `~/.agent-timetravel/timetravel.db` (the Python engine's store):
 
 ```bash
-# from timetravel/
+# from agent_timetravel/
 source /Users/akshaymp/Projects/Agentic_AI/.venv/bin/activate
-timetravel serve --port 4318 --db /tmp/timetravel-demo.db
+agent-timetravel serve --port 4318 --db /tmp/timetravel-demo.db
 ```
 
 Confirm: `curl localhost:4318/healthz` → `200`.
 
 > The web-demo mirrors each span here too, so you can inspect the same run in
-> both the polished Next.js UI **and** `timetravel ui` (the Python timeline).
+> both the polished Next.js UI **and** `agent-timetravel ui` (the Python timeline).
 
 ---
 
@@ -155,7 +155,7 @@ Because the web-demo mirrors spans to the TimeTravel receiver, the same run is
 queryable by the Python engine:
 
 ```bash
-timetravel ui --port 8484 --db /tmp/timetravel-demo.db
+agent-timetravel ui --port 8484 --db /tmp/timetravel-demo.db
 # → http://127.0.0.1:8484/ui/
 ```
 
@@ -173,9 +173,9 @@ sqlite3 /tmp/timetravel-demo.db \
 | Symptom | Fix |
 |---|---|
 | `Capture trace` spins forever | Restart the loopback-bound dev server with `./node_modules/.bin/next dev -H 127.0.0.1 -p 3000`. |
-| Spans don't appear in `timetravel ui` | The web-demo's mirror is best-effort; confirm `timetravel serve` is on 4318. The web-demo UI still works without it. |
+| Spans don't appear in `agent-timetravel ui` | The web-demo's mirror is best-effort; confirm `agent-timetravel serve` is on 4318. The web-demo UI still works without it. |
 | Model returns `<think>...` blocks | The agent disables thinking via `chat_template_kwargs`. If your server doesn't support it, switch to a non-thinking model. |
-| `address already in use` on 3000/4318/8888 | Another instance is running. `pkill -fl "next dev\|timetravel serve"` and retry. |
+| `address already in use` on 3000/4318/8888 | Another instance is running. `pkill -fl "next dev\|agent-timetravel serve"` and retry. |
 | `jsonschema-rs` build error on Python 3.14 | That's the `deep_research.py` (ODR) path, not this demo. The web-demo uses the OpenAI SDK directly and has no such dependency. |
 
 ---

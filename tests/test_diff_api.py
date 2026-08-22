@@ -1,6 +1,6 @@
 """Unit tests for the Phase 5 HTTP API surface.
 
-These cover the four new endpoints mounted by :mod:`timetravel.timeline`:
+These cover the four new endpoints mounted by :mod:`agent_timetravel.timeline`:
 
 * ``GET  /api/v1/traces/{trace_id}/branches``       — branch tree.
 * ``GET  /api/v1/traces/{trace_id}/diff``           — span-sequence diff.
@@ -8,7 +8,7 @@ These cover the four new endpoints mounted by :mod:`timetravel.timeline`:
 * ``POST /api/v1/traces/{trace_id}/branches``       — create a branch.
 
 The tests use Starlette's :class:`TestClient` against the production
-:func:`timetravel.receiver.create_app` factory — no subprocess, no socket, no
+:func:`agent_timetravel.receiver.create_app` factory — no subprocess, no socket, no
 network. The store is a real SQLite file on tmp_path so the assertions
 exercise the full request → store → response pipeline.
 

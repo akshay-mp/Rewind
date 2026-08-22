@@ -14,7 +14,7 @@ consult the active :class:`~timetravel.replay.ReplaySession`:
 
 The factory pattern (rather than a top-level class) means **TimeTravel works
 on machines without ``langchain_core`` installed** — the import only fires
-when the adapter is actually requested. This keeps ``timetravel --version``
+when the adapter is actually requested. This keeps ``agent-timetravel --version``
 fast and the package dependency-light.
 
 Per Phase 3 exit criterion: *at least one framework adapter passes all
@@ -85,7 +85,7 @@ def replay_chat_model(
     except ImportError as exc:  # pragma: no cover - exercised only without langchain
         raise AdapterError(
             "agent_timetravel.adapters.langgraph requires `langchain-core`; install it or use "
-            "the generic OpenAI monkey-patch (timetravel.openai_intercept.patch)."
+            "the generic OpenAI monkey-patch (agent_timetravel.openai_intercept.patch)."
         ) from exc
     # pylint: enable=import-outside-toplevel
 

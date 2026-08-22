@@ -5,7 +5,7 @@ flowchart TB
     subgraph P2Delivered["Phase 2 — delivered (green)"]
         direction TB
         subgraph WritePlane["Same-origin write plane (carried over)"]
-            CLI["timetravel ui<br/>--port 8484 (default)"]
+            CLI["agent-timetravel ui<br/>--port 8484 (default)"]
             Receiver["FastAPI receiver<br/>POST /v1/traces, GET /healthz"]
             Ingest["ingest.py"]
             StoreW["TraceStore<br/>SQLite + WAL"]

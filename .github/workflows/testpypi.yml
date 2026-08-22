@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/rewind-debugger
+      url: https://test.pypi.org/p/agent-timetravel
     permissions:
       contents: read
       id-token: write

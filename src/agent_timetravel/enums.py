@@ -48,7 +48,7 @@ class ReplayMode(StrEnum):
         Explicitly non-deterministic.
     ``INTERACTIVE``
         Pause at every LLM/tool call and surface the pending step to an
-        :class:`~timetravel.stepping.ApprovalChannel` for a human to inspect,
+        :class:`~agent_timetravel.stepping.ApprovalChannel` for a human to inspect,
         edit, approve, or stop. The blocking lives in the channel, not here —
         this value is purely a selector the dispatchers consult to decide
         whether to consult the channel at all. Requires an approval channel

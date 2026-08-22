@@ -2,10 +2,10 @@
 
 Covers:
 
-* **5.1** — :mod:`timetravel.dag` (build_dag) + ``GET /traces/{id}/dag``.
-* **5.2** — :class:`timetravel.models.LatencyBreakdown`.
-* **5.3** — :mod:`timetravel.reproducibility` (capture_manifest) + storage.
-* **5.4** — :mod:`timetravel.redaction` (RedactionPolicy + apply/preview) +
+* **5.1** — :mod:`agent_timetravel.dag` (build_dag) + ``GET /traces/{id}/dag``.
+* **5.2** — :class:`agent_timetravel.models.LatencyBreakdown`.
+* **5.3** — :mod:`agent_timetravel.reproducibility` (capture_manifest) + storage.
+* **5.4** — :mod:`agent_timetravel.redaction` (RedactionPolicy + apply/preview) +
   the ``timetravel export`` CLI.
 """
 

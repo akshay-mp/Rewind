@@ -3,7 +3,7 @@
 Prerequisites:
   * llama-server running Gemma at http://127.0.0.1:49998 (Unsloth)
   * TimeTravel OTLP receiver running at http://127.0.0.1:4318
-    (start it first:  python -m timetravel.cli serve --port 4318 --db ~/.timetravel/timetravel.db)
+    (start it first:  python -m agent_timetravel.cli serve --port 4318 --db ~/.agent-timetravel/timetravel.db)
 
 This script:
   1. Configures OpenTelemetry to export to the TimeTravel receiver via OTLP/HTTP.
@@ -37,7 +37,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 GEMMA_BASE_URL = "http://127.0.0.1:49301/v1"
 GEMMA_MODEL = "gemma-4-12b-it-UD-Q4_K_XL"
 REWIND_OTLP_ENDPOINT = "http://127.0.0.1:4318"
-DB_PATH = "~/.timetravel/timetravel.db"
+DB_PATH = "~/.agent-timetravel/timetravel.db"
 
 
 def setup_tracing() -> None:

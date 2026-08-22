@@ -46,7 +46,7 @@ from agent_timetravel.models import Branch, Checkpoint, Span, Trace
 
 # Phase 5.5 eval-runtime types are imported lazily inside the eval-storage
 # helpers (``upsert_eval_run`` etc.) to avoid a cyclic import:
-# ``timetravel.evaluate`` lazily imports ``timetravel.storage.TraceStore`` from inside
+# ``agent_timetravel.evaluate`` lazily imports ``agent_timetravel.storage.TraceStore`` from inside
 # its default-session factory, so a top-level import here would close the
 # loop. Pylint's cyclic-import check is satisfied by the lazy form.
 if TYPE_CHECKING:

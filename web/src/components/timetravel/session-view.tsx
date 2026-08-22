@@ -708,7 +708,7 @@ function reproducibilityMetadata(session: { history: StepHistoryEntry[]; checkpo
     toolSchemaHashes,
     seeds,
     environment: typeof navigator === "undefined" ? "local client" : navigator.userAgent,
-    client: "TimeTravel local debugger",
+    client: "Agent Timetravel local debugger",
     queueTime: "unavailable",
     timeToFirstToken: "unavailable",
     generationTime: "unavailable",
@@ -948,7 +948,7 @@ function SavedSessionLibrary() {
     try {
       const parsed = JSON.parse(await file.text()) as { session?: Partial<SavedSessionCase>; pricing?: PricingProfile };
       const session = parsed.session;
-      if (!session?.traceId || !Array.isArray(session.steps)) throw new Error("Invalid TimeTravel bundle");
+      if (!session?.traceId || !Array.isArray(session.steps)) throw new Error("Invalid Agent Timetravel bundle");
       const imported: SavedSessionCase = {
         id: `timetravel-import-${Date.now()}`,
         createdAt: new Date().toISOString(),

@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`timetravel.rollback.git` (Phase 4).
+"""Unit tests for :mod:`agent_timetravel.rollback.git` (Phase 4).
 
 Uses a real git repo under ``tmp_path`` so the round-trip (stash on branch,
 pop on timetravel) is end-to-end. We also test the failure paths via the

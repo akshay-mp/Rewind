@@ -104,11 +104,11 @@ function TopBar() {
           <div className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/20">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/rewind.svg" alt="Rewind" className="size-5" />
+              <img src="/rewind.svg" alt="Agent Timetravel" className="size-5" />
             </div>
             <div>
               <div className="text-sm font-semibold leading-tight">
-                Rewind × Deep Research
+                Agent Timetravel × Deep Research
               </div>
               <div className="text-[10px] text-muted-foreground leading-tight">
                 Time-travel debugging for LangChain deep research · step down → fix
@@ -254,7 +254,7 @@ function TopBar() {
                 variant="outline"
                 onClick={stepDown}
                 disabled={!canStep || cursor <= 0}
-                title="Step down (rewind through recorded spans)"
+              title="Step down through recorded spans"
               >
                 <ChevronUp className="size-4" /> Step down
               </Button>
@@ -345,7 +345,7 @@ function EmptyState() {
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="text-center">
           <h1 className="text-3xl font-semibold tracking-tight">
-            Rewind × Deep Research
+            Agent Timetravel × Deep Research
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Time-travel debugging for a LangChain deep-research agent. Capture a
@@ -407,7 +407,7 @@ function EmptyState() {
               Step down
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Rewind through the recorded spans in FROZEN mode. Find the span
+              Step through the recorded spans in FROZEN mode. Find the span
               where the agent took a wrong turn — zero LLM calls while inspecting.
             </p>
           </div>

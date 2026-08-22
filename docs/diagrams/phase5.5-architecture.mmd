@@ -27,7 +27,7 @@ flowchart TB
         end
 
         subgraph EvalCLI["CLI surface (NEW — cli.py eval_cmd)"]
-            Cli["timetravel eval suite.yaml<br/>--db · --save · --suite-name"]
+            Cli["agent-timetravel eval suite.yaml<br/>--db · --save · --suite-name"]
             CliSummary["_print_eval_summary<br/>rich.table · verdict colour"]
         end
     end

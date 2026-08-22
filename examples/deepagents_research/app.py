@@ -5,7 +5,7 @@ This is the smallest full integration for a foreign LangGraph project:
 * dependency: ``agent-timetravel[langgraph]`` (see requirements.txt),
 * this file: import the graph's own prompts/tools, register it with the
   ``@<registry>.agent(framework="langgraph", ...)`` decorator,
-* launch: ``timetravel app:main`` — the workbench UI opens in your browser
+* launch: ``agent-timetravel app:main`` — the workbench UI opens in your browser
   with every LLM and tool call in the graph gated in the step-by-step
   debugger (including calls made inside subagents). No model wrapping, no
   instrumentation setup.
@@ -19,7 +19,7 @@ Model resolution (from ``.env`` — see app README):
 
 Run from this directory::
 
-    timetravel app:main
+    agent-timetravel app:main
 """
 
 import os

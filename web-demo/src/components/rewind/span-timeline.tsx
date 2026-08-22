@@ -187,7 +187,7 @@ function SpanRow({
             }}
             disabled={!canStepDown}
             className="rounded border border-border bg-card p-0.5 text-muted-foreground shadow-sm transition-colors hover:bg-muted disabled:opacity-30"
-            title="Step down (rewind)"
+            title="Step down through recorded spans"
             aria-label="Step down"
           >
             <ChevronUp className="size-3" />

@@ -16,7 +16,7 @@ branch from the retrieved-docs span, swap the retriever, re-run.
 
 Run::
 
-    timetravel serve
+    agent-timetravel serve
     python examples/rag_loop.py
 """
 

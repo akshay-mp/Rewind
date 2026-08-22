@@ -5,14 +5,14 @@ PydanticAI, SmolAgents) on top of the Phase-3 LangGraph adapter. Each
 adapter follows the same three-step skeleton:
 
 1. Lazy-import the framework inside the factory function (so
-   ``timetravel --version`` stays fast when frameworks aren't installed).
+   ``agent-timetravel --version`` stays fast when frameworks aren't installed).
 2. Subclass or wrap the framework's chat-model surface (``BaseLlm``,
    ``BaseChatModel``, ``Model``, ``HfApiModel``…).
 3. For each inference call:
    - Look up the active :class:`~timetravel.replay.ReplaySession` via
      :func:`~timetravel.replay.active_session`.
    - Build a :class:`~timetravel.replay.CallSignature` (re-using
-     :func:`~timetravel.openai_intercept.extract_signature` when the framework
+     :func:`~agent_timetravel.openai_intercept.extract_signature` when the framework
      accepts ``model=…, messages=[…], tools=[…]`` — ask all five do today).
    - Call ``session.respond_or_forward(signature)``:
      * returns a :class:`~timetravel.replay.RecordedResponse` → materialise

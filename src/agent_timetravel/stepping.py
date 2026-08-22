@@ -92,7 +92,7 @@ __all__ = [
 class StepKind(StrEnum):
     """What kind of call is paused at the gate.
 
-    Mirrors :class:`~timetravel.enums.SpanKind` minus ``UNKNOWN`` — stepping only
+    Mirrors :class:`~agent_timetravel.enums.SpanKind` minus ``UNKNOWN`` — stepping only
     applies to LLM and tool calls (you don't pause at a framework
     orchestration node, because TimeTravel doesn't intercept those).
     """

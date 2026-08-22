@@ -28,15 +28,15 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| Pure engine | `src/timetravel/replay.py` | `ReplaySession` (dataclass) owns `trace_id`, optional `branch_id`, a `_cursor`, and an in-memory `_spans_cache` seeded from `TraceStore`. Zero imports of `openai`/`langchain`/network — fully unit-testable. |
+| Pure engine | `src/agent_timetravel/replay.py` | `ReplaySession` (dataclass) owns `trace_id`, optional `branch_id`, a `_cursor`, and an in-memory `_spans_cache` seeded from `TraceStore`. Zero imports of `openai`/`langchain`/network — fully unit-testable. |
 | Cursor discipline | `replay.py::ReplaySession.advance_cursor_to` | Single mutation point; raises `ReplayError` on timetravel (cursors only advance) or overflow past `len(_spans_cache)` in FROZEN. |
 | Branch isolation | `replay.py::ReplaySession.fork` | Inserts a `Branch` row (parent `trace_id`, new `branch_id`, `forked_at=cursor`). Prefix spans are *not* cloned into storage — see §1.4. Live-captured spans via `record_new` DO persist under `branch_id`. |
 | Active session plumbing | `replay.py::_active_session: ContextVar[ReplaySession \| None]` | The only channel interceptors read. Default `None` → patching code is zero-cost in production. |
 | `replay()` ctxmgr | `replay.py::replay(@contextmanager)` | Sets `_active_session` for the current task on enter; restores prior value (or `None`) on exit — even on exception. |
-| Monkey-patch (fallback path) | `src/timetravel/openai_intercept.py` | `patch()` swaps `openai.resources.chat.completions.Completions.create` and `AsyncCompletions.create` with dispatchers that consult `active_session()`. Idempotent via `__timetravel_patched__ = True` marker. Restores originals in `finally`. |
-| Tool decorator | `src/timetravel/tool_intercept.py` | `@timetravel.tool(name=None, *, kind=None)` wraps a user function. Hit under cursor → cached `gen_ai.tool.output` returned, function body **never invoked**. Miss in FROZEN → `ToolCacheMiss`. Miss in BRANCH → live forward + `record_new`. |
-| Framework adapter | `src/timetravel/adapters/langgraph.py` | `replay_chat_model(wrapped: BaseChatModel) → _ReplayChatModel(BaseChatModel)`. Subclasses the framework's own interface — no monkey-patch, no SDK version chasing. |
-| CLI | `src/timetravel/cli.py::replay` | `timetravel replay <trace-id> [--branch-at N] [--mode frozen\|branch\|full] [--label …] [--db …]`. |
+| Monkey-patch (fallback path) | `src/agent_timetravel/openai_intercept.py` | `patch()` swaps `openai.resources.chat.completions.Completions.create` and `AsyncCompletions.create` with dispatchers that consult `active_session()`. Idempotent via `__timetravel_patched__ = True` marker. Restores originals in `finally`. |
+| Tool decorator | `src/agent_timetravel/tool_intercept.py` | `@timetravel.tool(name=None, *, kind=None)` wraps a user function. Hit under cursor → cached `gen_ai.tool.output` returned, function body **never invoked**. Miss in FROZEN → `ToolCacheMiss`. Miss in BRANCH → live forward + `record_new`. |
+| Framework adapter | `src/agent_timetravel/adapters/langgraph.py` | `replay_chat_model(wrapped: BaseChatModel) → _ReplayChatModel(BaseChatModel)`. Subclasses the framework's own interface — no monkey-patch, no SDK version chasing. |
+| CLI | `src/agent_timetravel/cli.py::replay` | `agent-timetravel replay <trace-id> [--branch-at N] [--mode frozen\|branch\|full] [--label …] [--db …]`. |
 
 ### 1.2 Replay modes (verbatim from plan §Phase 3)
 
@@ -120,7 +120,7 @@ flowchart TB
         end
         DB[("agent_timetravel.db<br/>traces, spans, branches")]
         subgraph ReplayPlane["Replay control plane (NEW)"]
-            CLI["timetravel replay CLI<br/>--branch-at, --mode, --label"]
+            CLI["agent-timetravel replay CLI<br/>--branch-at, --mode, --label"]
             Session["ReplaySession<br/>contextvars + cursor"]
             Branch["fork<br/>insert_branch + seed cache"]
         end
@@ -225,7 +225,7 @@ Source: [`docs/diagrams/phase3-sequence-frozen-replay.mmd`](../diagrams/phase3-s
 sequenceDiagram
     autonumber
     participant U as User or eval harness
-    participant CLI as timetravel replay CLI
+    participant CLI as agent-timetravel replay CLI
     participant Ctx as for_root contextmanager
     participant Session as ReplaySession branch
     participant A as Agent code
@@ -296,7 +296,7 @@ Source: [`docs/diagrams/phase3-sequence-branch.mmd`](../diagrams/phase3-sequence
 | **Tool-call isolation**: tool/MCP served from cached `gen_ai.tool`/`gen_ai.mcp` spans. | `tests/test_tool_intercept.py` 8 cases verify: served-from-cache on hit, cursor advances; `ToolCacheMiss` raised on name mismatch, args mismatch, cursor exhausted — and the live body is *not* invoked on any of these paths. The integration test round-trips one TOOL span → cached output returned to the agent. |
 | **Branch correctness**: branch at span N → spans `[0,N)` from fixtures, span N+ live, persisted under new `branch_id`. | `tests/integration/test_replay_e2e.py::test_branch_fork_captures_divergent_spans` — `mode=BRANCH, branch_at=1`, divergent tool call ("Berlin" vs recorded "Paris"). Asserts the live function returned `[{"city": "Berlin", "temp_c": -5, "live": True}]` AND that `store.get_spans(trace_id, branch_id=session.branch_id)` includes a new TOOL span whose `gen_ai.tool.input_hash` equals the Berlin hash. |
 | **Two branches of the same trace query as distinct timelines.** | `tests/test_replay.py::test_fork_creates_distinct_branch_row` pins the `Branch` insert; `::test_fork_full_rerun_inherits_full_prefix_in_cache` confirms the in-memory prefix is shared but the branch_id differs. |
-| **At least one framework adapter passes all replay tests without the monkey-patch fallback.** | `src/timetravel/adapters/langgraph.py::_ReplayChatModel(BaseChatModel)` subclasses the LangGraph interface directly. Unit-testable in isolation; the monkey-patch is the *fallback* path, not the primary. |
+| **At least one framework adapter passes all replay tests without the monkey-patch fallback.** | `src/agent_timetravel/adapters/langgraph.py::_ReplayChatModel(BaseChatModel)` subclasses the LangGraph interface directly. Unit-testable in isolation; the monkey-patch is the *fallback* path, not the primary. |
 
 ### 4.2 Test inventory
 
@@ -312,18 +312,18 @@ Source: [`docs/diagrams/phase3-sequence-branch.mmd`](../diagrams/phase3-sequence
 
 | Module | Coverage |
 |---|---|
-| `src/timetravel/replay.py` | **97%** |
-| `src/timetravel/tool_intercept.py` | **97%** |
-| `src/timetravel/openai_intercept.py` | **85%** (gap: streaming-path code intentionally not exercised until Phase 5; covered by `# pragma: no cover`-equivalent branch skip) |
-| `src/timetravel/adapters/langgraph.py` | 0% (no test installed because `langchain_core` is an *optional* dev dependency — see §6.4) |
+| `src/agent_timetravel/replay.py` | **97%** |
+| `src/agent_timetravel/tool_intercept.py` | **97%** |
+| `src/agent_timetravel/openai_intercept.py` | **85%** (gap: streaming-path code intentionally not exercised until Phase 5; covered by `# pragma: no cover`-equivalent branch skip) |
+| `src/agent_timetravel/adapters/langgraph.py` | 0% (no test installed because `langchain_core` is an *optional* dev dependency — see §6.4) |
 
 ### 4.4 Lint / type gates (mirror CI)
 
 ```text
-ruff check src/timetravel tests            -> All checks passed!
-pylint src/timetravel                       -> 10.00/10
+ruff check src/agent_timetravel tests            -> All checks passed!
+pylint src/agent_timetravel                       -> 10.00/10
 pylint <phase 3 test files>             -> 9.88/10 (only R0801 duplicate-code on shared setup helpers)
-mypy --strict src/timetravel                -> Success: no issues found in 16 source files
+mypy --strict src/agent_timetravel                -> Success: no issues found in 16 source files
 pytest                                  -> 144 passed
 ```
 
@@ -340,7 +340,7 @@ Phase 1 protobuf `no-member` warnings in `test_receiver.py`/`test_ingest.py`
 Phase 1/2 surfaces (OTLP write port, SQLite on disk, read-only JSON API,
 same-origin static file server) are unchanged. **Phase 3 adds no new
 network surface** — the replay engine runs **in-process** in the agent's
-own Python (invoked via `with timetravel.replay(...):` or `timetravel replay`
+own Python (invoked via `with timetravel.replay(...):` or `agent-timetravel replay`
 CLI which fires the same contextmanager).
 
 The threats below are the deltas; Phase 1/2 rows carry over verbatim.
@@ -359,7 +359,7 @@ The threats below are the deltas; Phase 1/2 rows carry over verbatim.
 ### 5.2 Phase 3 scanner run
 
 ```text
-[scan] phase=3 src=src/timetravel out=.deepsec/phase3
+[scan] phase=3 src=src/agent_timetravel out=.deepsec/phase3
   ruff S      -> rc=0
   bandit      -> rc=0
   deepsec     -> SKIPPED (deepsec not on PATH; ruff S + bandit were run)
@@ -407,13 +407,13 @@ pip install langchain-core
 
 ```bash
 # FROZEN — deterministic replay, zero outbound
-timetravel replay <trace-id> --db ./timetravel.db
+agent-timetravel replay <trace-id> --db ./timetravel.db
 
 # BRANCH at span index 3 — record divergent tail under new branch_id
-timetravel replay <trace-id> --branch-at 3 --mode branch --label "lower-temperature"
+agent-timetravel replay <trace-id> --branch-at 3 --mode branch --label "lower-temperature"
 
 # FULL — re-execute every span under the new branch
-timetravel replay <trace-id> --mode full --label "model-swap"
+agent-timetravel replay <trace-id> --mode full --label "model-swap"
 ```
 
 ### 6.3 Replay from Python (in-process)
@@ -443,8 +443,8 @@ with patch(), replay(store, "<trace-id>", mode=ReplayMode.FROZEN):
 
 ### 6.4 Adapter (LangGraph) — optional dependency
 
-`src/timetravel/adapters/langgraph.py` imports `langchain_core` **lazily
-inside the factory** so `timetravel --version` stays fast and the engine
+`src/agent_timetravel/adapters/langgraph.py` imports `langchain_core` **lazily
+inside the factory** so `agent-timetravel --version` stays fast and the engine
 doesn't require `langchain_core` for non-LangGraph users. Tests for the
 adapter are gated on `importlib.util.find_spec("langchain_core")`; if
 absent, the adapter isn't exercised by the default suite. Install with
@@ -454,7 +454,7 @@ absent, the adapter isn't exercised by the default suite. Install with
 
 - **Phase 4 (State Checkpointing):** Phase 3 assumes tool calls are
   pure (cached output is byte-identical to a fresh call). Phase 4 adds
-  `timetravel.checkpoint(name, payload)` for agents that mutate world state
+  `agent_timetravel.checkpoint(name, payload)` for agents that mutate world state
   (filesystem, DB, external APIs) — restoring on timetravel. The current
   `@timetravel.tool` decorator is the natural anchor for these rollback
   handlers.
@@ -479,8 +479,8 @@ pytest tests/test_replay.py tests/test_openai_intercept.py tests/test_tool_inter
 pytest tests/integration/test_replay_e2e.py
 
 # Quality gate
-ruff check src/timetravel tests
-pylint src/timetravel
-mypy --strict src/timetravel
+ruff check src/agent_timetravel tests
+pylint src/agent_timetravel
+mypy --strict src/agent_timetravel
 python scripts/security_scan.py --phase 3
 ```

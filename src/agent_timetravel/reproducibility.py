@@ -9,7 +9,7 @@ The manifest includes:
 
 * Python version + platform.
 * Installed package versions (the timetravel deps + any adapter extras).
-* The timetravel version itself.
+* The agent-timetravel version itself.
 * A content hash over the above (so two manifests can be compared quickly).
 """
 

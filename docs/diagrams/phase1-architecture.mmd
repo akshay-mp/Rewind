@@ -3,7 +3,7 @@ flowchart TB
     %% Reading order top→bottom = agent exports → TimeTravel persists.
 
     subgraph P1Delivered["Phase 1 — delivered (green)"]
-        CLI["timetravel serve<br/>--port 4318 --db timetravel.db"]
+        CLI["agent-timetravel serve<br/>--port 4318 --db timetravel.db"]
         Receiver["FastAPI receiver<br/>POST /v1/traces, GET /healthz"]
         Ingest["ingest.py<br/>pure proto → Span decoder"]
         Classify["classify_span<br/>(existing, Phase 0)"]

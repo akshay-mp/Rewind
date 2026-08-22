@@ -19,7 +19,7 @@ The driver runs three phases:
 
 | Phase | What happens | Proves |
 |---|---|---|
-| **A. Capture** | Run the agent once live; every LLM call captured as an OTel span via OpenInference → `timetravel serve`. | The capture pipeline ingests a real LangGraph agent. |
+| **A. Capture** | Run the agent once live; every LLM call captured as an OTel span via OpenInference → `agent-timetravel serve`. | The capture pipeline ingests a real LangGraph agent. |
 | **B. Frozen** | Re-run under `timetravel.replay(mode=FROZEN)` + OpenAI intercept. Every LLM call served from the fixture — **zero outbound traffic**. | The core "no egress" guarantee holds on a multi-node agent. |
 | **C. Branch + Diff** | Fork at a researcher span, change the topic, re-run live. `span_diff` flags the divergence; `message_diff` shows token-level change. | Branching & diffing work on a real agent. |
 
@@ -41,7 +41,7 @@ pip install open-deep-research openinference-instrumentation-langchain
 
 ```bash
 # terminal 1 — the TimeTravel receiver
-timetravel serve
+agent-timetravel serve
 
 # terminal 2 — your local model server (e.g. Unsloth)
 #   (make sure it's serving OpenAI-compatible /v1/chat/completions)
@@ -61,7 +61,7 @@ branch tree, and the diff view.
 | `OPENAI_API_KEY` | `local` | API key for the local server. |
 | `TIMETRAVEL_MODEL` | `unsloth/Llama-3.1-8B-Instruct` | Model name passed to the agent. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://127.0.0.1:4318` | Where OpenInference ships spans (the TimeTravel receiver). |
-| `REWIND_DB` | `~/.timetravel/timetravel.db` | SQLite DB path (or pass `--db <path>`). |
+| `REWIND_DB` | `~/.agent-timetravel/timetravel.db` | SQLite DB path (or pass `--db <path>`). |
 
 To use Ollama instead of Unsloth, no code change is needed:
 
@@ -79,7 +79,7 @@ researcher → final_report) calls `.ainvoke()` on it, which bottoms out at
 
 - **Capture:** OpenInference's LangChain instrumentor emits OTel spans to the
   TimeTravel receiver, which stores them in SQLite.
-- **Frozen replay:** `timetravel.openai_intercept.patch()` monkey-patches the
+- **Frozen replay:** `agent_timetravel.openai_intercept.patch()` monkey-patches the
   OpenAI `create`; during a `timetravel.replay(mode=FROZEN)` context it serves
   each recorded response verbatim — no model server contacted.
 - **Branch:** `timetravel.replay(mode=BRANCH, branch_at=N)` serves the prefix

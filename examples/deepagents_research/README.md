@@ -34,7 +34,7 @@ TAVILY_API_KEY=...          # the graph's search tool needs it
 ## Run
 
 ```bash
-timetravel app:main      # ≡ timetravel dev app:main; browser opens at :8484/ui
+agent-timetravel app:main      # ≡ agent-timetravel dev app:main; browser opens at :8484/ui
 ```
 
 Start Agent → `deep_research` → **type your question as plain text** (e.g.

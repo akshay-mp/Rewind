@@ -7,7 +7,7 @@ auto-instrumentation.
 Each demo is a single-file Python script designed to:
 
 1. auto-capture every LLM / tool call as an OTel span,
-2. ship those spans to a locally-running `timetravel serve` instance via OTLP/HTTP,
+2. ship those spans to a locally-running `agent-timetravel serve` instance via OTLP/HTTP,
 3. print the captured trace id so the user can switch to the Web UI and
    inspect the timeline,
 4. degrade gracefully when the optional instrumentation package isn't
@@ -28,10 +28,10 @@ pip install -e .                 # dev install from the repo
 pip install openinference-instrumentation-openai
 
 # Start the receiver (in one terminal):
-timetravel serve
+agent-timetravel serve
 
 # Open the Timeline UI (in another terminal):
-timetravel ui
+agent-timetravel ui
 ```
 
 That's it. Each demo script below is hermetic — set `OTEL_EXPORTER_OTLP_ENDPOINT`
@@ -50,7 +50,7 @@ integration path.
 
 ```bash
 cd deepagents_research    # after arranging the graph project + .env
-timetravel app:main       # browser opens at http://127.0.0.1:8484/ui
+agent-timetravel app:main       # browser opens at http://127.0.0.1:8484/ui
 ```
 
 ### Capture-only (toy agents)
@@ -97,7 +97,7 @@ instantly. From there:
   replay → branch → diff loop, use [`deep_research_demo.py`](./deep_research_demo.py)
   or the [`web-demo/`](../web-demo/) UI — see [`docs/demo-run.md`](../docs/demo-run.md).
 - **No Eval**: these demos produce one trace per run. Running them under
-  `timetravel eval` (Phase 5.5) is the way to score agent variants at scale.
+  `agent-timetravel eval` (Phase 5.5) is the way to score agent variants at scale.
 - **No framework deps** *(capture-only demos)*: each uses plain `openai` so
   they run anywhere with `pip install openinference-instrumentation-openai`.
   Demos for ADK / CrewAI / PydanticAI / SmolAgents follow the same shape but

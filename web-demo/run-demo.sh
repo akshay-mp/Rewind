@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# run-demo.sh — start the Rewind × Deep Research demo, robustly.
+# run-demo.sh — start the Agent Timetravel × Deep Research demo, robustly.
 #
 # Usage:  ./run-demo.sh
 #
 # Starts (if not already running):
-#   1. The Rewind OTLP receiver on :4318  (captures spans into /tmp/rewind-demo.db)
+#   1. The Agent Timetravel OTLP receiver on :4318  (captures spans into /tmp/rewind-demo.db)
 #   2. The Next.js web-demo UI on :3000   (auto-discovers the llama-server port)
 #
 # It does NOT start the model server — that's Unsloth Studio / Ollama, which
@@ -29,14 +29,14 @@ else
   echo "  ✓ llama-server on :$LLAMA_PORT (auto-discovered)"
 fi
 
-echo "▶ starting Rewind receiver on :4318…"
+echo "▶ starting Agent Timetravel receiver on :4318…"
 if curl -s -o /dev/null -w '' -m 2 http://127.0.0.1:4318/healthz 2>/dev/null; then
   echo "  ✓ already running"
 else
   # shellcheck disable=SC1090
   source "$VENV/bin/activate"
   rm -f "$DB" "$DB-wal" "$DB-shm"
-  ( nohup rewind serve --port 4318 --db "$DB" >/tmp/rewind-serve.log 2>&1 & ) >/dev/null 2>&1
+  ( nohup agent-timetravel serve --port 4318 --db "$DB" >/tmp/rewind-serve.log 2>&1 & ) >/dev/null 2>&1
   sleep 2
   curl -s -o /dev/null -w "  receiver=%{http_code}\n" -m 3 http://127.0.0.1:4318/healthz
 fi
