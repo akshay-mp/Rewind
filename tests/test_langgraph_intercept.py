@@ -756,3 +756,28 @@ def test_edited_tool_args_restore_runtime_objects(store: TraceStore, trace_id: s
     assert received["payload"] == "edited"  # the edit executed
     assert received["runtime"] is runtime  # untouched object restored
     assert received["tool_call_id"] == "call_42"
+
+
+def test_named_non_tool_messages_are_stripped_for_strict_servers(
+    store: TraceStore, trace_id: str
+) -> None:
+    """vLLM-style servers 422 on `name` for non-tool roles; strip on forward."""
+    from langchain_core.messages import ToolMessage
+
+    _seed_trace(store, trace_id, [])
+    model, tracker = _fake_model()
+
+    with patch(), replay_ctx(store, trace_id, mode=ReplayMode.BRANCH):
+        asyncio.run(
+            model.ainvoke(
+                [
+                    HumanMessage(content="hi", name="researcher"),
+                    ToolMessage(content="result", name="search", tool_call_id="c1"),
+                ]
+            )
+        )
+
+    assert len(tracker) == 1
+    sent = tracker[0]
+    assert sent[0]["name"] is None  # human message stripped
+    assert sent[1]["name"] == "search"  # tool message keeps its name

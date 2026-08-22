@@ -204,10 +204,30 @@ def _tool_display_name(tool: Any) -> str:
     return str(getattr(tool, "name", None) or type(tool).__name__)
 
 
+def _strip_names(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Drop ``name`` from non-tool messages (see :func:`_convert_messages`).
+
+    Strict OpenAI-compatible servers (vLLM-based ones such as Unsloth's)
+    reject ``name`` on any role but ``tool`` — ``422 "name" is only valid on
+    role="tool" messages`` — while deepagents-style frameworks tag messages
+    with names. Tool messages keep theirs.
+    """
+    return [
+        message
+        if message.type == "tool" or not getattr(message, "name", None)
+        else message.model_copy(update={"name": None})
+        for message in messages
+    ]
+
+
 def _convert_messages(model: Any, input: Any) -> list[BaseMessage] | None:
-    """Normalise an invoke input to messages; ``None`` when unconvertible."""
+    """Normalise an invoke input to messages; ``None`` when unconvertible.
+
+    The stripped form is used consistently for the step view, the replay
+    hash, and the outbound call.
+    """
     try:
-        return model._convert_input(input).to_messages()
+        return _strip_names(model._convert_input(input).to_messages())
     except Exception:
         return None
 
@@ -255,7 +275,7 @@ def _apply_llm_decision(
     forward_kwargs = dict(invoke_kwargs)
     if decision.messages is not None:
         call_kwargs["messages"] = decision.messages
-        forward_input = convert_to_messages(decision.messages)
+        forward_input = _strip_names(convert_to_messages(decision.messages))
     if decision.params is not None:
         forward_kwargs.update(decision.params)
     if decision.model is not None:
