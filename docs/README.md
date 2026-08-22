@@ -1,13 +1,13 @@
-# Rewind — Documentation Index
+# TimeTravel — Documentation Index
 
 > Time-travel debugging for AI agents. **OTel-in / replay-out.**
-> The current decorator-first workbench loads typed agents from a `Rewind`
+> The current decorator-first workbench loads typed agents from a `TimeTravel`
 > object and intercepts official OpenAI Python SDK Chat Completions calls
 > (`chat.completions.create`, sync and async) during an OpenAI-framework
 > workbench run, including when that SDK is configured for an
 > OpenAI-compatible endpoint. The live verification guide covers fresh
 > sessions, review,
-> rewind, prompt variants, pricing, checkpoints, and browser reconnect.
+> timetravel, prompt variants, pricing, checkpoints, and browser reconnect.
 > See `README.md`
 > (parent) for install + usage, or jump straight to [`quickstart.md`](quickstart.md)
 > for the 5-minute install-to-trace flow.
@@ -62,7 +62,7 @@ live under `diagrams/` and follow the naming convention
 | [`README.md`](../README.md)   | Project overview, status table, install + quick-start, dev workflow |
 | [`quickstart.md`](quickstart.md) | 5-minute install-to-trace flow (end-user entry point) |
 | [`demo-recording.md`](demo-recording.md) | Production checklist for the 2:40 LinkedIn demo; no video tooling is included |
-| [`demo-run.md`](demo-run.md) | **Live demo run guide** — capture → branch → diff against a local model (Unsloth) in the polished `web-demo/` UI. The doc to follow when showing Rewind to people. |
+| [`demo-run.md`](demo-run.md) | **Live demo run guide** — capture → branch → diff against a local model (Unsloth) in the polished `web-demo/` UI. The doc to follow when showing TimeTravel to people. |
 | [`wiring.md`](wiring.md)     | Per-framework OpenInference wiring recipes (OpenAI, ADK, LangGraph, CrewAI, PydanticAI, SmolAgents, MCP) |
 | [`branching-diff-walkthrough.md`](branching-diff-walkthrough.md) | The core debugging workflow (branch + diff) end-to-end |
 | [`replay-adapters.md`](replay-adapters.md) | Per-framework replay adapter usage (ADK/CrewAI/PydanticAI/SmolAgents) |

@@ -15,28 +15,28 @@ interface KindStyle {
 const KIND_STYLES: Record<SpanKind, KindStyle> = {
   "gen_ai.llm": {
     label: "LLM",
-    swatch: "var(--rewind-kind-llm)",
-    border: "color-mix(in srgb, var(--rewind-kind-llm) 60%, transparent)",
+    swatch: "var(--timetravel-kind-llm)",
+    border: "color-mix(in srgb, var(--timetravel-kind-llm) 60%, transparent)",
   },
   "gen_ai.tool": {
     label: "Tool",
-    swatch: "var(--rewind-kind-tool)",
-    border: "color-mix(in srgb, var(--rewind-kind-tool) 60%, transparent)",
+    swatch: "var(--timetravel-kind-tool)",
+    border: "color-mix(in srgb, var(--timetravel-kind-tool) 60%, transparent)",
   },
   "gen_ai.mcp": {
     label: "MCP",
-    swatch: "var(--rewind-kind-mcp)",
-    border: "color-mix(in srgb, var(--rewind-kind-mcp) 60%, transparent)",
+    swatch: "var(--timetravel-kind-mcp)",
+    border: "color-mix(in srgb, var(--timetravel-kind-mcp) 60%, transparent)",
   },
   "gen_ai.agent": {
     label: "Agent",
-    swatch: "var(--rewind-kind-agent)",
-    border: "color-mix(in srgb, var(--rewind-kind-agent) 60%, transparent)",
+    swatch: "var(--timetravel-kind-agent)",
+    border: "color-mix(in srgb, var(--timetravel-kind-agent) 60%, transparent)",
   },
-  "rewind.unknown": {
+  "timetravel.unknown": {
     label: "?",
-    swatch: "var(--rewind-kind-unknown)",
-    border: "color-mix(in srgb, var(--rewind-kind-unknown) 60%, transparent)",
+    swatch: "var(--timetravel-kind-unknown)",
+    border: "color-mix(in srgb, var(--timetravel-kind-unknown) 60%, transparent)",
   },
 };
 
@@ -47,12 +47,12 @@ export function kindStyle(kind: SpanKind): KindStyle {
 export function statusStyle(status: SpanStatus): string {
   switch (status) {
     case "ERROR":
-      return "var(--rewind-status-error)";
+      return "var(--timetravel-status-error)";
     case "OK":
-      return "var(--rewind-status-ok)";
+      return "var(--timetravel-status-ok)";
     case "UNSET":
     default:
-      return "var(--rewind-status-unset)";
+      return "var(--timetravel-status-unset)";
   }
 }
 

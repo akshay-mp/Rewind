@@ -2,10 +2,10 @@ sequenceDiagram
     autonumber
     participant A as Agent code
     participant P as openai_intercept.patch
-    participant T as @rewind.tool wrapper
+    participant T as @timetravel.tool wrapper
     participant S as active_session()
     participant Cursor as ReplaySession cursor
-    participant DB as rewind.db
+    participant DB as timetravel.db
 
     Note over A,DB: Setup: ReplaySession in FROZEN mode. Cursor seeded at 0 with pre-recorded spans.
 

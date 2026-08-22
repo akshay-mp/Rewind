@@ -28,8 +28,8 @@ import { DiffView } from "./DiffView";
 interface Props {
   traceId: string;
   onBack: () => void;
-  onSelectSpan: (rewindId: string) => void;
-  selectedRewindId: string | null;
+  onSelectSpan: (timetravelId: string) => void;
+  selectedTimeTravelId: string | null;
 }
 
 interface Filters {
@@ -53,7 +53,7 @@ const KIND_OPTIONS: SpanKind[] = [
   "gen_ai.llm",
   "gen_ai.tool",
   "gen_ai.mcp",
-  "rewind.unknown",
+  "timetravel.unknown",
 ];
 const STATUS_OPTIONS: SpanStatus[] = ["OK", "ERROR", "UNSET"];
 
@@ -65,7 +65,7 @@ interface ForkFormState {
   branchAtIndex: number;
 }
 
-export function Timeline({ traceId, onBack, onSelectSpan, selectedRewindId }: Props): JSX.Element {
+export function Timeline({ traceId, onBack, onSelectSpan, selectedTimeTravelId }: Props): JSX.Element {
   const [trace, setTrace] = useState<TraceDetail | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +173,7 @@ export function Timeline({ traceId, onBack, onSelectSpan, selectedRewindId }: Pr
           <TimelineCanvas
             spans={filteredSpans}
             onSelectSpan={onSelectSpan}
-            selectedRewindId={selectedRewindId}
+            selectedTimeTravelId={selectedTimeTravelId}
           />
         </>
       )}
@@ -430,14 +430,14 @@ function FilterRail({
 
 interface TimelineCanvasProps {
   spans: SpanView[];
-  onSelectSpan: (rewindId: string) => void;
-  selectedRewindId: string | null;
+  onSelectSpan: (timetravelId: string) => void;
+  selectedTimeTravelId: string | null;
 }
 
 function TimelineCanvas({
   spans,
   onSelectSpan,
-  selectedRewindId,
+  selectedTimeTravelId,
 }: TimelineCanvasProps): JSX.Element {
   if (spans.length === 0) {
     return <div className="muted timeline__empty">no spans match filters.</div>;
@@ -467,10 +467,10 @@ function TimelineCanvas({
               const leftPct = ((startMs - originMs) / windowMs) * 100;
               const widthPct = Math.max(0.5, ((stopMs - startMs) / windowMs) * 100);
               const ks = kindStyle(span.kind);
-              const isSelected = selectedRewindId === span.rewind_id;
+              const isSelected = selectedTimeTravelId === span.timetravel_id;
               return (
                 <button
-                  key={span.rewind_id}
+                  key={span.timetravel_id}
                   type="button"
                   className="span-bar"
                   style={{
@@ -478,14 +478,14 @@ function TimelineCanvas({
                     width: `${widthPct}%`,
                     background: ks.swatch,
                     borderColor: isSelected
-                      ? "var(--rewind-selected)"
-                      : statusStyle(span.status) === "var(--rewind-status-error)"
-                        ? "var(--rewind-selected)"
+                      ? "var(--timetravel-selected)"
+                      : statusStyle(span.status) === "var(--timetravel-status-error)"
+                        ? "var(--timetravel-selected)"
                         : ks.border,
-                    boxShadow: isSelected ? "0 0 0 2px var(--rewind-selected)" : "none",
+                    boxShadow: isSelected ? "0 0 0 2px var(--timetravel-selected)" : "none",
                   }}
                   title={`${ks.label}: ${span.name} (${formatDuration(span.start_time, span.end_time)})`}
-                  onClick={() => onSelectSpan(span.rewind_id)}
+                  onClick={() => onSelectSpan(span.timetravel_id)}
                 >
                   <span className="span-bar__label">{ks.label}</span>
                   <span className="span-bar__name">{span.name}</span>

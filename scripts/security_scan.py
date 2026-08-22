@@ -14,7 +14,7 @@ is not on PyPI under that name), so this script:
 
 Usage:
     python scripts/security_scan.py --phase 0
-    python scripts/security_scan.py --phase 1 --src src/rewind
+    python scripts/security_scan.py --phase 1 --src src/agent_timetravel
 
 Exit code is non-zero on any HIGH/CRITICAL finding.
 """
@@ -41,7 +41,7 @@ def main() -> int:
     """Run the security stack for the requested phase. Returns process exit code."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--phase", required=True, help="Phase number being scanned.")
-    ap.add_argument("--src", default="src/rewind", help="Source tree to scan.")
+    ap.add_argument("--src", default="src/agent_timetravel", help="Source tree to scan.")
     ap.add_argument(
         "--out", default=".deepsec", help="Where to write the report directory."
     )

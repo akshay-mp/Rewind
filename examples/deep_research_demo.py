@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Live Rewind demo — deep-research agent, capture → frozen → branch + diff.
+"""Live TimeTravel demo — deep-research agent, capture → frozen → branch + diff.
 
 This is the **headline live demo**. It runs a flattened deep-research agent
 (mirroring langchain-ai/open_deep_research's node sequence but as a linear
-chain of LLM calls) through Rewind's *real* capture/replay engine against a
+chain of LLM calls) through TimeTravel's *real* capture/replay engine against a
 local model server (Unsloth / Ollama / OpenAI-compatible).
 
 Three phases, each printed live:
 
   A. CAPTURE  — 8 LLM calls, each captured as an OTel span via OpenInference.
-  B. FROZEN   — re-run under `rewind.openai_intercept.patch()` + FROZEN replay.
+  B. FROZEN   — re-run under `timetravel.openai_intercept.patch()` + FROZEN replay.
                 ZERO outbound calls; output matches the seed byte-for-byte.
   C. BRANCH   — fork at the supervisor span, edit the system prompt, re-run.
     + DIFF      The tail goes live; `span_diff` + `message_diff` show the change.
@@ -17,12 +17,12 @@ Three phases, each printed live:
 The agent pattern is ported from the Z.ai workspace demo (linear spans with
 {output:N} prompt chaining) so it's reliable and fast — no structured-output
 retries or parallel subgraphs. Each span is a real `openai.ChatCompletion`
-call, which Rewind intercepts at the SDK boundary.
+call, which TimeTravel intercepts at the SDK boundary.
 
 Run::
 
-    # 1. start the Rewind receiver
-    rewind serve --port 4318 --db /tmp/rewind-demo.db
+    # 1. start the TimeTravel receiver
+    timetravel serve --port 4318 --db /tmp/timetravel-demo.db
 
     # 2. start your local model server (Unsloth Studio / Ollama)
 
@@ -42,14 +42,14 @@ from typing import Any
 os.environ.setdefault("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
 os.environ.setdefault("OTEL_BSP_SCHEDULE_DELAY", "100")
 os.environ.setdefault("OPENAI_BASE_URL", "http://localhost:8888/v1")
-os.environ.setdefault("OPENAI_API_KEY", os.environ.get("REWIND_API_KEY", "sk-unsloth-local"))
+os.environ.setdefault("OPENAI_API_KEY", os.environ.get("TIMETRAVEL_API_KEY", "sk-unsloth-local"))
 
-MODEL = os.environ.get("REWIND_MODEL", "unsloth/Qwen3.6-27B-MTP-GGUF")
-DEFAULT_DB = os.environ.get("REWIND_DB", "/tmp/rewind-demo.db")
+MODEL = os.environ.get("TIMETRAVEL_MODEL", "unsloth/Qwen3.6-27B-MTP-GGUF")
+DEFAULT_DB = os.environ.get("REWIND_DB", "/tmp/timetravel-demo.db")
 SEED_QUERY = "Compare RLHF vs DPO for aligning large language models, with citations."
 
 # --------------------------------------------------------------------------
-# Telemetry — wire a TracerProvider + OTLP exporter so spans reach Rewind.
+# Telemetry — wire a TracerProvider + OTLP exporter so spans reach TimeTravel.
 # --------------------------------------------------------------------------
 _TELEMETRY_READY = False
 
@@ -64,7 +64,7 @@ def _setup_telemetry() -> None:
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    provider = TracerProvider(resource=Resource.create({"service.name": "rewind-demo"}))
+    provider = TracerProvider(resource=Resource.create({"service.name": "timetravel-demo"}))
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
     trace.set_tracer_provider(provider)
     _TELEMETRY_READY = True
@@ -152,7 +152,7 @@ def _fill(template: str, query: str, outputs: dict[int, str]) -> str:
 
 
 def _call_llm(client: Any, system_prompt: str, user_input: str) -> str:
-    """One LLM call through the OpenAI SDK. Rewind intercepts this."""
+    """One LLM call through the OpenAI SDK. TimeTravel intercepts this."""
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[
@@ -180,13 +180,13 @@ def run_agent(client: Any, query: str, *, edit_at: int | None = None,
     """
     from opentelemetry import trace  # pylint: disable=import-outside-toplevel
 
-    tracer = trace.get_tracer("rewind-demo")
+    tracer = trace.get_tracer("timetravel-demo")
     outputs: dict[int, str] = dict(cached_outputs or {})
     spans: list[dict[str, Any]] = []
     start_from = edit_at or 0
 
     with tracer.start_as_current_span("deep_research_agent") as parent:
-        parent.set_attribute("gen_ai.system", "rewind-demo")
+        parent.set_attribute("gen_ai.system", "timetravel-demo")
         parent.set_attribute("gen_ai.operation.name", "agent")
         for i, (name, system_prompt, user_template) in enumerate(PROMPTS):
             if i < start_from:
@@ -233,9 +233,9 @@ def phase_capture(client: Any) -> dict[str, Any]:
     OpenAIInstrumentor().instrument()
 
     try:
-        # The OpenAI SDK is what both the agent AND Rewind's intercept use.
+        # The OpenAI SDK is what both the agent AND TimeTravel's intercept use.
         # OpenInference wraps openai.ChatCompletion.create → emits gen_ai.*
-        # spans to the Rewind receiver.
+        # spans to the TimeTravel receiver.
         spans = run_agent(client, SEED_QUERY)
     finally:
         with contextlib.suppress(Exception):
@@ -254,10 +254,10 @@ def phase_capture(client: Any) -> dict[str, Any]:
 
 def phase_frozen(client: Any, captured: dict[str, Any]) -> None:
     """Phase B — FROZEN replay: zero outbound calls, output matches seed."""
-    from rewind.enums import ReplayMode
-    from rewind.openai_intercept import patch
-    from rewind.replay import replay as replay_ctx
-    from rewind.storage import TraceStore
+    from agent_timetravel.enums import ReplayMode
+    from agent_timetravel.openai_intercept import patch
+    from agent_timetravel.replay import replay as replay_ctx
+    from agent_timetravel.storage import TraceStore
 
     store = TraceStore(DEFAULT_DB)
     traces, _ = store.list_traces(limit=1)
@@ -299,12 +299,12 @@ def phase_frozen(client: Any, captured: dict[str, Any]) -> None:
 
 def phase_branch(client: Any, captured: dict[str, Any]) -> None:
     """Phase C — BRANCH at the supervisor span (index 2), edit the prompt."""
-    from rewind.diff import message_diff, span_diff
-    from rewind.enums import ReplayMode, SpanKind
-    from rewind.models import Span, hash_payload
-    from rewind.openai_intercept import patch
-    from rewind.replay import replay as replay_ctx
-    from rewind.storage import TraceStore
+    from agent_timetravel.diff import message_diff, span_diff
+    from agent_timetravel.enums import ReplayMode, SpanKind
+    from agent_timetravel.models import Span, hash_payload
+    from agent_timetravel.openai_intercept import patch
+    from agent_timetravel.replay import replay as replay_ctx
+    from agent_timetravel.storage import TraceStore
 
     store = TraceStore(DEFAULT_DB)
     traces, _ = store.list_traces(limit=1)
@@ -395,7 +395,7 @@ def main() -> int:
     phase_branch(client, captured)
     _banner("DONE")
     print(f"  DB: {DEFAULT_DB}")
-    print("  Open http://127.0.0.1:8484/ui/ (if `rewind ui` is running) to inspect")
+    print("  Open http://127.0.0.1:8484/ui/ (if `timetravel ui` is running) to inspect")
     print("  the trace + branch tree, or query the DB directly:")
     # Static query (no user input) — S608 is a false positive here.
     print(f"    sqlite3 {DEFAULT_DB} \"SELECT branch_id, kind, name FROM spans "  # noqa: S608

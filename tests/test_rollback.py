@@ -1,7 +1,7 @@
-"""Unit tests for :mod:`rewind.rollback.git` (Phase 4).
+"""Unit tests for :mod:`timetravel.rollback.git` (Phase 4).
 
 Uses a real git repo under ``tmp_path`` so the round-trip (stash on branch,
-pop on rewind) is end-to-end. We also test the failure paths via the
+pop on timetravel) is end-to-end. We also test the failure paths via the
 injectable ``runner`` parameter (â€”substitute mock subprocess.run).
 
 Why a real repo and not a mock throughout? ``git stash`` semantics are
@@ -19,8 +19,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from rewind.rollback import RollbackError, RollbackHandler
-from rewind.rollback.git import GitRollbackHandler
+from agent_timetravel.rollback import RollbackError, RollbackHandler
+from agent_timetravel.rollback.git import GitRollbackHandler
 
 
 # ----------------------------------------------------------------------
@@ -33,8 +33,8 @@ def git_repo(tmp_path: Path) -> Path:
     repo.mkdir()
     # git needs an identity for stash create/store
     _run(repo, "git", "init")
-    _run(repo, "git", "config", "user.email", "test@rewind.local")
-    _run(repo, "git", "config", "user.name", "Rewind Test")
+    _run(repo, "git", "config", "user.email", "test@timetravel.local")
+    _run(repo, "git", "config", "user.name", "TimeTravel Test")
     (repo / "README.md").write_text("# initial\n")
     _run(repo, "git", "add", "README.md")
     _run(repo, "git", "commit", "-m", "initial")
@@ -66,10 +66,10 @@ def test_git_handler_satisfies_protocol(git_repo: Path) -> None:
 # ----------------------------------------------------------------------
 # Happy path round-trip
 # ----------------------------------------------------------------------
-def test_on_branch_then_on_rewind_restores_files(
+def test_on_branch_then_on_timetravel_restores_files(
     git_repo: Path, tmp_path: Path
 ) -> None:
-    """After branch + writes + rewind, the working tree is restored exactly."""
+    """After branch + writes + timetravel, the working tree is restored exactly."""
     handler = GitRollbackHandler(repo_path=str(git_repo))
     branch_id = uuid4()
 
@@ -85,8 +85,8 @@ def test_on_branch_then_on_rewind_restores_files(
     diff = _run(git_repo, "git", "status", "--porcelain")
     assert "README.md" in diff
 
-    # Rewind: the handler should restore the pristine state.
-    handler.on_rewind(branch_id)
+    # TimeTravel: the handler should restore the pristine state.
+    handler.on_timetravel(branch_id)
 
     # README.md content is back to the initial state.
     assert (git_repo / "README.md").read_text() == "# initial\n"
@@ -94,11 +94,11 @@ def test_on_branch_then_on_rewind_restores_files(
     assert not (git_repo / "new_file.txt").exists()
 
 
-def test_on_rewind_unknown_branch_is_noop(git_repo: Path) -> None:
-    """Rewinding a branch_id we never snapshotted is a no-op (protocol)."""
+def test_on_timetravel_unknown_branch_is_noop(git_repo: Path) -> None:
+    """TimeTraveling a branch_id we never snapshotted is a no-op (protocol)."""
     handler = GitRollbackHandler(repo_path=str(git_repo))
     # No exception expected — this is the documented idempotency contract.
-    handler.on_rewind(uuid4())
+    handler.on_timetravel(uuid4())
 
 
 def test_on_branch_is_idempotent(git_repo: Path) -> None:
@@ -112,21 +112,21 @@ def test_on_branch_is_idempotent(git_repo: Path) -> None:
     handler.on_branch(bid)  # should replace, not stack, the stash entry
 
     # Now restore — expect the SECOND snapshot to be served.
-    handler.on_rewind(bid)
+    handler.on_timetravel(bid)
     assert (git_repo / "README.md").read_text() == "# second snapshot\n"
 
 
 def test_on_branch_empty_working_tree_is_safe(git_repo: Path) -> None:
-    """When the working tree is clean (no delta), branch/rewind are no-ops.
+    """When the working tree is clean (no delta), branch/timetravel are no-ops.
 
     ``git stash create`` returns empty for a clean tree; the handler skips
-    the stash-store step and rewind finds nothing to pop. This is the
+    the stash-store step and timetravel finds nothing to pop. This is the
     correct behaviour (nothing to restore).
     """
     handler = GitRollbackHandler(repo_path=str(git_repo))
     bid = uuid4()
     handler.on_branch(bid)  # clean tree — nothing to snapshot
-    handler.on_rewind(bid)  # no-op
+    handler.on_timetravel(bid)  # no-op
 
 
 # ----------------------------------------------------------------------
@@ -169,12 +169,12 @@ def test_handler_raises_with_helpful_message_when_git_missing(
 # ----------------------------------------------------------------------
 # Naming / tagging invariant
 # ----------------------------------------------------------------------
-def test_stash_entries_get_rewind_tag(git_repo: Path) -> None:
+def test_stash_entries_get_timetravel_tag(git_repo: Path) -> None:
     """A pre-branch uncommitted (tracked) change produces a stash w/ the tag.
 
     Anchor strategy (Phase 4): if the working tree has uncommitted tracked
     changes at branch time, the handler stashes them under a
-    ``rewind-branch-<bid.hex>`` message so ``on_rewind`` can pop them back.
+    ``timetravel-branch-<bid.hex>`` message so ``on_timetravel`` can pop them back.
     Untracked files require explicit staging to be considered part of the
     delta (matches default ``git stash`` semantics — untracked is the
     agent's own concern).
@@ -187,10 +187,10 @@ def test_stash_entries_get_rewind_tag(git_repo: Path) -> None:
 
     listing = _run(git_repo, "git", "stash", "list")
     assert listing  # at least one entry
-    assert any(f"rewind-branch-{bid.hex}" in line for line in listing.splitlines())
+    assert any(f"timetravel-branch-{bid.hex}" in line for line in listing.splitlines())
 
     # Cleanup: pop the stash so tmp_path teardown is clean.
-    handler.on_rewind(bid)
+    handler.on_timetravel(bid)
 
 
 # Silence "imported but unused" if a future check adds UUID back.

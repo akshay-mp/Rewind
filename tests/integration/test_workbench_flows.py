@@ -1,7 +1,7 @@
 """Phase 1.5 integration tests — workbench decision flows end-to-end.
 
 Exercises the stepping server's decision kinds through the real
-interception layer (``@rewind.tool`` + the OpenAI monkey-patch) so the
+interception layer (``@timetravel.tool`` + the OpenAI monkey-patch) so the
 "zero external calls" / "exactly once" contracts are pinned at the
 integration level, not just the unit level.
 
@@ -11,12 +11,12 @@ Flows covered (per ``docs/implementation_plan.md`` §1.5):
 * **skip**   — SKIP a tool call: structured skip result, no live call.
 * **reject** — REJECT a tool call: structured reject result, no live call.
 * **retry**  — a live-forward divergence (EDIT) re-invokes the tool once.
-* **rewind** — STEP_ONCE on a tool advances exactly one step with no live
+* **timetravel** — STEP_ONCE on a tool advances exactly one step with no live
   call when the recorded span matches.
 * **forward** — APPROVE on a tool serves the cached output, no live call.
 
 Tool stepping is the genuinely sync interception surface; it uses
-:class:`~rewind.stepping.ThreadBridgeChannel` with a background approver
+:class:`~timetravel.stepping.ThreadBridgeChannel` with a background approver
 thread (mirrors ``tests/test_tool_intercept.py``). The LLM stepping path
 is async-only and is covered by ``test_stepping.py`` at the unit level
 and ``test_openai_intercept.py``; here we focus on the full
@@ -36,17 +36,17 @@ from typing import Any
 
 import pytest
 
-from rewind import tool as rewind_tool
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace
-from rewind.replay import replay as replay_ctx
-from rewind.stepping import (
+from agent_timetravel import tool as timetravel_tool
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.replay import replay as replay_ctx
+from agent_timetravel.stepping import (
     Decision,
     DecisionKind,
     ThreadBridgeChannel,
 )
-from rewind.storage import TraceStore
-from rewind.tool_intercept import _tool_args_hash
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.tool_intercept import _tool_args_hash
 
 pytestmark = pytest.mark.integration
 
@@ -139,7 +139,7 @@ def test_mock_delivers_result_no_live_call(
     store, args = seeded
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="get_weather")
+    @timetravel_tool(name="get_weather")
     def get_weather(city: str) -> list[dict[str, Any]]:
         raise AssertionError("mocked tool must not run")
 
@@ -159,7 +159,7 @@ def test_skip_makes_no_live_call(seeded: tuple[TraceStore, tuple[str]]) -> None:
     store, args = seeded
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="get_weather")
+    @timetravel_tool(name="get_weather")
     def get_weather(city: str) -> list[dict[str, Any]]:
         raise AssertionError("skipped tool must not run")
 
@@ -168,7 +168,7 @@ def test_skip_makes_no_live_call(seeded: tuple[TraceStore, tuple[str]]) -> None:
     ):
         result = get_weather(*args)
 
-    assert result == {"rewind": "tool skipped", "tool": "get_weather"}
+    assert result == {"timetravel": "tool skipped", "tool": "get_weather"}
 
 
 def test_reject_makes_no_live_call(seeded: tuple[TraceStore, tuple[str]]) -> None:
@@ -176,7 +176,7 @@ def test_reject_makes_no_live_call(seeded: tuple[TraceStore, tuple[str]]) -> Non
     store, args = seeded
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="get_weather")
+    @timetravel_tool(name="get_weather")
     def get_weather(city: str) -> list[dict[str, Any]]:
         raise AssertionError("rejected tool must not run")
 
@@ -188,7 +188,7 @@ def test_reject_makes_no_live_call(seeded: tuple[TraceStore, tuple[str]]) -> Non
         result = get_weather(*args)
 
     assert result == {
-        "rewind": "tool rejected",
+        "timetravel": "tool rejected",
         "tool": "get_weather",
         "reason": "vetoed",
     }
@@ -205,7 +205,7 @@ def test_retry_live_call_exactly_once(seeded: tuple[TraceStore, tuple[str]]) -> 
     channel = ThreadBridgeChannel()
     live_calls: list[str] = []
 
-    @rewind_tool(name="get_weather")
+    @timetravel_tool(name="get_weather")
     def get_weather(city: str) -> list[dict[str, Any]]:
         live_calls.append(city)
         return [{"city": city, "temp_c": 42, "live": True}]
@@ -221,7 +221,7 @@ def test_retry_live_call_exactly_once(seeded: tuple[TraceStore, tuple[str]]) -> 
     assert result == [{"city": "Tokyo", "temp_c": 42, "live": True}]
 
 
-def test_rewind_step_once_no_live_call(seeded: tuple[TraceStore, tuple[str]]) -> None:
+def test_timetravel_step_once_no_live_call(seeded: tuple[TraceStore, tuple[str]]) -> None:
     """STEP_ONCE advances exactly one step with zero live calls.
 
     The recorded span matches the call args; after STEP_ONCE the cache hit
@@ -231,7 +231,7 @@ def test_rewind_step_once_no_live_call(seeded: tuple[TraceStore, tuple[str]]) ->
     store, args = seeded
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="get_weather")
+    @timetravel_tool(name="get_weather")
     def get_weather(city: str) -> list[dict[str, Any]]:
         raise AssertionError("step_once on a cache hit must not run the live tool")
 
@@ -248,7 +248,7 @@ def test_forward_approve_no_live_call(seeded: tuple[TraceStore, tuple[str]]) -> 
     store, args = seeded
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="get_weather")
+    @timetravel_tool(name="get_weather")
     def get_weather(city: str) -> list[dict[str, Any]]:
         raise AssertionError("approved cache hit must not run the live tool")
 

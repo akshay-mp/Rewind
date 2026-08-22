@@ -7,30 +7,30 @@ flowchart TB
     subgraph P7["Phase 7 — delivered"]
         direction TB
 
-        subgraph EnrichMod["src/rewind/enrichment.py (NEW — pure-Python, no hard deps)"]
+        subgraph EnrichMod["src/timetravel/enrichment.py (NEW — pure-Python, no hard deps)"]
             direction TB
             ParseQuant["parse_quant(model_name) -> QuantInfo<br/>regex-extracts GGUF suffix<br/>(q4_K_M · q8_0 · f16 · bf16 · fp16 · iX)"
-            QuantFromSpan["quant_from_span(span) -> QuantInfo<br/>prefers rewind.local.quant attr<br/>falls back to parse_quant(model_name)"]
+            QuantFromSpan["quant_from_span(span) -> QuantInfo<br/>prefers timetravel.local.quant attr<br/>falls back to parse_quant(model_name)"]
             RenderTpl["render_chat_template(messages, *, model_name) -> str<br/>try transformers.AutoTokenizer.apply_chat_template<br/>fallback [role] content concatenation"]
             SampleVram["sample_vram() -> VramSample<br/>probe nvidia-smi → asitop/macmon → psutil<br/>returns VramSample(None, None) cleanly on miss"]
             EnrichSpan["enrich_span(span, *, parse_model_quant, sample_gpu) -> Span<br/>ENTRY: mutates raw_attributes in place"]
         end
 
-        subgraph DiffMod["src/rewind/diff.py (MODIFIED — new auto-flag)"]
+        subgraph DiffMod["src/timetravel/diff.py (MODIFIED — new auto-flag)"]
             QuantDiv["_detect_quant_divergence(left, right) -> bool<br/>collects (base, quant) pairs per side<br/>fires when base matches & quant differs"]
             SpanDiff["SpanDiff dataclass<br/>NEW field: quant_diverges: bool = False"]
         end
 
-        subgraph CLI2["src/rewind/cli.py (MODIFIED — 2 new commands)"]
-            CMDenrich["rewind enrich TRACE [--branch B]<br/>[--parse-quant] [--sample-vram]<br/>walks spans, persists via insert_span"]
-            CMDrender["rewind render-template TRACE INDEX<br/>[--branch B] [--model NAME]<br/>renders one LLM span's post-template prompt"]
+        subgraph CLI2["src/timetravel/cli.py (MODIFIED — 2 new commands)"]
+            CMDenrich["timetravel enrich TRACE [--branch B]<br/>[--parse-quant] [--sample-vram]<br/>walks spans, persists via insert_span"]
+            CMDrender["timetravel render-template TRACE INDEX<br/>[--branch B] [--model NAME]<br/>renders one LLM span's post-template prompt"]
         end
 
         subgraph Attrs["New raw_attributes keys (NEW — no schema bump)"]
             direction LR
-            AttrQuant["rewind.local.quant"]
-            AttrVram["rewind.local.vram_mib"]
-            AttrGpu["rewind.local.gpu_pct"]
+            AttrQuant["agent_timetravel.local.quant"]
+            AttrVram["agent_timetravel.local.vram_mib"]
+            AttrGpu["agent_timetravel.local.gpu_pct"]
         end
     end
 

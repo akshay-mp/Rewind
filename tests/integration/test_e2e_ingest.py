@@ -8,7 +8,7 @@ on disk via :class:`TraceStore`.
 The contract under test is the Phase 1 exit criterion (plan §6):
 
 > A real OpenInference-instrumented agent produces a queryable trace in
-> Rewind with full prompt/response/tool-call fidelity. Hash of
+> TimeTravel with full prompt/response/tool-call fidelity. Hash of
 > ``span.attributes['gen_ai.prompt']`` matches the source byte-for-byte.
 > Span linking (parent → child) round-trips correctly for a multi-step agent.
 
@@ -37,8 +37,8 @@ import pytest
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2 as ts
 from opentelemetry.proto.common.v1 import common_pb2 as c
 
-from rewind.models import hash_payload
-from rewind.storage import TraceStore
+from agent_timetravel.models import hash_payload
+from agent_timetravel.storage import TraceStore
 
 # Module-level marker: skip the whole file unless ``-m integration`` is passed.
 pytestmark = pytest.mark.integration
@@ -152,19 +152,19 @@ def _three_step_agent_request(source_messages_str: str) -> ts.ExportTraceService
 
 @pytest.fixture
 def running_server(tmp_path: Path):
-    """Spawn ``rewind serve`` on a random port, yield (port, db_path), tear down.
+    """Spawn ``timetravel serve`` on a random port, yield (port, db_path), tear down.
 
     Marks as integration. Skipped automatically if ``-m "not integration"`` is
     passed (CI convention for fast test runs).
     """
     port = _free_port()
-    db_path = tmp_path / f"rewind_it_{uuid4().hex[:8]}.db"
-    # S603: we spawn our own ``rewind serve`` binary, never untrusted input.
+    db_path = tmp_path / f"timetravel_it_{uuid4().hex[:8]}.db"
+    # S603: we spawn our own ``timetravel serve`` binary, never untrusted input.
     proc = subprocess.Popen(  # noqa: S603
         [
             sys.executable,
             "-m",
-            "rewind",
+            "agent_timetravel",
             "serve",
             "--port",
             str(port),
@@ -207,7 +207,7 @@ class TestEndToEndIngest:
         # S310: URL is a loopback we just spawned; no file:// / custom scheme.
         with urllib.request.urlopen(http_req, timeout=5) as resp:  # noqa: S310
             assert resp.status == 200
-            assert resp.headers.get("x-rewind-spans-accepted") == "3"
+            assert resp.headers.get("x-timetravel-spans-accepted") == "3"
 
         # Read back through a new store handle pointing at the same DB file.
         # WAL mode lets a reader open without locking out the writer.

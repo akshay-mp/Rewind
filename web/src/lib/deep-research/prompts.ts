@@ -3,7 +3,7 @@
  *
  * Mirrors src/open_deep_research/prompts.py from langchain-ai/open_deep_research.
  * Each span in the agent flow has a system prompt that is editable when the user
- * branches from that span — this is the "fix the prompt" surface Rewind exposes.
+ * branches from that span — this is the "fix the prompt" surface TimeTravel exposes.
  *
  * The flow (8 spans):
  *   1. clarify_with_user      — optional clarifying question

@@ -1,8 +1,8 @@
 """Unit tests for Phase 2.1 — durable experiment record API.
 
 Covers the prompt-version, assertion-profile, and step-review endpoints
-added to :mod:`rewind.timeline` (and the backing CRUD in
-:mod:`rewind.storage`).
+added to :mod:`timetravel.timeline` (and the backing CRUD in
+:mod:`timetravel.storage`).
 
 - ``POST/GET /api/v1/traces/{trace_id}/prompt-versions``
 - ``PUT /api/v1/prompt-versions/{id}/result``
@@ -18,10 +18,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Span, Trace
-from rewind.storage import TraceStore
-from rewind.timeline import mount_timeline
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.timeline import mount_timeline
 
 _TRACE_ID = "c" * 32
 

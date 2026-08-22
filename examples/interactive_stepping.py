@@ -4,25 +4,25 @@ This is the developer-facing worked example for the stepping feature. It
 shows the three-line wiring pattern:
 
 1. Write your agent as an ``async def`` runner that takes a
-   :class:`~rewind.replay.ReplaySession` and drives the agent to completion.
-2. Register it with :func:`rewind.stepping_api.register_runner`.
-3. Start the server with ``rewind ui`` and open the browser to step through.
+   :class:`~timetravel.replay.ReplaySession` and drives the agent to completion.
+2. Register it with :func:`timetravel.stepping_api.register_runner`.
+3. Start the server with ``timetravel ui`` and open the browser to step through.
 
 The example agent here is deliberately minimal — two LLM calls back-to-back
 via a stubbed OpenAI client, no real model required. In a real session you
 would call ``await agent.run()`` inside the runner; the OpenAI/PydanticAI
-interceptors built into Rewind would pause at each LLM call automatically.
+interceptors built into TimeTravel would pause at each LLM call automatically.
 
 Run it::
 
     # 1. Seed a trace to step through (or reuse one you already captured).
-    rewind replay <trace_id> --db ~/.rewind/rewind.db  # read-only, just loads it
+    timetravel replay <trace_id> --db ~/.timetravel/timetravel.db  # read-only, just loads it
 
     # 2. Start the stepping server with this runner registered.
-    python examples/interactive_stepping.py --db ~/.rewind/rewind.db
+    python examples/interactive_stepping.py --db ~/.timetravel/timetravel.db
 
     # 3. In another terminal, run the UI.
-    rewind ui --db ~/.rewind/rewind.db
+    timetravel ui --db ~/.timetravel/timetravel.db
 
     # 4. Open http://127.0.0.1:8484/ui, click "sessions", enter the trace id
     #    + runner ref ("example") and click "start session". The agent will
@@ -31,7 +31,7 @@ Run it::
 The runner contract
 -------------------
 A runner is an ``async def`` accepting one positional arg: the
-:class:`~rewind.replay.ReplaySession` the server has already bound to the
+:class:`~timetravel.replay.ReplaySession` the server has already bound to the
 active ContextVar. Inside the runner you typically:
 
 * Call ``await agent.run()`` (or ``graph.ainvoke(...)`` etc.) — the
@@ -39,7 +39,7 @@ active ContextVar. Inside the runner you typically:
 * Use the session arg to read ``session.cursor``, ``session.branch_id`` if
   your agent needs branching-aware logic (most don't).
 
-The runner must NOT call :func:`rewind.replay.replay` itself — the server
+The runner must NOT call :func:`timetravel.replay.replay` itself — the server
 has already opened the context. The runner just drives the agent; the
 interceptors do the pausing.
 """
@@ -49,15 +49,15 @@ from __future__ import annotations
 import argparse
 import sys
 
-from rewind.replay import ReplaySession
-from rewind.stepping_api import register_runner
+from agent_timetravel.replay import ReplaySession
+from agent_timetravel.stepping_api import register_runner
 
 # ----------------------------------------------------------------------
 # A minimal stub agent — two LLM calls, no real model required.
 # ----------------------------------------------------------------------
 # In a real session this would be your framework's agent: a LangGraph graph,
 # a PydanticAI Agent, a CrewAI crew, etc. The interceptors built into
-# Rewind (``openai_intercept.patch`` for the OpenAI SDK, or the per-framework
+# TimeTravel (``openai_intercept.patch`` for the OpenAI SDK, or the per-framework
 # adapters) pause at each LLM call automatically when a stepping channel is
 # attached. Here we simulate two calls directly through the gate so the
 # example runs without any framework installed.
@@ -66,14 +66,14 @@ from rewind.stepping_api import register_runner
 async def _example_runner(session: ReplaySession) -> None:
     """Drive a two-step agent, pausing at each LLM call via the gate.
 
-    Uses :func:`rewind.stepping.gate_async` directly so the example is
+    Uses :func:`timetravel.stepping.gate_async` directly so the example is
     framework-free. In a real agent you wouldn't call this — the
     OpenAI/PydanticAI interceptor would, on every ``chat.completions.create``
     or ``model.request`` call.
     """
     # pylint: disable=import-outside-toplevel
-    from rewind.replay import active_session
-    from rewind.stepping import DecisionKind, Step, StepKind, gate_async
+    from agent_timetravel.replay import active_session
+    from agent_timetravel.stepping import DecisionKind, Step, StepKind, gate_async
 
     sess = active_session()
     if sess is None:  # pragma: no cover — the server always binds one
@@ -124,16 +124,16 @@ def main() -> int:
     # pylint: disable=import-outside-toplevel
     import uvicorn
 
-    from rewind.receiver import create_app
-    from rewind.storage import TraceStore
+    from agent_timetravel.receiver import create_app
+    from agent_timetravel.storage import TraceStore
 
     parser = argparse.ArgumentParser(
         description="Interactive stepping example server.",
     )
     parser.add_argument(
         "--db",
-        default=str(__import__("pathlib").Path.home() / ".rewind" / "rewind.db"),
-        help="Path to the rewind SQLite DB (default: ~/.rewind/rewind.db).",
+        default=str(__import__("pathlib").Path.home() / ".timetravel" / "agent_timetravel.db"),
+        help="Path to the timetravel SQLite DB (default: ~/.timetravel/timetravel.db).",
     )
     parser.add_argument(
         "--host",

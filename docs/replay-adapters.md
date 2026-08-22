@@ -1,11 +1,11 @@
 # Per-Framework Replay Adapters
 
 Replay is the debug-mode counterpart to capture. Where the
-OpenInference instrumentation *records* every LLM call, the Rewind replay
+OpenInference instrumentation *records* every LLM call, the TimeTravel replay
 adapters **serve recorded responses back to your agent** so you can
 re-run a trace from any span without paying for live model calls.
 
-Capture is always-on (production-safe, zero Rewind code in the hot path).
+Capture is always-on (production-safe, zero TimeTravel code in the hot path).
 Replay is opt-in (debug only, wraps your model with a context manager).
 
 ## The common shape
@@ -13,14 +13,14 @@ Replay is opt-in (debug only, wraps your model with a context manager).
 Every adapter follows the same usage pattern:
 
 ```python
-from rewind.adapters.<framework> import replay_<model>
+from agent_timetravel.adapters.<framework> import replay_<model>
 
 # Wrap your existing model once:
 real_model = MyFrameworkModel(...)
 replay_model = replay_<model>(real_model, trace_id="…")
 
 # Then run your agent inside the replay ctxmgr:
-from rewind.replay import replay
+from agent_timetravel.replay import replay
 
 with replay(trace_id="…", branch_at=3, mode="branch"):
     agent.run()  # calls ≤ cursor served from fixtures; 4+ go live
@@ -36,12 +36,12 @@ captured under a new branch id.
 
 | Framework | Adapter factory | Wraps | Import extra |
 |---|---|---|---|
-| **LangGraph** | `rewind.adapters.langgraph.replay_chat_model` | `BaseChatModel._generate` (sync + async) | `pip install rewind-debugger[langgraph]` |
-| **Google ADK** | `rewind.adapters.adk.replay_llm` | `BaseLlm.generate_content_async` | `pip install rewind-debugger[adk]` |
-| **CrewAI** | `rewind.adapters.crewai.replay_llm` | `BaseLLM.call[_async]`, `get_response[_async]` | `pip install crewai` |
-| **PydanticAI** | `rewind.adapters.pydantic_ai.replay_model` | `Model.request[_stream]` | `pip install rewind-debugger[pydantic-ai]` |
-| **SmolAgents** | `rewind.adapters.smolagents.replay_model` | `Model.__call__`, `generate`, `astream` | `pip install rewind-debugger[smolagents]` |
-| **Generic OpenAI** | `rewind.replay` ctxmgr (monkey-patch fallback) | `openai.resources.chat.completions.Completions.create` (sync + async + streaming) | None — always available |
+| **LangGraph** | `timetravel.adapters.langgraph.replay_chat_model` | `BaseChatModel._generate` (sync + async) | `pip install agent-timetravel[langgraph]` |
+| **Google ADK** | `timetravel.adapters.adk.replay_llm` | `BaseLlm.generate_content_async` | `pip install agent-timetravel[adk]` |
+| **CrewAI** | `timetravel.adapters.crewai.replay_llm` | `BaseLLM.call[_async]`, `get_response[_async]` | `pip install crewai` |
+| **PydanticAI** | `timetravel.adapters.pydantic_ai.replay_model` | `Model.request[_stream]` | `pip install agent-timetravel[pydantic-ai]` |
+| **SmolAgents** | `timetravel.adapters.smolagents.replay_model` | `Model.__call__`, `generate`, `astream` | `pip install agent-timetravel[smolagents]` |
+| **Generic OpenAI** | `timetravel.replay` ctxmgr (monkey-patch fallback) | `openai.resources.chat.completions.Completions.create` (sync + async + streaming) | None — always available |
 
 The **generic OpenAI** path is the fallback when no framework-specific
 adapter exists. It's the only path that uses monkey-patching; the
@@ -52,13 +52,13 @@ are the recommended path for any supported framework.
 
 ### LangGraph  *(pattern origin — Phase 3)*
 
-> **Workbench runs no longer need this wrapper.** `rewind dev` /
-> `rewind app:main` auto-activates LangGraph interception (every
+> **Workbench runs no longer need this wrapper.** `timetravel dev` /
+> `timetravel app:main` auto-activates LangGraph interception (every
 > `BaseChatModel` / `BaseTool` invoke, stepped and captured). The factory
 > below remains for replay contexts you drive yourself from Python.
 
 ```python
-from rewind.adapters.langgraph import replay_chat_model
+from agent_timetravel.adapters.langgraph import replay_chat_model
 
 real_chat_model = ChatOpenAI(model="gpt-4o-mini")
 replay_chat = replay_chat_model(real_chat_model, trace_id="…")
@@ -71,14 +71,14 @@ with replay(trace_id="…", branch_at=2, mode="branch"):
 
 ### ADK  *(Phase 6)*
 
-Install the supported Google ADK 1.x range alongside Rewind's adapter extra:
+Install the supported Google ADK 1.x range alongside TimeTravel's adapter extra:
 
 ```bash
-pip install "google-adk>=1.28.1,<2" rewind-debugger[adk]
+pip install "google-adk>=1.28.1,<2" agent-timetravel[adk]
 ```
 
 ```python
-from rewind.adapters.adk import replay_llm
+from agent_timetravel.adapters.adk import replay_llm
 from google.adk.models import BaseLlm
 
 real_llm: BaseLlm = load_your_adk_model()
@@ -90,7 +90,7 @@ replay_wrapped = replay_llm(real_llm, trace_id="…")
 ### CrewAI  *(Phase 6)*
 
 ```python
-from rewind.adapters.crewai import replay_llm
+from agent_timetravel.adapters.crewai import replay_llm
 from crewai.llms.base_llm import BaseLLM
 
 real_crewai_llm: BaseLLM = load_your_crewai_llm()
@@ -101,7 +101,7 @@ replay_wrapped = replay_llm(real_crewai_llm, trace_id="…")
 ### PydanticAI  *(Phase 6)*
 
 ```python
-from rewind.adapters.pydantic_ai import replay_model
+from agent_timetravel.adapters.pydantic_ai import replay_model
 from pydantic_ai.models import Model
 
 real_model: Model = load_your_pydantic_ai_model()
@@ -112,7 +112,7 @@ replay_wrapped = replay_model(real_model, trace_id="…")
 ### SmolAgents  *(Phase 6)*
 
 ```python
-from rewind.adapters.smolagents import replay_model
+from agent_timetravel.adapters.smolagents import replay_model
 from smolagents.models import Model
 
 real_smol: Model = load_your_smolagents_model()
@@ -125,7 +125,7 @@ replay_wrapped = replay_model(real_smol, trace_id="…")
 When no framework-specific adapter exists:
 
 ```python
-from rewind.replay import replay
+from agent_timetravel.replay import replay
 
 with replay(trace_id="…", branch_at=2, mode="branch"):
     # Any call to openai.ChatCompletion.create (sync/async/streaming)
@@ -142,7 +142,7 @@ adapters for any multi-threaded agent.
 | If your framework… | Use |
 |---|---|
 | Is in the adapter matrix above | The framework-specific adapter. Always preferred. |
-| Uses the OpenAI SDK directly (no framework) | The generic `rewind.replay()` ctxmgr. |
+| Uses the OpenAI SDK directly (no framework) | The generic `timetravel.replay()` ctxmgr. |
 | Uses a non-OpenAI LLM client (Anthropic, Cohere, custom HTTP) | The generic ctxmgr won't apply. Either write a thin adapter (see `docs/phases/phase-6.md` §6.1 for the pattern) or use the eval harness (`docs/phases/phase-5.5.md`) to score variants without replay. |
 
 ## Troubleshooting

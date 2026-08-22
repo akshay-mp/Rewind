@@ -5,7 +5,7 @@
 > work of Phase 3. A Vite/React SPA is built by `pnpm build`, the resulting
 > `web/dist` artifact is mounted by FastAPI at `GET /ui`, and a read-only
 > JSON API at `GET /api/v1/*` powers a Timeline view, a Span Inspector,
-> and a debounced Search overlay. A single `rewind ui` command serves the
+> and a debounced Search overlay. A single `timetravel ui` command serves the
 > OTLP receiver, the read API, and the SPA on one loopback port.
 
 ---
@@ -26,16 +26,16 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| Read API | `src/rewind/timeline.py` | `mount_timeline(app)` registers **5 read-only GET endpoints** under `/api/v1/*`. No store mutations — every handler is a `TraceStore` read fan-in. |
-| Span → view projections | `src/rewind/timeline.py` | `_trace_summary`, `_span_view`, `_snippet`, `_span_text`, `_search_traces` map `Span` rows to the wire `SpanView` / `TraceDetail` / `SpanSearchHit` Pydantic models. The `raw_attributes` blob is forwarded verbatim. |
-| Server-side search | `src/rewind/timeline.py::_search_traces` | Walks `store.list_traces`, applies `_matches_filters` (kind/model/status), and greps `_span_text` for the (validated) query, building a 200-char `_snippet` per hit. |
-| Same-origin UI mount | `src/rewind/receiver.py::_mount_ui` | Mounts `StaticFiles(directory=ui_dist_path())` at `/ui`. If the build is missing, returns a helpful HTML 404 with build instructions — never a stack trace. |
-| Build dir resolver | `src/rewind/ui_assets.py` | `ui_dist_path()` resolves `web/dist` whether `rewind ui` is started from the repo root or from inside `web/`. |
-| Single binary command | `src/rewind/cli.py::ui` | `rewind ui --host 127.0.0.1 --port 8484 --db ./rewind.db`. Reuses the receiver app so the SPA, read API, and OTLP receiver share one loopback port. |
+| Read API | `src/timetravel/timeline.py` | `mount_timeline(app)` registers **5 read-only GET endpoints** under `/api/v1/*`. No store mutations — every handler is a `TraceStore` read fan-in. |
+| Span → view projections | `src/timetravel/timeline.py` | `_trace_summary`, `_span_view`, `_snippet`, `_span_text`, `_search_traces` map `Span` rows to the wire `SpanView` / `TraceDetail` / `SpanSearchHit` Pydantic models. The `raw_attributes` blob is forwarded verbatim. |
+| Server-side search | `src/timetravel/timeline.py::_search_traces` | Walks `store.list_traces`, applies `_matches_filters` (kind/model/status), and greps `_span_text` for the (validated) query, building a 200-char `_snippet` per hit. |
+| Same-origin UI mount | `src/timetravel/receiver.py::_mount_ui` | Mounts `StaticFiles(directory=ui_dist_path())` at `/ui`. If the build is missing, returns a helpful HTML 404 with build instructions — never a stack trace. |
+| Build dir resolver | `src/timetravel/ui_assets.py` | `ui_dist_path()` resolves `web/dist` whether `timetravel ui` is started from the repo root or from inside `web/`. |
+| Single binary command | `src/timetravel/cli.py::ui` | `timetravel ui --host 127.0.0.1 --port 8484 --db ./timetravel.db`. Reuses the receiver app so the SPA, read API, and OTLP receiver share one loopback port. |
 | Frontend SPA | `web/src/` | Vite + React 18 + TypeScript 5.9 (strict). `App.tsx` is the top-level state machine; `api.ts` is the typed fetcher backed by `types.ts`. |
 | Timeline view | `web/src/components/Timeline.tsx` | Lays each span as an absolutely-positioned `.span-bar` whose `left`/`width` come from the trace's global start/end. Color-coded by kind; parent nesting via indentation of `parent_span_id`. |
 | Span inspector | `web/src/components/SpanInspector.tsx` | Right-rail panel: tokens, model, timing, ISO start/end; renders `gen_ai.{prompt,completion}` messages; raw-JSON toggle; status pills. |
-| Search overlay | `web/src/components/SearchOverlay.tsx` | 250 ms-debounced `GET /api/v1/search` with kind/status filter chips. Each hit carries `trace_id` + `rewind_id` and a server-supplied snippet. |
+| Search overlay | `web/src/components/SearchOverlay.tsx` | 250 ms-debounced `GET /api/v1/search` with kind/status filter chips. Each hit carries `trace_id` + `timetravel_id` and a server-supplied snippet. |
 
 ### 1.2 Same-origin design — why no CORS
 
@@ -55,9 +55,9 @@ into that constraint instead of weakening it:
 This keeps the Phase 1 security posture intact while letting the UI share
 cookies, headers, and origin with the API.
 
-### 1.3 The `rewind ui` command (single-port serve)
+### 1.3 The `timetravel ui` command (single-port serve)
 
-`rewind ui` is a **convenience alias** for the receiver — it does **not**
+`timetravel ui` is a **convenience alias** for the receiver — it does **not**
 spin up a second process or second port. It mounts `timeline.mount_timeline`
 and `_mount_ui` onto the exact same `FastAPI` instance that owns `POST /v1/traces`
 and `/healthz`. Rationale:
@@ -104,7 +104,7 @@ and `/healthz`. Rationale:
   directly typing `http://127.0.0.1:8484/ui` into a browser tab. This is
   documented in CLI `--help`.
 - **`_mount_ui` returns a helpful 404 when dist is missing.** If a user
-  runs `rewind ui` without first running `pnpm build`, they get a short
+  runs `timetravel ui` without first running `pnpm build`, they get a short
   instruction page rather than a `FileNotFoundError` traceback. The
   read API and OTLP receiver keep working — this is graceful degradation.
 
@@ -115,7 +115,7 @@ and `/healthz`. Rationale:
   tables.
 - **OTLP receiver wire surface.** `POST /v1/traces` and `GET /healthz` are
   untouched. Phase 1's integration test (`tests/integration/test_e2e_ingest.py`)
-  passes against `rewind ui` unchanged.
+  passes against `timetravel ui` unchanged.
 - **Threat model for the write plane.** Same loopback-only, no-TLS, no-auth
   posture. See §5 for the *incremental* Phase 2 surface.
 
@@ -128,7 +128,7 @@ flowchart TB
     subgraph P2Delivered["Phase 2 — delivered (green)"]
         direction TB
         subgraph WritePlane["Same-origin write plane (carried over)"]
-            CLI["rewind ui --port 8484"]
+            CLI["timetravel ui --port 8484"]
             Receiver["FastAPI receiver<br/>POST /v1/traces, GET /healthz"]
             Ingest["ingest.py"]
             StoreW["TraceStore<br/>SQLite + WAL"]
@@ -141,7 +141,7 @@ flowchart TB
             Mount["_mount_ui<br/>StaticFiles /ui → web/dist"]
             Dist["web/dist/<br/>index.html + assets<br/>(Vite build, base=/ui/)"]
         end
-        DB[("rewind.db<br/>WAL mode")]
+        DB[("agent_timetravel.db<br/>WAL mode")]
     end
 
     subgraph P2Future["Future (faded)"]
@@ -210,7 +210,7 @@ sequenceDiagram
     participant S as FastAPI localhost 8484
     participant M as _mount_ui StaticFiles
     participant T as timeline.py read API
-    participant D as TraceStore rewind.db
+    participant D as TraceStore timetravel.db
 
     Note over U,D: Stage 1 fetch the SPA shell
     U->>S: GET /ui
@@ -236,8 +236,8 @@ sequenceDiagram
     T-->>U: 200 TraceDetail
 
     Note over U,D: Stage 4 user clicks a span SpanInspector opens
-    U->>T: GET /api/v1/spans/{rewind_id}
-    T->>D: store.get_span rewind_id
+    U->>T: GET /api/v1/spans/{timetravel_id}
+    T->>D: store.get_span timetravel_id
     D-->>T: Span
     T-->>U: 200 SpanView with tokens and model
 
@@ -245,7 +245,7 @@ sequenceDiagram
     U->>T: GET /api/v1/search q=tool name
     T->>D: store.list_traces plus text scan
     D-->>T: matching spans
-    T-->>U: 200 SearchResponse with rewind_id and snippet
+    T-->>U: 200 SearchResponse with timetravel_id and snippet
 ```
 
 Source: [`docs/diagrams/phase2-sequence-timeline.mmd`](../diagrams/phase2-sequence-timeline.mmd).
@@ -258,7 +258,7 @@ test `test_ui_root_redirects_to_slash` pins this.
 **Stage 4 detail.** `SpanView` carries `raw_attributes` (the verbatim
 OpenInference blob), `prompt_tokens`/`completion_tokens`/`total_tokens`,
 `model_name`, ISO `start_time`/`end_time`, `status`, `status_message`,
-`messages_hash`, `tools_hash`, and the surrogate `rewind_id` the UI uses
+`messages_hash`, `tools_hash`, and the surrogate `timetravel_id` the UI uses
 for re-fetch. The UI derives `duration_ms = end - start`; the server
 deliberately does not.
 
@@ -271,7 +271,7 @@ sequenceDiagram
     participant A as api.ts debounced search
     participant T as timeline.py read API
     participant S as _search_traces
-    participant D as TraceStore rewind.db
+    participant D as TraceStore timetravel.db
 
     Note over U,D: Stage 1 user types a query and picks filters
     U->>A: onChange query, optional kind, optional status
@@ -300,7 +300,7 @@ sequenceDiagram
         S-->>T: list of SpanSearchHit
         T-->>A: 200 SearchResponse
         A-->>U: render scrollable hit list
-        U->>U: onSelectResult trace_id rewind_id
+        U->>U: onSelectResult trace_id timetravel_id
     end
 ```
 
@@ -320,7 +320,7 @@ instead.
 
 | # | Exit criterion | Status | Evidence |
 |---|---|---|---|
-| 1 | The Phase-1 reference trace loads and every span is visible + inspectable. | ✅ | `tests/integration/test_ui_served.py::test_ui_returns_spa_html` spawns `rewind ui`, POSTs the same 3-span AGENT→LLM→TOOL OTLP request from Phase 1's integration test, then `test_get_span_by_rewind_id` re-fetches each span via `GET /api/v1/spans/{rewind_id}` and asserts kind + tokens. The same request round-trips identically against `rewind ui` and `rewind serve`. |
+| 1 | The Phase-1 reference trace loads and every span is visible + inspectable. | ✅ | `tests/integration/test_ui_served.py::test_ui_returns_spa_html` spawns `timetravel ui`, POSTs the same 3-span AGENT→LLM→TOOL OTLP request from Phase 1's integration test, then `test_get_span_by_timetravel_id` re-fetches each span via `GET /api/v1/spans/{timetravel_id}` and asserts kind + tokens. The same request round-trips identically against `timetravel ui` and `timetravel serve`. |
 | 2 | A 200-span trace renders and is navigable with no perceptible lag. | ✅ | `tests/test_timeline.py` (36 tests) drives the read API against synthetic 200-span traces (parent/child nesting, all 6 kinds, mixed statuses). The 200-span render claim is verified by: `TestSpanFilters` (11 cases) querying `/spans?kind=tool` etc. on a 200-row table in < 50 ms; `TestSearch` executing 12 evaluation scenarios against the same volume. The React side renders each span as a single absolutely-positioned `<div>` — no per-span re-render on scroll, so paint cost is O(spans) once. |
 
 ### 4.2 Python test inventory (`tests/`)
@@ -340,8 +340,8 @@ instead.
 
 | File | Tests | What it covers |
 |---|---|---|
-| `tests/integration/test_e2e_ingest.py` | 1 | Phase 1 — `rewind serve` end-to-end fidelity. Unchanged. |
-| `tests/integration/test_ui_served.py` | **5** `new` | Spawns `rewind ui` on a loopback port, waits on `/healthz`, POSTs the Phase-1 reference 3-span trace, then asserts: SPA HTML title + asset URL (`test_ui_returns_spa_html`), `/ui` 307 → `/ui/` (`test_ui_root_redirects_to_slash`), same-origin `GET /api/v1/traces` returns the trace (`test_same_origin_trace_list`), `GET /api/v1/search` finds the LLM span by model substring (`test_same_origin_search`), `GET /api/v1/spans/{rewind_id}` returns kind+tokens (`test_get_span_by_rewind_id`). |
+| `tests/integration/test_e2e_ingest.py` | 1 | Phase 1 — `timetravel serve` end-to-end fidelity. Unchanged. |
+| `tests/integration/test_ui_served.py` | **5** `new` | Spawns `timetravel ui` on a loopback port, waits on `/healthz`, POSTs the Phase-1 reference 3-span trace, then asserts: SPA HTML title + asset URL (`test_ui_returns_spa_html`), `/ui` 307 → `/ui/` (`test_ui_root_redirects_to_slash`), same-origin `GET /api/v1/traces` returns the trace (`test_same_origin_trace_list`), `GET /api/v1/search` finds the LLM span by model substring (`test_same_origin_search`), `GET /api/v1/spans/{timetravel_id}` returns kind+tokens (`test_get_span_by_timetravel_id`). |
 | **Integration subtotal** | **6** | All green. |
 
 **Run modes:**
@@ -372,17 +372,17 @@ budget for "no perceptible lag" on a developer laptop.
 
 | Module | Stmts | Miss | Branch | Cover | Δ vs Phase 1 |
 |---|---|---|---|---|---|
-| `src/rewind/timeline.py` | 172 | 2 | 44 | **98 %** | new |
-| `src/rewind/receiver.py` | 62 | 3 | 14 | 95 % | −5 % (`_mount_ui` 404 path requires missing dist fixture) |
-| `src/rewind/ui_assets.py` | 8 | 1 | 2 | 80 % | new |
-| `src/rewind/ingest.py` | 111 | 2 | 36 | 99 % | — |
-| `src/rewind/storage.py` | 104 | 10 | 6 | 90 % | — |
-| `src/rewind/models.py` | 73 | 4 | 12 | 91 % | — |
-| `src/rewind/classify.py` | 31 | 4 | 20 | 82 % | — |
-| `src/rewind/cli.py` | 46 | 20 | 4 | 54 % | −11 % (`ui`'s `uvicorn.run` block is exercised by integration tests, not unit) |
-| `src/rewind/enums.py` | 20 | 0 | 0 | 100 % | — |
-| `src/rewind/__init__.py` | 3 | 0 | 0 | 100 % | — |
-| `src/rewind/__main__.py` | 4 | 4 | 2 | 0 % | — |
+| `src/timetravel/timeline.py` | 172 | 2 | 44 | **98 %** | new |
+| `src/timetravel/receiver.py` | 62 | 3 | 14 | 95 % | −5 % (`_mount_ui` 404 path requires missing dist fixture) |
+| `src/timetravel/ui_assets.py` | 8 | 1 | 2 | 80 % | new |
+| `src/timetravel/ingest.py` | 111 | 2 | 36 | 99 % | — |
+| `src/timetravel/storage.py` | 104 | 10 | 6 | 90 % | — |
+| `src/timetravel/models.py` | 73 | 4 | 12 | 91 % | — |
+| `src/timetravel/classify.py` | 31 | 4 | 20 | 82 % | — |
+| `src/timetravel/cli.py` | 46 | 20 | 4 | 54 % | −11 % (`ui`'s `uvicorn.run` block is exercised by integration tests, not unit) |
+| `src/timetravel/enums.py` | 20 | 0 | 0 | 100 % | — |
+| `src/timetravel/__init__.py` | 3 | 0 | 0 | 100 % | — |
+| `src/timetravel/__main__.py` | 4 | 4 | 2 | 0 % | — |
 | **TOTAL (11 files)** | 634 | 50 | 140 | **91 %** | `+2 %` |
 
 ### 4.6 Quality gates — final Phase 2 run
@@ -433,12 +433,12 @@ model below covers only what's new; Phase 1's rows carry over verbatim.
 | **ReDoS in server-side search** | Adversarial query crashes `_span_text` scan | very low | DoS — single slow request | `q` is bounded `min_length=1, max_length=200`. We use plain `in` substring match, no regex compilation on user input. |
 | **404 page leaks repo path** | `_UI_MISSING_HTML` reveals `web/dist` absolute path to an attacker | low | Information disclosure | `_UI_MISSING_HTML` is a static string with no f-string interpolation. It says "run `cd web && pnpm install && pnpm build`" — never the on-disk path. Verified by reading the literal in `receiver.py`. |
 | **Unbounded `limit` parameter DoS** | `GET /api/v1/traces?limit=1000000` forces massive row materialisation | medium | DoS — memory pressure | `limit` is gated to `le=500` via Pydantic. `test_list_traces_*` pins the clamp. |
-| **Read API used as an oracle for trace data of other users** | Multi-tenant cluster shares `rewind.db` | n/a | n/a | The tool is single-user, single-tenant, loopback-only by design. Multi-tenant isolation is out of scope. |
+| **Read API used as an oracle for trace data of other users** | Multi-tenant cluster shares `timetravel.db` | n/a | n/a | The tool is single-user, single-tenant, loopback-only by design. Multi-tenant isolation is out of scope. |
 
 ### 5.2 Phase 2 scanner run
 
 ```text
-[scan] phase=2 src=src/rewind out=.deepsec/phase2
+[scan] phase=2 src=src/timetravel out=.deepsec/phase2
   ruff S      -> rc=0
   bandit      -> rc=0
   deepsec     -> SKIPPED (deepsec not on PATH; ruff S + bandit were run)
@@ -453,7 +453,7 @@ The scan script (`scripts/security_scan.py`) auto-delegates to `deepsec`
 when present on `PATH`. To enable:
 
 ```bash
-python scripts/security_scan.py --phase 2 --src src/rewind --out .deepsec
+python scripts/security_scan.py --phase 2 --src src/timetravel --out .deepsec
 ```
 
 If `deepsec` is missing, the scan completes with `ruff` S rules + `bandit`
@@ -490,27 +490,27 @@ pnpm install
 pnpm build     # outputs web/dist/{index.html, assets/*}
 ```
 
-After this, `rewind ui` will serve the SPA. If you skip the build, the
+After this, `timetravel ui` will serve the SPA. If you skip the build, the
 read API and OTLP receiver still work — you'll just see the
-"Rewind UI not built" page at `http://127.0.0.1:8484/ui`.
+"TimeTravel UI not built" page at `http://127.0.0.1:8484/ui`.
 
 ### 6.2 Run commands
 
 ```bash
 # Start everything on one loopback port (default: 127.0.0.1:8484)
-rewind ui
+timetravel ui
 # → GET  /ui              → 307 → /ui/   (SPA shell)
 # → GET  /ui/assets/*     → static JS/CSS
 # → GET  /api/v1/traces   → JSON list
 # → GET  /api/v1/traces/{trace_id}            → JSON detail
 # → GET  /api/v1/traces/{trace_id}/spans      → JSON span list (filtered)
-# → GET  /api/v1/spans/{rewind_id}            → JSON span detail
+# → GET  /api/v1/spans/{timetravel_id}            → JSON span detail
 # → GET  /api/v1/search?q=...&kind=...        → JSON hits with snippets
 # → POST /v1/traces        → OTLP ingest (unchanged from Phase 1)
 # → GET  /healthz          → {"status":"ok"}
 
 # Override host / port / db
-rewind ui --host 127.0.0.1 --port 9000 --db /tmp/rewind.db
+timetravel ui --host 127.0.0.1 --port 9000 --db /tmp/timetravel.db
 
 # Point an existing Phase-1 OpenInference-instrumented agent at it:
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:8484 my-agent
@@ -522,16 +522,16 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:8484 my-agent
 # Python unit tests (fast, no server spawn)
 pytest
 
-# Python integration tests (spawns `rewind serve` + `rewind ui` on loopback)
+# Python integration tests (spawns `timetravel serve` + `timetravel ui` on loopback)
 pytest -m integration
 
 # Full Python sweep
 pytest -m "" tests/ tests/integration
 
 # Lint / type-check / security
-ruff check src/rewind tests/
-pylint src/rewind
-mypy --strict src/rewind
+ruff check src/timetravel tests/
+pylint src/timetravel
+mypy --strict src/timetravel
 python scripts/security_scan.py --phase 2
 
 # Frontend gates
@@ -544,8 +544,8 @@ pnpm run build          # final sanity build
 ### 6.4 Code map for the next developer
 
 ```
-src/rewind/
-├── cli.py           # `rewind ui` entry point (and `serve` alias)
+src/timetravel/
+├── cli.py           # `timetravel ui` entry point (and `serve` alias)
 ├── receiver.py      # build_app, _mount_ui, _persist  (Phase 1 + UI mount)
 ├── timeline.py      # NEW — 5 read-only GET handlers + projections      ← Phase 2 core
 ├── ui_assets.py     # NEW — ui_dist_path() resolver                     ← Phase 2
@@ -568,7 +568,7 @@ web/
     └── components/
         ├── TraceList.tsx      # GET /api/v1/traces
         ├── Timeline.tsx       # GET /api/v1/traces/{id} → span bars
-        ├── SpanInspector.tsx  # GET /api/v1/spans/{rewind_id}
+        ├── SpanInspector.tsx  # GET /api/v1/spans/{timetravel_id}
         └── SearchOverlay.tsx  # debounced GET /api/v1/search
 ```
 
@@ -576,9 +576,9 @@ web/
 
 Phase 3 (Replay Engine) will:
 
-- **Reuse the same `rewind ui` server.** The replay CLI
-  (`rewind replay <trace-id>`) will run as a separate command that targets
-  the same `rewind.db` the UI reads from. No new server port.
+- **Reuse the same `timetravel ui` server.** The replay CLI
+  (`timetravel replay <trace-id>`) will run as a separate command that targets
+  the same `timetravel.db` the UI reads from. No new server port.
 - **Reuse `TraceStore` read paths.** The replay engine needs to walk spans
   in order — `_search_traces` (in `timeline.py`) is the pattern to follow,
   but the engine should get a *new* `ReplayStore` API with cursor semantics,

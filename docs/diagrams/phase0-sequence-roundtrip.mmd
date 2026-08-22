@@ -22,6 +22,6 @@ sequenceDiagram
 
     Note over T: Assert order and kinds and raw_attributes identical
 
-    T->>S: raw_attributes_bytes(rewind_id)
+    T->>S: raw_attributes_bytes(timetravel_id)
     S->>DB: SELECT raw_attributes
     DB-->>T: bytes fidelity check

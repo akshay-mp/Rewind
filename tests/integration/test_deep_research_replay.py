@@ -6,7 +6,7 @@ research_supervisor[parallel researchers] → final_report). Every node calls
 the same LangChain ``BaseChatModel`` via ``.ainvoke()``; under the hood that
 becomes an ``openai...Completions.create`` call.
 
-This test proves Rewind's capture → replay → branch → diff loop works against
+This test proves TimeTravel's capture → replay → branch → diff loop works against
 that *shape* of agent — a multi-LLM-span trace with no tool spans (the
 ``SearchAPI.NONE`` offline configuration) — **without** requiring the real
 ``open-deep-research`` package, a model backend, or network access. It seeds a
@@ -36,12 +36,12 @@ from typing import Any
 
 import pytest
 
-from rewind.diff import message_diff, span_diff
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.openai_intercept import patch
-from rewind.replay import replay as replay_ctx
-from rewind.storage import TraceStore
+from agent_timetravel.diff import message_diff, span_diff
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.openai_intercept import patch
+from agent_timetravel.replay import replay as replay_ctx
+from agent_timetravel.storage import TraceStore
 
 pytestmark = pytest.mark.integration
 
@@ -233,7 +233,7 @@ def _seed_deep_research_trace(store: TraceStore) -> dict[str, Any]:
         _llm_span(
             span_id="4" * 16,
             messages=report_msgs,
-            response_content="Rewind, AgentLens, and Chronos Agent are the leading tools.",
+            response_content="TimeTravel, AgentLens, and Chronos Agent are the leading tools.",
         ),
     ]
     store.upsert_trace(Trace(trace_id=_TRACE_ID, spans=spans))
@@ -245,7 +245,7 @@ def _seed_deep_research_trace(store: TraceStore) -> dict[str, Any]:
         "brief_messages": brief_msgs,
         "researcher_messages": researcher_msgs,
         "report_messages": report_msgs,
-        "expected_report": "Rewind, AgentLens, and Chronos Agent are the leading tools.",
+        "expected_report": "TimeTravel, AgentLens, and Chronos Agent are the leading tools.",
     }
 
 
@@ -281,7 +281,7 @@ def test_frozen_replay_serves_all_odr_nodes_offline(tmp_path: Path) -> None:
     Every node (clarify → brief → researcher → final_report) is served from
     the recorded fixture; the final report matches the seed verbatim.
     """
-    store = TraceStore(str(tmp_path / "rewind.db"))
+    store = TraceStore(str(tmp_path / "agent_timetravel.db"))
     seed = _seed_deep_research_trace(store)
 
     with _fake_openai_module() as fake:
@@ -303,7 +303,7 @@ def test_branch_at_researcher_node_forwards_tail_live(tmp_path: Path) -> None:
     the fixture at the cursor, forwards live (returns ``LIVE_FROM_STUB``), and
     a new LLM span is captured under the fork's ``branch_id``.
     """
-    store = TraceStore(str(tmp_path / "rewind.db"))
+    store = TraceStore(str(tmp_path / "agent_timetravel.db"))
     seed = _seed_deep_research_trace(store)
 
     with _fake_openai_module() as fake:
@@ -360,7 +360,7 @@ def test_span_diff_flags_researcher_divergence(tmp_path: Path) -> None:
     seed timeline against that reconstructed branch timeline (not the union
     query, which would repeat the shared prefix).
     """
-    store = TraceStore(str(tmp_path / "rewind.db"))
+    store = TraceStore(str(tmp_path / "agent_timetravel.db"))
     seed = _seed_deep_research_trace(store)
     seed_spans = store.get_spans(seed["trace_id"])
 
@@ -406,12 +406,12 @@ def test_span_diff_flags_researcher_divergence(tmp_path: Path) -> None:
 
 def test_message_diff_highlights_diverged_report(tmp_path: Path) -> None:
     """``message_diff`` flags added/removed tokens in the diverged report."""
-    left = "Rewind, AgentLens, and Chronos Agent are the leading tools."
+    left = "TimeTravel, AgentLens, and Chronos Agent are the leading tools."
     right = "bench-loop and tma1 are the local-first eval options."
     md = message_diff(left, right)
     assert md.added_tokens > 0
     assert md.removed_tokens > 0
-    # At least one fragment is the common prefix up to "Rewind" vs "bench-loop".
+    # At least one fragment is the common prefix up to "TimeTravel" vs "bench-loop".
     kinds = {f.kind for f in md.fragments}
     assert "removed" in kinds or "changed" in kinds
     assert "added" in kinds or "changed" in kinds

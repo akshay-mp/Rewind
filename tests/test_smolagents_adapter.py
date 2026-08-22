@@ -7,7 +7,7 @@ Skipped unless ``smolagents`` is importable. Exercises:
 
 Install the extra to run them::
 
-    pip install rewind-debugger[smolagents]
+    pip install agent-timetravel[smolagents]
 """
 
 from __future__ import annotations
@@ -18,13 +18,13 @@ from typing import Any
 
 import pytest
 
-from rewind.adapters.smolagents import _smol_chat_message, _smol_chat_message_to_text
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import (
+from agent_timetravel.adapters.smolagents import _smol_chat_message, _smol_chat_message_to_text
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import (
     replay as replay_ctx,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 _HAS_SMOL = importlib.util.find_spec("smolagents") is not None
 pytestmark = pytest.mark.skipif(not _HAS_SMOL, reason="smolagents not installed")
@@ -56,7 +56,7 @@ def _recorded_llm_span(trace_id: str, *, content: str = "recorded") -> Span:
 
 
 def _wrapped_model() -> tuple[Any, list[Any]]:
-    from rewind.adapters.smolagents import replay_model
+    from agent_timetravel.adapters.smolagents import replay_model
 
     calls: list[Any] = []
 

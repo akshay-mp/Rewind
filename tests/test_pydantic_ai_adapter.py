@@ -8,7 +8,7 @@ Skipped unless ``pydantic_ai`` is importable. Exercises:
 
 Install the extra to run them::
 
-    pip install rewind-debugger[pydantic-ai]
+    pip install agent-timetravel[pydantic-ai]
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ from typing import Any
 
 import pytest
 
-from rewind.adapters.pydantic_ai import _model_response_to_text
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import (
+from agent_timetravel.adapters.pydantic_ai import _model_response_to_text
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import (
     replay as replay_ctx,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 _HAS_PYDANTIC_AI = importlib.util.find_spec("pydantic_ai") is not None
 pytestmark = pytest.mark.skipif(not _HAS_PYDANTIC_AI, reason="pydantic-ai not installed")
@@ -58,14 +58,14 @@ def _recorded_llm_span(trace_id: str, *, content: str = "recorded") -> Span:
 
 
 def _wrapped_model() -> tuple[Any, list[Any]]:
-    from rewind.adapters.pydantic_ai import replay_model
+    from agent_timetravel.adapters.pydantic_ai import replay_model
 
     calls: list[Any] = []
 
     class _Wrapped:  # pylint: disable=too-few-public-methods
         model_name = "pydantic-ai-test"
-        system = "rewind"
-        system_api = "rewind"
+        system = "timetravel"
+        system_api = "timetravel"
 
         async def request(
             self,

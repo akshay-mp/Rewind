@@ -1,4 +1,4 @@
-"""Unit tests for ``rewind.receiver`` — FastAPI OTLP/HTTP surface.
+"""Unit tests for ``timetravel.receiver`` — FastAPI OTLP/HTTP surface.
 
 We use FastAPI's ``TestClient`` so tests stay synchronous and the receiver
 never binds a real socket. The store points at a temp path so each test is
@@ -16,8 +16,8 @@ from fastapi.testclient import TestClient
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2 as ts
 from opentelemetry.proto.common.v1 import common_pb2 as c
 
-from rewind.receiver import create_app
-from rewind.storage import TraceStore
+from agent_timetravel.receiver import create_app
+from agent_timetravel.storage import TraceStore
 
 _TRACE_ID = bytes.fromhex("abcdef1234567890abcdef1234567890")
 _SPAN_ID = bytes.fromhex("1111111111111111")
@@ -94,7 +94,7 @@ class TestProtoIngest:
             headers={"content-type": _PROTO_CONTENT_TYPE},
         )
         assert resp.status_code == 200
-        assert resp.headers["x-rewind-spans-accepted"] == "1"
+        assert resp.headers["x-timetravel-spans-accepted"] == "1"
 
         # Round-trip through the store the server actually used.
         store: TraceStore = client.app.state.store  # type: ignore[attr-defined]
@@ -113,7 +113,7 @@ class TestProtoIngest:
             headers={"content-type": _PROTO_CONTENT_TYPE},
         )
         assert resp.status_code == 200
-        assert resp.headers["x-rewind-spans-accepted"] == "0"
+        assert resp.headers["x-timetravel-spans-accepted"] == "0"
 
     def test_multi_span_request_persists_one_trace_many_spans(
         self, client: TestClient
@@ -135,7 +135,7 @@ class TestProtoIngest:
             headers={"content-type": _PROTO_CONTENT_TYPE},
         )
         assert resp.status_code == 200
-        assert resp.headers["x-rewind-spans-accepted"] == "3"
+        assert resp.headers["x-timetravel-spans-accepted"] == "3"
 
         store: TraceStore = client.app.state.store  # type: ignore[attr-defined]
         # Exactly one trace row, three spans.
@@ -177,7 +177,7 @@ class TestContentTypeNegotiation:
             headers={"content-type": "application/json"},
         )
         assert resp.status_code == 200
-        assert resp.headers["x-rewind-spans-accepted"] == "1"
+        assert resp.headers["x-timetravel-spans-accepted"] == "1"
 
 
 class TestSecurityPosture:

@@ -1,4 +1,4 @@
-# Demo Run — Rewind × Deep Research (live, with Unsloth)
+# Demo Run — TimeTravel × Deep Research (live, with Unsloth)
 
 > The end-to-end live demo: capture a real deep-research agent run, branch it
 > from any span, and watch the divergent tail go live — all against a local
@@ -15,8 +15,8 @@ served by Unsloth Studio, in the browser.
 | Component | Purpose | How to check |
 |---|---|---|
 | **Unsloth Studio** serving a model | The LLM backend | `curl localhost:8888/v1/models` → lists a model |
-| **Rewind receiver** (`rewind serve`) | Ingests spans into SQLite | `curl localhost:4318/healthz` → `200` |
-| **The web-demo** (`rewind/web-demo/`) | The polished Next.js UI | `curl localhost:3000` → `200` |
+| **TimeTravel receiver** (`timetravel serve`) | Ingests spans into SQLite | `curl localhost:4318/healthz` → `200` |
+| **The web-demo** (`timetravel/web-demo/`) | The polished Next.js UI | `curl localhost:3000` → `200` |
 
 All three run on your machine. Nothing leaves localhost.
 
@@ -40,33 +40,33 @@ curl http://localhost:8888/v1/models \
 
 ---
 
-## 2. Start the Rewind receiver
+## 2. Start the TimeTravel receiver
 
-Captures every LLM span into `~/.rewind/rewind.db` (the Python engine's store):
+Captures every LLM span into `~/.timetravel/timetravel.db` (the Python engine's store):
 
 ```bash
-# from rewind/
+# from timetravel/
 source /Users/akshaymp/Projects/Agentic_AI/.venv/bin/activate
-rewind serve --port 4318 --db /tmp/rewind-demo.db
+timetravel serve --port 4318 --db /tmp/timetravel-demo.db
 ```
 
 Confirm: `curl localhost:4318/healthz` → `200`.
 
 > The web-demo mirrors each span here too, so you can inspect the same run in
-> both the polished Next.js UI **and** `rewind ui` (the Python timeline).
+> both the polished Next.js UI **and** `timetravel ui` (the Python timeline).
 
 ---
 
 ## 3. Configure + start the web-demo UI
 
 ```bash
-cd rewind/web-demo/
+cd timetravel/web-demo/
 
 # Point the agent at your Unsloth server.
 cat > .env.local <<'EOF'
 OPENAI_BASE_URL=http://localhost:8888/v1
 OPENAI_API_KEY=<your-unsloth-api-key>
-REWIND_MODEL=unsloth/Qwen3.6-27B-MTP-GGUF
+TIMETRAVEL_MODEL=unsloth/Qwen3.6-27B-MTP-GGUF
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 EOF
 
@@ -85,7 +85,7 @@ Open **http://localhost:3000** in your browser.
 > prompts and has no multi-user authentication.
 
 > **Works with Ollama too** — just change `OPENAI_BASE_URL=http://localhost:11434/v1`
-> and `REWIND_MODEL=qwen3:32b`. No code changes.
+> and `TIMETRAVEL_MODEL=qwen3:32b`. No code changes.
 
 ---
 
@@ -105,11 +105,11 @@ When it finishes you'll see the full research report in the last span.
 
 ---
 
-## 5. Step down through the recording (the "rewind")
+## 5. Step down through the recording (the "timetravel")
 
 Use the **◀ ▶** buttons (top bar) to walk the span timeline:
 
-- **Step down ◀** — move to an earlier span (rewind).
+- **Step down ◀** — move to an earlier span (timetravel).
 - **Step up ▶** — move forward.
 
 The right panel shows the **system prompt**, **user input**, and **output**
@@ -144,25 +144,25 @@ What happens:
    - **identical** (green) or **diverged** (fuchsia) badge
    - a **token-level output diff** — green additions, red strikethrough removals
    - the **system-prompt diff** if you changed it
-3. The **first divergence index** is flagged — this is Rewind's headline metric:
+3. The **first divergence index** is flagged — this is TimeTravel's headline metric:
    *"exactly which span first diverged."*
 
 ---
 
 ## 8. Inspect in the Python timeline (optional)
 
-Because the web-demo mirrors spans to the Rewind receiver, the same run is
+Because the web-demo mirrors spans to the TimeTravel receiver, the same run is
 queryable by the Python engine:
 
 ```bash
-rewind ui --port 8484 --db /tmp/rewind-demo.db
+timetravel ui --port 8484 --db /tmp/timetravel-demo.db
 # → http://127.0.0.1:8484/ui/
 ```
 
 Or query the DB directly:
 
 ```bash
-sqlite3 /tmp/rewind-demo.db \
+sqlite3 /tmp/timetravel-demo.db \
   "SELECT substr(trace_id,1,8), kind, substr(name,1,28) FROM spans ORDER BY start_time;"
 ```
 
@@ -173,9 +173,9 @@ sqlite3 /tmp/rewind-demo.db \
 | Symptom | Fix |
 |---|---|
 | `Capture trace` spins forever | Restart the loopback-bound dev server with `./node_modules/.bin/next dev -H 127.0.0.1 -p 3000`. |
-| Spans don't appear in `rewind ui` | The web-demo's mirror is best-effort; confirm `rewind serve` is on 4318. The web-demo UI still works without it. |
+| Spans don't appear in `timetravel ui` | The web-demo's mirror is best-effort; confirm `timetravel serve` is on 4318. The web-demo UI still works without it. |
 | Model returns `<think>...` blocks | The agent disables thinking via `chat_template_kwargs`. If your server doesn't support it, switch to a non-thinking model. |
-| `address already in use` on 3000/4318/8888 | Another instance is running. `pkill -fl "next dev\|rewind serve"` and retry. |
+| `address already in use` on 3000/4318/8888 | Another instance is running. `pkill -fl "next dev\|timetravel serve"` and retry. |
 | `jsonschema-rs` build error on Python 3.14 | That's the `deep_research.py` (ODR) path, not this demo. The web-demo uses the OpenAI SDK directly and has no such dependency. |
 
 ---
@@ -184,9 +184,9 @@ sqlite3 /tmp/rewind-demo.db \
 
 | Path | Role |
 |---|---|
-| `rewind/web-demo/` | The Next.js UI (this demo's frontend). |
-| `rewind/web-demo/src/lib/deep-research/agent.ts` | The 8-step agent; calls your model via the OpenAI SDK. |
-| `rewind/web-demo/src/lib/rewind/{store,diff,types}.ts` | Client-side trace/branch state + diff engine. |
-| `rewind/web-demo/src/app/api/rewind/{run,branch}/route.ts` | Capture + branch API endpoints. |
-| `rewind/examples/deep_research_demo.py` | A **Python** equivalent of the same demo (CLI, three-phase) — useful for headless/CI. |
-| `rewind/examples/deep_research.py` | A heavier variant using the full `open_deep_research` LangGraph graph (see its README for the Python-3.14 caveat). |
+| `timetravel/web-demo/` | The Next.js UI (this demo's frontend). |
+| `timetravel/web-demo/src/lib/deep-research/agent.ts` | The 8-step agent; calls your model via the OpenAI SDK. |
+| `timetravel/web-demo/src/lib/timetravel/{store,diff,types}.ts` | Client-side trace/branch state + diff engine. |
+| `timetravel/web-demo/src/app/api/timetravel/{run,branch}/route.ts` | Capture + branch API endpoints. |
+| `timetravel/examples/deep_research_demo.py` | A **Python** equivalent of the same demo (CLI, three-phase) — useful for headless/CI. |
+| `timetravel/examples/deep_research.py` | A heavier variant using the full `open_deep_research` LangGraph graph (see its README for the Python-3.14 caveat). |

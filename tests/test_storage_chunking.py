@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from rewind.enums import SpanKind
-from rewind.models import Span, Trace
-from rewind.storage import TraceStore
+from agent_timetravel.enums import SpanKind
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.storage import TraceStore
 
 
 @pytest.fixture

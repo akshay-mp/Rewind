@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Demo 2 — retrieval-augmented chat loop captured by Rewind.
+"""Demo 2 — retrieval-augmented chat loop captured by TimeTravel.
 
 Pattern:
     user asks
@@ -16,7 +16,7 @@ branch from the retrieved-docs span, swap the retriever, re-run.
 
 Run::
 
-    rewind serve
+    timetravel serve
     python examples/rag_loop.py
 """
 
@@ -33,8 +33,8 @@ os.environ.setdefault("OTEL_BSP_SCHEDULE_DELAY", "100")
 # Tiny in-memory "knowledge base" — enough to exercise the retriever + the
 # LLM context-builder with something more interesting than fixed strings.
 KNOWLEDGE_BASE: list[dict[str, str]] = [
-    {"id": "doc-1", "text": "Rewind is time-travel debugging for AI agents."},
-    {"id": "doc-2", "text": "Rewind ingests OTLP/HTTP traces via a local receiver."},
+    {"id": "doc-1", "text": "TimeTravel is time-travel debugging for AI agents."},
+    {"id": "doc-2", "text": "TimeTravel ingests OTLP/HTTP traces via a local receiver."},
     {"id": "doc-3", "text": "Branching a trace lets you re-run with a changed prompt."},
     {"id": "doc-4", "text": "Diffing two branches shows exactly where they diverged."},
     {"id": "doc-5", "text": "Phase 5.5 added parallel eval suite scoring."},
@@ -99,7 +99,7 @@ def main() -> int:
     OpenAIInstrumentor().instrument()
 
     conversation: list[dict[str, Any]] = []
-    run_turn(conversation, "What is Rewind?")
+    run_turn(conversation, "What is TimeTravel?")
     run_turn(conversation, "How do I branch a trace?")
 
     print("Trace shipped. Open http://127.0.0.1:8484/ui/ to inspect.")

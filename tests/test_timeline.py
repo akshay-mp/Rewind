@@ -1,4 +1,4 @@
-"""Unit tests for ``rewind.timeline`` — the Phase 2 read-only API.
+"""Unit tests for ``timetravel.timeline`` — the Phase 2 read-only API.
 
 We exercise the full surface of ``mount_timeline`` through FastAPI's
 ``TestClient``: list traces, fetch a trace, list spans with filters, search,
@@ -21,10 +21,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Span, Trace
-from rewind.storage import TraceStore
-from rewind.timeline import mount_timeline
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.timeline import mount_timeline
 
 # --- shared helpers --------------------------------------------------------
 
@@ -315,30 +315,30 @@ class TestSpanFilters:
         assert resp.status_code == 404
 
 
-# --- GET /api/v1/spans/{rewind_id} ----------------------------------------
+# --- GET /api/v1/spans/{timetravel_id} ----------------------------------------
 
 
 class TestGetSpan:
-    """``GET /api/v1/spans/{rewind_id}`` — single-span lookup."""
+    """``GET /api/v1/spans/{timetravel_id}`` — single-span lookup."""
 
     def test_fetch_known_span(self, client: TestClient) -> None:
-        # First fetch the trace to discover a rewind_id.
+        # First fetch the trace to discover a timetravel_id.
         detail = client.get(f"/api/v1/traces/{_TRACE_ID}").json()
         target = next(s for s in detail["spans"] if s["kind"] == "gen_ai.tool")
-        rewind_id = target["rewind_id"]
+        timetravel_id = target["timetravel_id"]
 
-        resp = client.get(f"/api/v1/spans/{rewind_id}")
+        resp = client.get(f"/api/v1/spans/{timetravel_id}")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["rewind_id"] == rewind_id
+        assert body["timetravel_id"] == timetravel_id
         assert body["name"] == "tool.search_products"
 
-    def test_unknown_rewind_id_404(self, client: TestClient) -> None:
+    def test_unknown_timetravel_id_404(self, client: TestClient) -> None:
         bogus = UUID(int=0)
         resp = client.get(f"/api/v1/spans/{bogus}")
         assert resp.status_code == 404
 
-    def test_malformed_rewind_id_422(self, client: TestClient) -> None:
+    def test_malformed_timetravel_id_422(self, client: TestClient) -> None:
         resp = client.get("/api/v1/spans/not-a-uuid")
         assert resp.status_code == 422
 

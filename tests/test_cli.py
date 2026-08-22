@@ -1,4 +1,4 @@
-"""Tests for the CLI: ``python -m rewind --version`` runs (Phase 0)."""
+"""Tests for the CLI: ``python -m timetravel --version`` runs (Phase 0)."""
 
 from __future__ import annotations
 
@@ -9,30 +9,30 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-import rewind
-from rewind.cli import cli
+import agent_timetravel as timetravel
+from agent_timetravel.cli import cli
 
 
 def test_version_constant_matches_module() -> None:
     project_file = Path(__file__).resolve().parents[1] / "pyproject.toml"
     with project_file.open("rb") as file:
         project_version = tomllib.load(file)["project"]["version"]
-    assert rewind.__version__ == project_version
+    assert timetravel.__version__ == project_version
 
 
-def test_python_m_rewind_version() -> None:
-    """Phase 0 exit criterion: ``python -m rewind --version`` runs."""
+def test_python_m_timetravel_version() -> None:
+    """Phase 0 exit criterion: ``python -m timetravel --version`` runs."""
     proc = subprocess.run(
-        [sys.executable, "-m", "rewind", "--version"],
+        [sys.executable, "-m", "agent_timetravel", "--version"],
         capture_output=True,
         text=True,
         check=True,
     )
-    assert rewind.__version__ in (proc.stdout + proc.stderr)
+    assert timetravel.__version__ in (proc.stdout + proc.stderr)
 
 
 def test_serve_is_registered_subcommand() -> None:
-    """Phase 1: ``rewind serve`` is wired up and accepts --host/--port/--db."""
+    """Phase 1: ``timetravel serve`` is wired up and accepts --host/--port/--db."""
     runner = CliRunner()
     result = runner.invoke(cli, ["serve", "--help"])
     assert result.exit_code == 0
@@ -51,7 +51,7 @@ def test_serve_help_advertises_default_port() -> None:
 
 
 def test_ui_is_registered_subcommand() -> None:
-    """Phase 2: ``rewind ui`` is wired up and accepts --host/--port/--db."""
+    """Phase 2: ``timetravel ui`` is wired up and accepts --host/--port/--db."""
     runner = CliRunner()
     result = runner.invoke(cli, ["ui", "--help"])
     assert result.exit_code == 0
@@ -80,7 +80,7 @@ def test_ui_default_host_is_loopback() -> None:
 
 
 def test_regression_group_registered() -> None:
-    """``rewind regression`` is a registered subcommand group."""
+    """``timetravel regression`` is a registered subcommand group."""
     runner = CliRunner()
     result = runner.invoke(cli, ["regression", "--help"])
     assert result.exit_code == 0
@@ -93,9 +93,9 @@ def test_regression_create_and_run(tmp_path: object) -> None:
     """End-to-end: create a case from a seeded trace, then run it (exit 0)."""
     from pathlib import Path
 
-    from rewind.enums import SpanKind, SpanStatus
-    from rewind.models import Span, Trace
-    from rewind.storage import TraceStore
+    from agent_timetravel.enums import SpanKind, SpanStatus
+    from agent_timetravel.models import Span, Trace
+    from agent_timetravel.storage import TraceStore
 
     db = Path(str(tmp_path)) / "regression_cli.db"
     store = TraceStore(str(db))
@@ -141,12 +141,12 @@ def test_regression_create_and_run(tmp_path: object) -> None:
 
 
 def test_regression_run_exits_1_on_failure(tmp_path: object) -> None:
-    """A failing case causes ``rewind regression run`` to exit 1."""
+    """A failing case causes ``timetravel regression run`` to exit 1."""
     from pathlib import Path
 
-    from rewind.enums import SpanKind, SpanStatus
-    from rewind.models import Span, Trace
-    from rewind.storage import TraceStore
+    from agent_timetravel.enums import SpanKind, SpanStatus
+    from agent_timetravel.models import Span, Trace
+    from agent_timetravel.storage import TraceStore
 
     db = Path(str(tmp_path)) / "regression_fail.db"
     store = TraceStore(str(db))
@@ -180,7 +180,7 @@ def test_regression_run_exits_1_on_failure(tmp_path: object) -> None:
 
 
 def test_regression_list_empty(tmp_path: object) -> None:
-    """``rewind regression list`` on an empty DB prints a placeholder."""
+    """``timetravel regression list`` on an empty DB prints a placeholder."""
     from pathlib import Path
 
     runner = CliRunner()

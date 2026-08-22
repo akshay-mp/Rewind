@@ -1,15 +1,15 @@
-%% Rewind — Phase 0 Architecture (Foundation & OTel data model)
+%% TimeTravel — Phase 0 Architecture (Foundation & OTel data model)
 %% Scope: this diagram covers ONLY what Phase 0 delivers — the data model,
 %% SQLite storage, classifier, and CLI scaffold. Capture (OTLP receiver),
 %% replay engine, and UI are shown faded as future boundaries.
 flowchart TB
     subgraph P0["PHASE 0 — Foundation (delivered)"]
-        CLI["rewind CLI<br/>(click)<br/>── version ──"]
+        CLI["timetravel CLI<br/>(click)<br/>── version ──"]
         Model["Domain Models<br/>models.py<br/>Span · Trace · Branch"]
         Enums["enums.py<br/>SpanKind · ReplayMode · SpanStatus"]
         Classify["classify.py<br/>GenAI semconv → SpanKind"]
         Store["TraceStore<br/>storage.py<br/>SQLite + WAL"]
-        DB[("rewind.db<br/>WAL mode<br/>traces · branches · spans<br/>raw_attributes JSON")]
+        DB[("agent_timetravel.db<br/>WAL mode<br/>traces · branches · spans<br/>raw_attributes JSON")]
     end
 
     subgraph FUTURE1["Future: Phase 1 (capture boundary)"]

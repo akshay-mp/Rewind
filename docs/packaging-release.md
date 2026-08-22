@@ -1,8 +1,8 @@
 # Packaging and Release
 
-Rewind publishes a Python wheel and source distribution. The wheel contains
-the production Vite build under `rewind/_ui`, so `pip install rewind-debugger` is
-enough to run `rewind ui`. A checkout still falls back to `web/dist` for local
+TimeTravel publishes a Python wheel and source distribution. The wheel contains
+the production Vite build under `timetravel/_ui`, so `pip install agent-timetravel` is
+enough to run `timetravel ui`. A checkout still falls back to `web/dist` for local
 development.
 
 ## Build locally
@@ -18,7 +18,7 @@ For an application-managed install, pin the published distribution in its
 `requirements.txt`:
 
 ```text
-rewind-debugger==0.1.2
+agent-timetravel==0.1.2
 ```
 
 Then install the application requirements with:
@@ -27,19 +27,19 @@ Then install the application requirements with:
 python -m pip install -r requirements.txt
 ```
 
-The distribution name is `rewind-debugger`, but the Python import package and
-public API remain `rewind`:
+The distribution name is `agent-timetravel`, but the Python import package and
+public API remain `timetravel`:
 
 ```python
-from rewind import Rewind, RewindContext, rewind
+from agent_timetravel import TimeTravel, TimeTravelContext, timetravel
 ```
 
-The `rewind` CLI and the `rewind` decorator object are unchanged. Optional
+The `timetravel` CLI and the `timetravel` decorator object are unchanged. Optional
 framework support is installed with an extra, for example
-`rewind-debugger[adk]`.
+`agent-timetravel[adk]`.
 
 The smoke test builds both artifacts, checks that the wheel contains
-`rewind/_ui` and the sdist contains `web/dist`, rejects environment files,
+`timetravel/_ui` and the sdist contains `web/dist`, rejects environment files,
 builds a wheel from the sdist, and runs the installed wheel from an isolated
 temporary directory. It verifies package import, CLI help, and `/ui/` without
 using the checkout's `web/dist`.
@@ -60,15 +60,15 @@ name immediately because PyPI and TestPyPI availability can change.
 
    | Environment | URL | Use |
    |---|---|---|
-   | `pypi` | `https://pypi.org/p/rewind-debugger` | Production release; add required reviewers if desired. |
-   | `testpypi` | `https://test.pypi.org/p/rewind-debugger` | Manual pre-release verification. |
+   | `pypi` | `https://pypi.org/p/agent-timetravel` | Production release; add required reviewers if desired. |
+   | `testpypi` | `https://test.pypi.org/p/agent-timetravel` | Manual pre-release verification. |
 
 2. On PyPI, open <https://pypi.org/manage/account/publishing/> and add a
    **pending publisher** with exactly:
 
-   - PyPI project name: `rewind-debugger`
+   - PyPI project name: `agent-timetravel`
    - GitHub owner: `akshay-mp`
-   - GitHub repository: `Rewind`
+   - GitHub repository: `TimeTravel`
    - Workflow filename: `release.yml`
    - Environment name: `pypi`
 
@@ -109,14 +109,14 @@ dependencies, so keep PyPI as the extra index:
 
 ```bash
 RELEASE_VERSION=0.1.2  # Set this to project.version before each release.
-python -m venv /tmp/rewind-testpypi-verify
-/tmp/rewind-testpypi-verify/bin/python -m pip install \
+python -m venv /tmp/timetravel-testpypi-verify
+/tmp/timetravel-testpypi-verify/bin/python -m pip install \
   --index-url https://test.pypi.org/simple/ \
   --extra-index-url https://pypi.org/simple \
-  "rewind-debugger==${RELEASE_VERSION}"
-/tmp/rewind-testpypi-verify/bin/python -c \
-  "from importlib.metadata import version; from rewind import Rewind, RewindContext, rewind; assert version('rewind-debugger') == '${RELEASE_VERSION}'; print('TestPyPI import ok')"
-/tmp/rewind-testpypi-verify/bin/rewind --version
+  "agent-timetravel==${RELEASE_VERSION}"
+/tmp/timetravel-testpypi-verify/bin/python -c \
+  "from importlib.metadata import version; from agent_timetravel import TimeTravel, TimeTravelContext, timetravel; assert version('agent-timetravel') == '${RELEASE_VERSION}'; print('TestPyPI import ok')"
+/tmp/timetravel-testpypi-verify/bin/timetravel --version
 ```
 
 This is a manual post-publish check only; the workflow does not automate a

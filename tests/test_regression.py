@@ -4,8 +4,8 @@ Covers:
 
 * ``run_frozen_verification`` — the deterministic frozen-replay core.
 * Storage CRUD for ``regression_cases`` + ``regression_runs``.
-* The regression-case + run HTTP endpoints in :mod:`rewind.eval_api`.
-* :class:`rewind.suite_runner.SuiteRunner` — concurrent execution + progress.
+* The regression-case + run HTTP endpoints in :mod:`timetravel.eval_api`.
+* :class:`timetravel.suite_runner.SuiteRunner` — concurrent execution + progress.
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.eval_api import mount_eval
-from rewind.evaluate import run_frozen_verification
-from rewind.models import Span, Trace, hash_payload
-from rewind.storage import TraceStore
-from rewind.suite_runner import SuiteRunner
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.eval_api import mount_eval
+from agent_timetravel.evaluate import run_frozen_verification
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.suite_runner import SuiteRunner
 
 _TRACE_ID = "b" * 32
 
@@ -377,7 +377,7 @@ class TestRegressionEndpoints:
     def test_run_case_resolves_registered_factory(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from rewind import eval_api
+        from agent_timetravel import eval_api
 
         factory_ref = "test-regression-factory"
 
@@ -408,7 +408,7 @@ class TestRegressionEndpoints:
     def test_run_case_factory_error_persists_generic_failure(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from rewind import eval_api
+        from agent_timetravel import eval_api
 
         canary = "factory-secret-should-not-leak-http"
         factory_ref = "test-regression-raising-factory"
@@ -621,7 +621,7 @@ class TestSuiteRunner:
         store: TraceStore,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from rewind import suite_runner
+        from agent_timetravel import suite_runner
 
         canary = "unexpected-task-secret-should-not-leak"
 

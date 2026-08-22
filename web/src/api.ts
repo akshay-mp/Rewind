@@ -108,8 +108,8 @@ export const api = {
     return getJson<TraceDetail>(`/api/v1/traces/${encodeURIComponent(traceId)}`);
   },
 
-  getSpan(rewindId: string): Promise<SpanView> {
-    return getJson<SpanView>(`/api/v1/spans/${encodeURIComponent(rewindId)}`);
+  getSpan(timetravelId: string): Promise<SpanView> {
+    return getJson<SpanView>(`/api/v1/spans/${encodeURIComponent(timetravelId)}`);
   },
 
   search(
@@ -151,10 +151,10 @@ export const api = {
     );
   },
 
-  messageDiff(rewindId: string, otherRewindId: string): Promise<MessageDiffView> {
-    const qs = new URLSearchParams({ other: otherRewindId });
+  messageDiff(timetravelId: string, otherTimeTravelId: string): Promise<MessageDiffView> {
+    const qs = new URLSearchParams({ other: otherTimeTravelId });
     return getJson<MessageDiffView>(
-      `/api/v1/spans/${encodeURIComponent(rewindId)}/message-diff?${qs.toString()}`,
+      `/api/v1/spans/${encodeURIComponent(timetravelId)}/message-diff?${qs.toString()}`,
     );
   },
 

@@ -5,7 +5,7 @@ flowchart TB
     subgraph P2Delivered["Phase 2 — delivered (green)"]
         direction TB
         subgraph WritePlane["Same-origin write plane (carried over)"]
-            CLI["rewind ui<br/>--port 8484 (default)"]
+            CLI["timetravel ui<br/>--port 8484 (default)"]
             Receiver["FastAPI receiver<br/>POST /v1/traces, GET /healthz"]
             Ingest["ingest.py"]
             StoreW["TraceStore<br/>SQLite + WAL"]
@@ -18,7 +18,7 @@ flowchart TB
             Mount["_mount_ui<br/>StaticFiles /ui → web/dist"]
             Dist["web/dist/<br/>index.html + assets<br/>(Vite build, base=/ui/)"]
         end
-        DB[("rewind.db<br/>WAL mode")]
+        DB[("agent_timetravel.db<br/>WAL mode")]
     end
 
     subgraph P2Future["Future (faded)"]
@@ -37,7 +37,7 @@ flowchart TB
     OTLP -->|HTTP POST /v1/traces| Receiver
 
     %% Read path (new)
-    Browser -->|GET /api/v1/traces<br/>GET /api/v1/traces/{id}<br/>GET /api/v1/traces/{id}/spans<br/>GET /api/v1/spans/{rewind_id}<br/>GET /api/v1/search| Timeline
+    Browser -->|GET /api/v1/traces<br/>GET /api/v1/traces/{id}<br/>GET /api/v1/traces/{id}/spans<br/>GET /api/v1/spans/{timetravel_id}<br/>GET /api/v1/search| Timeline
 
     %% UI plane
     Browser -->|GET /ui/<br/>GET /ui/assets/*| Mount

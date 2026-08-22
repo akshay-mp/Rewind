@@ -4,7 +4,7 @@ sequenceDiagram
     participant T as Timeline.tsx
     participant API as FastAPI timeline.py
     participant TS as TraceStore
-    participant DB as SQLite (rewind.db)
+    participant DB as SQLite (timetravel.db)
 
     Note over U,DB: Phase 5 branch creation: fork modal → POST /branches → new row in branches table.
 

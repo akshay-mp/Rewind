@@ -24,7 +24,7 @@ flowchart TB
         subgraph Deps["pyproject wiring (NEW)"
             extras["[project.optional-dependencies]<br/>adk · crewai · pydantic-ai · smolagents · adapters"]
             mypyOvr["[[tool.mypy.overrides]]<br/>ignore_missing_imports=true<br/>google.adk.* · crewai.* · pydantic_ai.* · smolagents.*"]
-            pylintGlob["[tool.pylint.'src/rewind/adapters/**']<br/>disable protected-access<br/>import-outside-toplevel · too-many-*"]
+            pylintGlob["[tool.pylint.'src/timetravel/adapters/**']<br/>disable protected-access<br/>import-outside-toplevel · too-many-*"]
         end
     end
 
@@ -38,10 +38,10 @@ flowchart TB
 
     subgraph Frameworks["Underlying agent frameworks (NOT installed by default)"]
         direction LR
-        googleADK[("google-adk<br/>pip install rewind-debugger[adk]")]
-        crewaiPkg[("crewai<br/>pip install rewind-debugger[crewai]")]
-        pydanticAIPkg[("pydantic-ai<br/>pip install rewind-debugger[pydantic-ai]")]
-        smolagentsPkg[("smolagents<br/>pip install rewind-debugger[smolagents]")]
+        googleADK[("google-adk<br/>pip install agent-timetravel[adk]")]
+        crewaiPkg[("crewai<br/>pip install agent-timetravel[crewai]")]
+        pydanticAIPkg[("pydantic-ai<br/>pip install agent-timetravel[pydantic-ai]")]
+        smolagentsPkg[("smolagents<br/>pip install agent-timetravel[smolagents]")]
         langchainPkg[("langchain-core<br/>already required by Phase 3")]
     end
 

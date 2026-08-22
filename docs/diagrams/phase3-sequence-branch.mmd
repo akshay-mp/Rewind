@@ -1,13 +1,13 @@
 sequenceDiagram
     autonumber
     participant U as User or eval harness
-    participant CLI as rewind replay CLI
+    participant CLI as timetravel replay CLI
     participant Ctx as for_root contextmanager
     participant Session as ReplaySession branch
     participant A as Agent code
     participant P as openai_intercept.patch
-    participant T as @rewind.tool wrapper
-    participant DB as rewind.db
+    participant T as @timetravel.tool wrapper
+    participant DB as timetravel.db
 
     Note over U,DB: Setup: caller requests mode BRANCH with branch_at N.
 

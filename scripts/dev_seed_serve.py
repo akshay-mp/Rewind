@@ -27,22 +27,22 @@ sys.path.insert(0, os.path.join(_ROOT, "src"))
 
 import uvicorn  # noqa: E402
 
-from rewind.enums import (  # noqa: E402
+from agent_timetravel.enums import (  # noqa: E402
     CandidateMode,
     EvaluatorKind,
     SpanKind,
     SpanStatus,
 )
-from rewind.evaluate import (  # noqa: E402
+from agent_timetravel.evaluate import (  # noqa: E402
     EvalScenario,
     EvalSuite,
     EvaluatorRequest,
     TokenBudgetExpectation,
     evaluate,
 )
-from rewind.models import Branch, Span, Trace  # noqa: E402
-from rewind.receiver import create_app  # noqa: E402
-from rewind.storage import TraceStore  # noqa: E402
+from agent_timetravel.models import Branch, Span, Trace  # noqa: E402
+from agent_timetravel.receiver import create_app  # noqa: E402
+from agent_timetravel.storage import TraceStore  # noqa: E402
 
 
 def _seed(store: TraceStore) -> str:

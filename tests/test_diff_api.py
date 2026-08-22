@@ -1,14 +1,14 @@
 """Unit tests for the Phase 5 HTTP API surface.
 
-These cover the four new endpoints mounted by :mod:`rewind.timeline`:
+These cover the four new endpoints mounted by :mod:`timetravel.timeline`:
 
 * ``GET  /api/v1/traces/{trace_id}/branches``       — branch tree.
 * ``GET  /api/v1/traces/{trace_id}/diff``           — span-sequence diff.
-* ``GET  /api/v1/spans/{rewind_id}/message-diff``   — token-level message diff.
+* ``GET  /api/v1/spans/{timetravel_id}/message-diff``   — token-level message diff.
 * ``POST /api/v1/traces/{trace_id}/branches``       — create a branch.
 
 The tests use Starlette's :class:`TestClient` against the production
-:func:`rewind.receiver.create_app` factory — no subprocess, no socket, no
+:func:`timetravel.receiver.create_app` factory — no subprocess, no socket, no
 network. The store is a real SQLite file on tmp_path so the assertions
 exercise the full request → store → response pipeline.
 
@@ -25,10 +25,10 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Branch, Span, Trace
-from rewind.receiver import create_app
-from rewind.storage import TraceStore
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import Branch, Span, Trace
+from agent_timetravel.receiver import create_app
+from agent_timetravel.storage import TraceStore
 
 pytestmark = pytest.mark.integration
 
@@ -185,7 +185,7 @@ def _seed_trace_with_message_spans(
     )
     store.insert_span(left_span)
     store.insert_span(right_span)
-    return left_span.rewind_id, right_span.rewind_id
+    return left_span.timetravel_id, right_span.timetravel_id
 
 
 # ----------------------------------------------------------------------
@@ -280,7 +280,7 @@ def test_diff_branches_404_for_missing_branch(
 
 
 # ----------------------------------------------------------------------
-# GET /spans/{rewind_id}/message-diff?other=
+# GET /spans/{timetravel_id}/message-diff?other=
 # ----------------------------------------------------------------------
 
 
@@ -390,8 +390,8 @@ def test_message_diff_endpoint_handles_spans_without_response_payload(
     store.insert_span(right)
 
     resp = client.get(
-        f"/api/v1/spans/{left.rewind_id}/message-diff",
-        params={"other": str(right.rewind_id)},
+        f"/api/v1/spans/{left.timetravel_id}/message-diff",
+        params={"other": str(right.timetravel_id)},
     )
 
     assert resp.status_code == 200

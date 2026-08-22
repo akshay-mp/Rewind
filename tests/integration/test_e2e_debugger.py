@@ -18,13 +18,13 @@ from typing import Any
 
 import pytest
 
-from rewind import tool as rewind_tool
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace
-from rewind.replay import replay as replay_ctx
-from rewind.stepping import Decision, DecisionKind, ThreadBridgeChannel
-from rewind.storage import TraceStore
-from rewind.tool_intercept import _tool_args_hash
+from agent_timetravel import tool as timetravel_tool
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.replay import replay as replay_ctx
+from agent_timetravel.stepping import Decision, DecisionKind, ThreadBridgeChannel
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.tool_intercept import _tool_args_hash
 
 pytestmark = pytest.mark.integration
 
@@ -91,7 +91,7 @@ def test_approve_then_complete_flow(store: TraceStore) -> None:
     channel = ThreadBridgeChannel()
     args = ("query",)
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> dict[str, str]:
         raise AssertionError("cache hit should not run live")
 
@@ -104,12 +104,12 @@ def test_approve_then_complete_flow(store: TraceStore) -> None:
 
 def test_stop_terminates_flow(store: TraceStore) -> None:
     """STOP at the gate raises SteppingStopped (normal termination)."""
-    from rewind.stepping import SteppingStopped
+    from agent_timetravel.stepping import SteppingStopped
 
     channel = ThreadBridgeChannel()
     args = ("query",)
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> dict[str, str]:
         raise AssertionError("should not run on STOP")
 
@@ -124,7 +124,7 @@ def test_mock_flow(store: TraceStore) -> None:
     channel = ThreadBridgeChannel()
     args = ("query",)
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> dict[str, str]:
         raise AssertionError("mock should not run live")
 
@@ -141,7 +141,7 @@ def test_skip_flow(store: TraceStore) -> None:
     channel = ThreadBridgeChannel()
     args = ("query",)
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> dict[str, str]:
         raise AssertionError("skip should not run live")
 
@@ -149,7 +149,7 @@ def test_skip_flow(store: TraceStore) -> None:
         store, _TRACE_ID, mode=ReplayMode.INTERACTIVE, approval=channel
     ):
         result = search(*args)
-    assert result["rewind"] == "tool skipped"
+    assert result["timetravel"] == "tool skipped"
 
 
 def test_reject_flow(store: TraceStore) -> None:
@@ -157,7 +157,7 @@ def test_reject_flow(store: TraceStore) -> None:
     channel = ThreadBridgeChannel()
     args = ("query",)
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> dict[str, str]:
         raise AssertionError("reject should not run live")
 
@@ -165,7 +165,7 @@ def test_reject_flow(store: TraceStore) -> None:
         channel, [Decision(kind=DecisionKind.REJECT, reason="unsafe")]
     ), replay_ctx(store, _TRACE_ID, mode=ReplayMode.INTERACTIVE, approval=channel):
         result = search(*args)
-    assert result["rewind"] == "tool rejected"
+    assert result["timetravel"] == "tool rejected"
     assert result["reason"] == "unsafe"
 
 
@@ -174,7 +174,7 @@ def test_restart_from_edit_flow(store: TraceStore) -> None:
     channel = ThreadBridgeChannel()
     live_calls: list[str] = []
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> dict[str, str]:
         live_calls.append(query)
         return {"result": "live", "query": query}

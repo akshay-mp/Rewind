@@ -1,10 +1,10 @@
-# Rewind — End-to-End UI Feature Test Report
+# TimeTravel — End-to-End UI Feature Test Report
 
-> Manual E2E walkthrough of every Rewind timeline-UI feature, executed
+> Manual E2E walkthrough of every TimeTravel timeline-UI feature, executed
 > against the seeded dev store. Each step has a screenshot attached.
 
 - **Date:** 2026-07-01
-- **Build:** `rewind` v0.1.2 (Phases P0–P8 complete)
+- **Build:** `timetravel` v0.1.2 (Phases P0–P8 complete)
 - **Backend:** `scripts/dev_seed_serve.py` on `http://127.0.0.1:8484`
 - **Frontend:** `pnpm dev` Vite dev server on `http://127.0.0.1:5173/ui/`
 - **Seed data:** 1 trace (`dddd…00000001`) · 3 branches (`root`, `left-variant`, `right-variant`) · 2 eval runs (`golden` baseline + `candidate`)
@@ -322,15 +322,15 @@ scenario passes either budget).
 lsof -ti:8484 -ti:5173 | xargs kill -9 2>/dev/null
 
 # 2. Backend with seeded trace + 2 eval runs
-cd rewind
+cd timetravel
 .venv/bin/python scripts/dev_seed_serve.py          # → :8484
 
 # 3. Frontend dev server (separate terminal)
-cd rewind/web
+cd timetravel/web
 pnpm dev                                            # → http://127.0.0.1:5173/ui/
 
 # 4. Open the UI and follow Steps 1–15 above
 ```
 
-The seed script is idempotent — it deletes `/tmp/rewind-dev-seed.sqlite`
+The seed script is idempotent — it deletes `/tmp/timetravel-dev-seed.sqlite`
 on every start, so each run begins from a clean, known-good state.

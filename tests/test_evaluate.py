@@ -17,8 +17,8 @@ from uuid import uuid4
 
 import pytest
 
-from rewind.enums import CandidateMode, EvaluatorKind, EvalVerdict, SpanKind
-from rewind.evaluate import (
+from agent_timetravel.enums import CandidateMode, EvaluatorKind, EvalVerdict, SpanKind
+from agent_timetravel.evaluate import (
     ConsistencyExpectation,
     EvalScenario,
     EvalSuite,
@@ -47,10 +47,10 @@ from rewind.evaluate import (
     evaluate_token_budget,
     evaluate_tool_check,
 )
-from rewind.models import Span
+from agent_timetravel.models import Span
 
 if TYPE_CHECKING:
-    from rewind.storage import TraceStore
+    from agent_timetravel.storage import TraceStore
 
 
 # ----------------------------------------------------------------------
@@ -458,24 +458,24 @@ class TestSuiteValidation:
     """Exercises :func:`validate_suite` + the orchestrator's pre-flight."""
 
     def test_empty_suite_name_rejected(self) -> None:
-        from rewind.evaluate import validate_suite
+        from agent_timetravel.evaluate import validate_suite
 
         suite = _make_suite_with_name("")
         with pytest.raises(SuiteValidationError):
             validate_suite(suite)
 
     def test_empty_scenarios_rejected(self, tmp_path) -> None:
-        from rewind.storage import TraceStore
+        from agent_timetravel.storage import TraceStore
 
-        store = TraceStore(tmp_path / "rewind.db")
+        store = TraceStore(tmp_path / "agent_timetravel.db")
         suite = EvalSuite(name="x", scenarios=[])
         with pytest.raises(SuiteValidationError):
             asyncio.run(evaluate(suite, store=store))
 
     def test_scenario_without_evaluators_rejected(self, tmp_path) -> None:
-        from rewind.storage import TraceStore
+        from agent_timetravel.storage import TraceStore
 
-        store = TraceStore(tmp_path / "rewind.db")
+        store = TraceStore(tmp_path / "agent_timetravel.db")
         bad = EvalScenario(
             name="n",
             seed_trace_id="t" * 32,
@@ -518,7 +518,7 @@ class TestOrchestrator:
 
     def _seed_store(self, store: TraceStore, trace_id: str = "t" * 32) -> None:
         """Write a 3-span seed trace into the store."""
-        from rewind.models import Trace
+        from agent_timetravel.models import Trace
 
         spans = [_agent_span_trace(trace_id), _llm_span_trace(trace_id), _tool_span_trace(trace_id)]
         trace = Trace(trace_id=trace_id, spans=spans)
@@ -527,9 +527,9 @@ class TestOrchestrator:
             store.insert_span(s)
 
     def test_pure_evaluator_dispatch_passes(self, tmp_path) -> None:
-        from rewind.storage import TraceStore
+        from agent_timetravel.storage import TraceStore
 
-        store = TraceStore(tmp_path / "rewind.db")
+        store = TraceStore(tmp_path / "agent_timetravel.db")
         self._seed_store(store)
         suite = EvalSuite(
             name="ok",
@@ -555,9 +555,9 @@ class TestOrchestrator:
         assert result.scenarios[0].verdict == EvalVerdict.PASS
 
     def test_unknown_seed_trace_skips_scenario(self, tmp_path) -> None:
-        from rewind.storage import TraceStore
+        from agent_timetravel.storage import TraceStore
 
-        store = TraceStore(tmp_path / "rewind.db")
+        store = TraceStore(tmp_path / "agent_timetravel.db")
         # Don't seed — trace_id won't resolve; expect SKIP.
         suite = EvalSuite(
             name="miss",
@@ -584,9 +584,9 @@ class TestOrchestrator:
 
     def test_scenario_order_preserved(self, tmp_path) -> None:
         """Scenarios must come back in suite-order, not async-completion order."""
-        from rewind.storage import TraceStore
+        from agent_timetravel.storage import TraceStore
 
-        store = TraceStore(tmp_path / "rewind.db")
+        store = TraceStore(tmp_path / "agent_timetravel.db")
         self._seed_store(store)
         names = [f"s{i}" for i in range(6)]
         suite = EvalSuite(
@@ -613,9 +613,9 @@ class TestOrchestrator:
     def test_run_id_is_a_uuid(self, tmp_path) -> None:
         from uuid import UUID
 
-        from rewind.storage import TraceStore
+        from agent_timetravel.storage import TraceStore
 
-        store = TraceStore(tmp_path / "rewind.db")
+        store = TraceStore(tmp_path / "agent_timetravel.db")
         self._seed_store(store)
         suite = _make_suite_with_name("uuid-check")
         result = asyncio.run(evaluate(suite, store=store))
@@ -625,9 +625,9 @@ class TestOrchestrator:
 
     def test_concurrency_limit_is_respected(self, tmp_path) -> None:
         """Low concurrency shouldn't break the harness, only slow it."""
-        from rewind.storage import TraceStore
+        from agent_timetravel.storage import TraceStore
 
-        store = TraceStore(tmp_path / "rewind.db")
+        store = TraceStore(tmp_path / "agent_timetravel.db")
         self._seed_store(store)
         suite = EvalSuite(
             name="parallel",
@@ -663,7 +663,7 @@ class TestSerialization:
     """Round-trip the result dict helpers used for SQLite + API."""
 
     def test_evaluator_outcome_round_trip(self) -> None:
-        from rewind.evaluate import (
+        from agent_timetravel.evaluate import (
             _evaluator_outcome_from_dict,
             _evaluator_outcome_to_dict,
         )
@@ -681,7 +681,7 @@ class TestSerialization:
 
     def test_evaluator_outcome_rejects_skip_verdict(self) -> None:
         """Deserialization validates verdict is PASS/FAIL only."""
-        from rewind.evaluate import (
+        from agent_timetravel.evaluate import (
             _evaluator_outcome_from_dict,
             _evaluator_outcome_to_dict,
         )
@@ -698,7 +698,7 @@ class TestSerialization:
             _evaluator_outcome_from_dict(data)
 
     def test_scenario_result_round_trip(self) -> None:
-        from rewind.evaluate import scenario_result_from_dict, scenario_result_to_dict
+        from agent_timetravel.evaluate import scenario_result_from_dict, scenario_result_to_dict
 
         scen = ScenarioResult(
             name="s",
@@ -722,7 +722,7 @@ class TestSerialization:
         assert rt == scen
 
     def test_scenario_result_with_branch_id_none_round_trips(self) -> None:
-        from rewind.evaluate import scenario_result_from_dict, scenario_result_to_dict
+        from agent_timetravel.evaluate import scenario_result_from_dict, scenario_result_to_dict
 
         scen = ScenarioResult(
             name="s",

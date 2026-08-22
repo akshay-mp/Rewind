@@ -12,17 +12,17 @@ flowchart TB
             StoreW["TraceStore<br/>SQLite + WAL"]
         end
 
-        DB[("rewind.db<br/>traces, spans, branches")]
+        DB[("agent_timetravel.db<br/>traces, spans, branches")]
 
         subgraph ReplayPlane["Replay control plane (NEW)"]
-            CLI["rewind replay CLI<br/>--branch-at, --mode, --label"]
+            CLI["timetravel replay CLI<br/>--branch-at, --mode, --label"]
             Session["ReplaySession<br/>contextvars + cursor"]
             Branch["fork<br/>insert_branch + seed cache"]
         end
 
         subgraph InterceptPlane["Interception surfaces (3 adapters)"]
             Patch["openai_intercept.patch<br/>monkey-patch Completions.create"]
-            Tool["tool decorator<br/>@rewind.tool functools.wraps"]
+            Tool["tool decorator<br/>@timetravel.tool functools.wraps"]
             Adapter["adapters/langgraph.py<br/>_ReplayChatModel(BaseChatModel)"]
         end
     end
@@ -36,7 +36,7 @@ flowchart TB
         AgentCode["User agent code"]
         OpenAI["openai.resources.chat.completions"]
         LangGraph["langchain_core BaseChatModel"]
-        UserTool["user @rewind.tool fn"]
+        UserTool["user @timetravel.tool fn"]
     end
 
     %% Capture path (carried over)
@@ -56,9 +56,9 @@ flowchart TB
     Session -.active_session.-> Adapter
 
     %% Adapter reach into agent runtime symbols
-    Patch -->|__rewind_patched__| OpenAI
+    Patch -->|__timetravel_patched__| OpenAI
     Adapter -->|replay_chat_model wrapped| LangGraph
-    Tool -->|@rewind.tool wraps user fn| UserTool
+    Tool -->|@timetravel.tool wraps user fn| UserTool
 
     %% replay provenance
     Session -.reads recorded spans.-> DB

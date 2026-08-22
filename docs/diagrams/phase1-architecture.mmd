@@ -1,14 +1,14 @@
 flowchart TB
     %% Phase 1 architecture: OTLP/HTTP ingestion surface
-    %% Reading order top→bottom = agent exports → Rewind persists.
+    %% Reading order top→bottom = agent exports → TimeTravel persists.
 
     subgraph P1Delivered["Phase 1 — delivered (green)"]
-        CLI["rewind serve<br/>--port 4318 --db rewind.db"]
+        CLI["timetravel serve<br/>--port 4318 --db timetravel.db"]
         Receiver["FastAPI receiver<br/>POST /v1/traces, GET /healthz"]
         Ingest["ingest.py<br/>pure proto → Span decoder"]
         Classify["classify_span<br/>(existing, Phase 0)"]
         Store["TraceStore<br/>SQLite + WAL"]
-        DB[("rewind.db<br/>WAL mode")]
+        DB[("agent_timetravel.db<br/>WAL mode")]
     end
 
     subgraph P1Future["Future (faded)"]

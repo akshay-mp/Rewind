@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and smoke-test Rewind's distributable artifacts.
+"""Build and smoke-test Agent Timetravel's distributable artifacts.
 
 The smoke test deliberately runs the installed wheel outside the repository so
 the UI check cannot accidentally use ``web/dist`` from the checkout.
@@ -60,8 +60,10 @@ def _archive_has_excluded_local_path(name: str) -> bool:
 def _wheel_members(wheel: Path) -> list[str]:
     with zipfile.ZipFile(wheel) as archive:
         members = archive.namelist()
-    assert "rewind/_ui/index.html" in members, "wheel is missing rewind/_ui/index.html"
-    assert any(name.startswith("rewind/_ui/assets/") for name in members)
+    assert "agent_timetravel/_ui/index.html" in members, (
+        "wheel is missing agent_timetravel/_ui/index.html"
+    )
+    assert any(name.startswith("agent_timetravel/_ui/assets/") for name in members)
     assert not any(_archive_has_env_file(name) for name in members), (
         "wheel contains an environment file"
     )
@@ -104,7 +106,7 @@ def _build_artifacts(output: Path) -> tuple[Path, Path]:
 
 
 def _check_wheel_from_sdist(sdist: Path) -> None:
-    with tempfile.TemporaryDirectory(prefix="rewind-sdist-") as temp:
+    with tempfile.TemporaryDirectory(prefix="agent-timetravel-sdist-") as temp:
         unpacked = Path(temp) / "source"
         unpacked.mkdir()
         with tarfile.open(sdist, "r:gz") as archive:
@@ -149,23 +151,23 @@ def _wait_for_health(url: str, process: subprocess.Popen[str]) -> None:
 
 
 def _smoke_installed_wheel(wheel: Path) -> None:
-    with tempfile.TemporaryDirectory(prefix="rewind-wheel-smoke-", dir="/tmp") as temp:
+    with tempfile.TemporaryDirectory(prefix="agent-timetravel-wheel-smoke-", dir="/tmp") as temp:
         temp_dir = Path(temp)
         venv_dir = temp_dir / "venv"
         venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
         python = venv_dir / "bin" / "python"
-        executable = venv_dir / "bin" / "rewind"
+        executable = venv_dir / "bin" / "agent-timetravel"
         _run([str(python), "-m", "pip", "install", "--quiet", str(wheel)])
 
         imported = subprocess.run(  # noqa: S603
-            [str(python), "-c", "import rewind; print(rewind.__version__)"],
+            [str(python), "-c", "import agent_timetravel; print(agent_timetravel.__version__)"],
             cwd=temp_dir,
             check=True,
             capture_output=True,
             text=True,
         )
         if not imported.stdout.strip():
-            raise RuntimeError("installed rewind import returned no version")
+            raise RuntimeError("installed agent_timetravel import returned no version")
         _run([str(executable), "--help"], cwd=temp_dir)
 
         port = _free_port()
@@ -180,7 +182,7 @@ def _smoke_installed_wheel(wheel: Path) -> None:
                 "--otlp-port",
                 str(port),
                 "--db",
-                str(temp_dir / "rewind.db"),
+                str(temp_dir / "agent_timetravel.db"),
             ],
             cwd=temp_dir,
             stdout=subprocess.PIPE,
@@ -192,7 +194,7 @@ def _smoke_installed_wheel(wheel: Path) -> None:
             _wait_for_health(f"{base}/healthz", process)
             with urllib.request.urlopen(f"{base}/ui/", timeout=5) as response:  # noqa: S310
                 html = response.read().decode("utf-8")
-            if response.status != 200 or "Rewind" not in html or "/ui/assets/" not in html:
+            if response.status != 200 or "Agent Timetravel" not in html or "/ui/assets/" not in html:
                 raise RuntimeError("installed wheel did not serve the packaged UI")
         finally:
             process.terminate()

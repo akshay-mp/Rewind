@@ -4,7 +4,7 @@ sequenceDiagram
     participant A as api.ts debounced search
     participant T as timeline.py read API
     participant S as _search_traces
-    participant D as TraceStore rewind.db
+    participant D as TraceStore timetravel.db
 
     Note over U,D: Stage 1 user types a query and picks filters
     U->>A: onChange query, optional kind, optional status
@@ -33,5 +33,5 @@ sequenceDiagram
         S-->>T: list of SpanSearchHit
         T-->>A: 200 SearchResponse
         A-->>U: render scrollable hit list
-        U->>U: onSelectResult trace_id rewind_id
+        U->>U: onSelectResult trace_id timetravel_id
     end

@@ -16,35 +16,35 @@ from click.testing import CliRunner
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, SecretBytes, SecretStr
 
-from rewind import Rewind, RewindContext, rewind
-from rewind.cli import cli
-from rewind.receiver import create_app
-from rewind.stepping_api import _SESSIONS
-from rewind.storage import TraceStore
+from agent_timetravel import TimeTravel, TimeTravelContext, timetravel
+from agent_timetravel.cli import cli
+from agent_timetravel.receiver import create_app
+from agent_timetravel.stepping_api import _SESSIONS
+from agent_timetravel.storage import TraceStore
 
 _HAS_LANGCHAIN = importlib.util.find_spec("langchain_core") is not None
 
 
-def test_public_rewind_registry_supports_decorator_registration(
+def test_public_timetravel_registry_supports_decorator_registration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(rewind, "_agents", {})
+    monkeypatch.setattr(timetravel, "_agents", {})
 
-    assert isinstance(rewind, Rewind)
+    assert isinstance(timetravel, TimeTravel)
 
-    @rewind.agent(framework="openai")
+    @timetravel.agent(framework="openai")
     def public_api_agent(question: str) -> str:
         return question
 
-    assert rewind.get("public_api_agent") is not None
+    assert timetravel.get("public_api_agent") is not None
 
 
 def test_decorator_is_direct_pass_through_and_excludes_context() -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
     seen: list[bool] = []
 
     @debugger.agent(framework="openai")
-    def answer(question: str, context: RewindContext | None = None) -> str:
+    def answer(question: str, context: TimeTravelContext | None = None) -> str:
         seen.append(context is not None)
         return question.upper()
 
@@ -57,7 +57,7 @@ def test_decorator_is_direct_pass_through_and_excludes_context() -> None:
 
 
 def test_duplicate_names_are_rejected() -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
 
     @debugger.agent("same", framework="openai")
     def first() -> None:
@@ -70,12 +70,12 @@ def test_duplicate_names_are_rejected() -> None:
 
 
 def test_fresh_agent_session_validates_injects_and_persists_result(tmp_path: Path) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
     seen: list[tuple[str, bool]] = []
 
     @debugger.agent(framework="openai", description="greet", tags=("test",))
     async def greet(
-        name: str, token: SecretStr, context: RewindContext | None = None
+        name: str, token: SecretStr, context: TimeTravelContext | None = None
     ) -> dict[str, str]:
         seen.append((token.get_secret_value(), context is not None))
         return {"greeting": f"Hello {name}"}
@@ -99,7 +99,7 @@ def test_fresh_agent_session_validates_injects_and_persists_result(tmp_path: Pat
 
 
 def test_fresh_agent_root_branch_and_restart_child_are_api_visible(tmp_path: Path) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
 
     @debugger.agent(framework="openai")
     def answer(value: str) -> str:
@@ -149,7 +149,7 @@ def test_unavailable_agent_start_includes_availability_reason(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
 
     @debugger.agent(framework="langgraph")
     def unavailable(value: str) -> str:
@@ -157,7 +157,7 @@ def test_unavailable_agent_start_includes_availability_reason(
 
     definition = debugger.get("unavailable")
     assert definition is not None
-    monkeypatch.setattr("rewind.agents.FrameworkPlugin.available", lambda _plugin: False)
+    monkeypatch.setattr("agent_timetravel.agents.FrameworkPlugin.available", lambda _plugin: False)
     assert not definition.available
     assert definition.availability_reason
 
@@ -175,7 +175,7 @@ def test_restart_rejects_agent_that_became_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
     calls: list[str] = []
 
     @debugger.agent(framework="openai")
@@ -191,7 +191,7 @@ def test_restart_rejects_agent_that_became_unavailable(
     assert started.status_code == 201
     assert calls == ["first"]
 
-    monkeypatch.setattr("rewind.agents.FrameworkPlugin.available", lambda _plugin: False)
+    monkeypatch.setattr("agent_timetravel.agents.FrameworkPlugin.available", lambda _plugin: False)
     definition = debugger.get("answer")
     assert definition is not None
     assert not definition.available
@@ -212,7 +212,7 @@ def test_restart_rejects_agent_that_became_unavailable(
 
 @pytest.mark.skipif(not _HAS_LANGCHAIN, reason="langchain-core not installed")
 def test_sync_agent_uses_to_thread_without_revalidating(monkeypatch: pytest.MonkeyPatch) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
     calls: list[str] = []
 
     @debugger.agent(framework="langgraph")
@@ -230,7 +230,7 @@ def test_sync_agent_uses_to_thread_without_revalidating(monkeypatch: pytest.Monk
         to_thread_calls.append(getattr(function, "__name__", "unknown"))
         return await original_to_thread(function, *args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr("rewind.agents.asyncio.to_thread", spy_to_thread)
+    monkeypatch.setattr("agent_timetravel.agents.asyncio.to_thread", spy_to_thread)
 
     class Session:
         trace_id = "a" * 32
@@ -248,7 +248,7 @@ class _StructuredResult(BaseModel):
 
 
 def test_structured_result_is_json_safe_and_redacted(tmp_path: Path) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
 
     @debugger.agent(framework="openai")
     def structured() -> _StructuredResult:
@@ -262,7 +262,7 @@ def test_structured_result_is_json_safe_and_redacted(tmp_path: Path) -> None:
 
 
 def test_stream_recovers_terminal_event_after_fast_agent_is_removed(tmp_path: Path) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
 
     @debugger.agent(framework="openai")
     def immediate() -> dict[str, str]:
@@ -283,7 +283,7 @@ def test_stream_recovers_terminal_event_after_fast_agent_is_removed(tmp_path: Pa
 
 
 def test_invalid_agent_inputs_are_rejected(tmp_path: Path) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
 
     @debugger.agent(framework="openai")
     def answer(question: str) -> str:
@@ -298,7 +298,7 @@ def test_auto_detection_prefers_explicit_target_and_advertises_capabilities() ->
     class GraphTarget:
         __module__ = "langgraph.graph"
 
-    debugger = Rewind()
+    debugger = TimeTravel()
 
     @debugger.agent(target=GraphTarget)
     def run(prompt: str) -> str:
@@ -322,17 +322,17 @@ def test_dev_reports_actionable_import_errors() -> None:
     assert "could not import" in result.output
 
 
-def test_dev_accepts_rewind_registry_with_registered_agent(
+def test_dev_accepts_timetravel_registry_with_registered_agent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(rewind, "_agents", {})
-    module = ModuleType("rewind_cli_test_app")
+    monkeypatch.setattr(timetravel, "_agents", {})
+    module = ModuleType("timetravel_cli_test_app")
     exec(  # noqa: S102 - controlled temporary module fixture
         '''
-from rewind import rewind
+from agent_timetravel import timetravel
 
-@rewind.agent(framework="openai")
+@timetravel.agent(framework="openai")
 def answer(question: str) -> str:
     return question
 ''',
@@ -351,7 +351,7 @@ def answer(question: str) -> str:
         cli,
         [
             "dev",
-            f"{module.__name__}:rewind",
+            f"{module.__name__}:timetravel",
             "--db",
             str(tmp_path / "dev.db"),
             "--no-open",
@@ -369,7 +369,7 @@ def answer(question: str) -> str:
 
 
 def test_secret_agent_restart_requires_override_and_masks_new_inputs(tmp_path: Path) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
     calls: list[str] = []
 
     @debugger.agent(framework="openai")
@@ -409,7 +409,7 @@ class _NestedSecretBytes(BaseModel):
 def test_secret_bytes_nested_restart_requires_override_and_masks_inputs(
     tmp_path: Path,
 ) -> None:
-    debugger = Rewind()
+    debugger = TimeTravel()
     calls: list[bytes] = []
 
     @debugger.agent(framework="openai")

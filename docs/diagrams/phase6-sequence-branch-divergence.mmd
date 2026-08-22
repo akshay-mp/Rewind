@@ -7,7 +7,7 @@ sequenceDiagram
     participant Sig as extract_signature
     participant Cursor as ReplaySession cursor
     participant C as _common.build_live_span
-    participant DB as rewind.db
+    participant DB as timetravel.db
 
     Note over A,DB: Setup: trace seeded with N LLM spans.<br/>ReplaySession opened in BRANCH mode.<br/>Calls 0..N-1 match; call N will diverge.
 

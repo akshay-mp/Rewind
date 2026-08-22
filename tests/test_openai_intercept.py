@@ -26,9 +26,9 @@ from typing import Any
 
 import pytest
 
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.openai_intercept import (
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.openai_intercept import (
     InterceptError,
     _dispatch_async,
     _dispatch_sync,
@@ -37,10 +37,10 @@ from rewind.openai_intercept import (
     extract_signature,
     patch,
 )
-from rewind.replay import ReplayError, ReplaySession, active_session
-from rewind.replay import replay as replay_ctx
-from rewind.stepping import Decision, DecisionKind, SteppingStopped
-from rewind.storage import TraceStore
+from agent_timetravel.replay import ReplayError, ReplaySession, active_session
+from agent_timetravel.replay import replay as replay_ctx
+from agent_timetravel.stepping import Decision, DecisionKind, SteppingStopped
+from agent_timetravel.storage import TraceStore
 
 
 # ----------------------------------------------------------------------
@@ -90,7 +90,7 @@ def _llm_span(
 
 @pytest.fixture
 def store(tmp_path: Path) -> TraceStore:
-    return TraceStore(str(tmp_path / "rewind.db"))
+    return TraceStore(str(tmp_path / "agent_timetravel.db"))
 
 
 @pytest.fixture
@@ -180,7 +180,7 @@ def test_step_async_captures_structured_sampling_snapshot(
         captured.append(step)
         return None
 
-    monkeypatch.setattr("rewind.stepping.gate_async", capture_gate)
+    monkeypatch.setattr("agent_timetravel.stepping.gate_async", capture_gate)
 
     kwargs: dict[str, Any] = {
         "model": "unsloth/gemma-4-12b-it-GGUF",
@@ -272,7 +272,7 @@ async def test_dispatch_sync_worker_publishes_sse_review_usage(
     trace_id: str,
 ) -> None:
     """A worker-thread sync call completes through the browser channel."""
-    from rewind.stepping_api import SSEApprovalChannel
+    from agent_timetravel.stepping_api import SSEApprovalChannel
 
     store, _spans, _messages = seeded_store
     channel = SSEApprovalChannel()
@@ -440,7 +440,7 @@ def _fake_openai_module() -> Iterator[dict[str, Any]]:
     }
     try:
         # Build the fake class objects. Create a fresh attribute each call so
-        # the ``__rewind_patched__`` marker from a previous test doesn't leak.
+        # the ``__timetravel_patched__`` marker from a previous test doesn't leak.
         class Completions:
             def create(self, *args: Any, **kwargs: Any) -> Any:
                 return {"_kind": "sync-original"}
@@ -492,7 +492,7 @@ def test_patch_installs_and_restores() -> None:
         with patch():
             patched = Completions.create
             assert patched is not original_create
-            assert getattr(patched, "__rewind_patched__", False) is True
+            assert getattr(patched, "__timetravel_patched__", False) is True
 
         # Restored.
         assert Completions.create is original_create
@@ -509,7 +509,7 @@ def test_patch_is_idempotent_nested() -> None:
             with patch():
                 # Second patch is a no-op: same object as outer patch.
                 assert Completions.create is inner_patched
-                assert getattr(Completions.create, "__rewind_patched__", False) is True
+                assert getattr(Completions.create, "__timetravel_patched__", False) is True
             # After inner exits we're still patched (outer is still active).
             assert Completions.create is inner_patched
         # Outer exit fully restores.

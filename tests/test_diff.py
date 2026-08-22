@@ -1,16 +1,16 @@
-"""Unit tests for the Phase 5 :mod:`rewind.diff` engine.
+"""Unit tests for the Phase 5 :mod:`timetravel.diff` engine.
 
 Three families of tests pin the three Phase 5 exit criteria:
 
-1. :func:`rewind.diff.span_diff` — *"Diffing two branches marks exactly which
+1. :func:`timetravel.diff.span_diff` — *"Diffing two branches marks exactly which
    span first diverged"*.
-2. :func:`rewind.diff.message_diff` — *"Token-level message diff renders
+2. :func:`timetravel.diff.message_diff` — *"Token-level message diff renders
    add/remove/change correctly"*.
-3. :func:`rewind.diff.branch_tree` — *"branch tree view"* (storage-level flat
+3. :func:`timetravel.diff.branch_tree` — *"branch tree view"* (storage-level flat
    list → renderable tree).
 
-The tests in this file are **pure** — they construct :class:`~rewind.models.Span`
-and :class:`~rewind.models.Branch` directly, no SQLite. Cross-layer behaviour
+The tests in this file are **pure** — they construct :class:`~timetravel.models.Span`
+and :class:`~timetravel.models.Branch` directly, no SQLite. Cross-layer behaviour
 lives in ``tests/test_diff_api.py`` (HTTP) and the integration suite.
 """
 
@@ -20,15 +20,15 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from rewind.diff import (
+from agent_timetravel.diff import (
     BranchNode,
     SpanPair,
     branch_tree,
     message_diff,
     span_diff,
 )
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Branch, Span
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import Branch, Span
 
 # ----------------------------------------------------------------------
 # Span factory helpers — keep test setup terse without hiding the contract
@@ -204,7 +204,7 @@ def _llm_quant(
     """
     raw: dict[str, object] = {}
     if quant is not None:
-        raw["rewind.local.quant"] = quant
+        raw["agent_timetravel.local.quant"] = quant
     return Span(
         trace_id="a" * 24 + "00000001",
         span_id=f"{idx:016x}",
@@ -228,7 +228,7 @@ def _llm_quant(
 def test_span_diff_quant_diverges_when_same_base_different_quant_attr() -> None:
     """Quant-divergence flag fires when same base model has different quant attr."""
     # model_name has NO quant suffix → the divergence signal comes purely
-    # from the recorded rewind.local.quant attribute.
+    # from the recorded timetravel.local.quant attribute.
     left = [_llm_quant(0, "qwen3:32b", quant="q4_k_m")]
     right = [_llm_quant(0, "qwen3:32b", quant="q8_0")]
 

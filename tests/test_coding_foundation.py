@@ -7,14 +7,25 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from rewind.coding.adapters import AdapterResult, DemoCodingAdapter
-from rewind.coding.controller import CodingController, ControlConflict
-from rewind.coding.domain import CheckSpec, CodingEvent, CodingRun, GoalProfile, RunStatus, Verdict
-from rewind.coding.evaluator import evaluate_goal
-from rewind.coding.runtime import DockerContainerRuntime, RuntimeConfig, RuntimeUnavailableError
-from rewind.coding.workspace import GitWorktreeWorkspaceProvider, WorkspaceSafetyError
-from rewind.receiver import create_app
-from rewind.storage import SCHEMA_VERSION, TraceStore
+from agent_timetravel.coding.adapters import AdapterResult, DemoCodingAdapter
+from agent_timetravel.coding.controller import CodingController, ControlConflict
+from agent_timetravel.coding.domain import (
+    CheckSpec,
+    CodingEvent,
+    CodingRun,
+    GoalProfile,
+    RunStatus,
+    Verdict,
+)
+from agent_timetravel.coding.evaluator import evaluate_goal
+from agent_timetravel.coding.runtime import (
+    DockerContainerRuntime,
+    RuntimeConfig,
+    RuntimeUnavailableError,
+)
+from agent_timetravel.coding.workspace import GitWorktreeWorkspaceProvider, WorkspaceSafetyError
+from agent_timetravel.receiver import create_app
+from agent_timetravel.storage import SCHEMA_VERSION, TraceStore
 
 
 def test_schema_domain_crud_and_event_sequence(tmp_path: Path) -> None:
@@ -63,7 +74,7 @@ def test_view_navigation_never_calls_adapter(tmp_path: Path) -> None:
     controller.create_run(run)
     store.append_coding_event(CodingEvent(run.run_id, "observable"))
     before = adapter.calls
-    assert controller.rewind(run.run_id, 1)
+    assert controller.timetravel(run.run_id, 1)
     assert controller.forward(run.run_id, 1)
     assert adapter.calls == before
 

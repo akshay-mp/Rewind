@@ -20,19 +20,19 @@ from uuid import UUID
 
 import pytest
 
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import (
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import (
     CallSignature,
     RecordedResponse,
     ReplayError,
     ReplaySession,
     active_session,
 )
-from rewind.replay import (
+from agent_timetravel.replay import (
     replay as replay_ctx,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 
 # ----------------------------------------------------------------------
@@ -83,7 +83,7 @@ def _llm_span(
 @pytest.fixture
 def store(tmp_path: Path) -> TraceStore:
     """Empty SQLite store in a tmp directory."""
-    return TraceStore(str(tmp_path / "rewind.db"))
+    return TraceStore(str(tmp_path / "agent_timetravel.db"))
 
 
 @pytest.fixture
@@ -259,7 +259,7 @@ def test_fork_clones_prefix_under_new_branch_id(
     """Forking at index 1 clones spans [0, 1) and persists them under a new branch.
 
     Phase 3 exit criterion: ``len(cloned) == branch_at`` and all cloned spans
-    have fresh ``rewind_id``s.
+    have fresh ``timetravel_id``s.
     """
     store, spans = seeded_store
     root = ReplaySession.for_root(store, trace_id, mode=ReplayMode.FROZEN)
@@ -333,7 +333,7 @@ def test_advance_cursor_to_forwards_only(
     session = ReplaySession.for_root(store, spans[0].trace_id, mode=ReplayMode.FROZEN)
     session.advance_cursor_to(2)
     assert session.cursor == 2
-    with pytest.raises(ReplayError, match="cannot rewind"):
+    with pytest.raises(ReplayError, match="cannot timetravel"):
         session.advance_cursor_to(0)
 
 

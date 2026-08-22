@@ -1,12 +1,12 @@
 # Operational Readiness
 
-The Rewind workbench keeps operational records on the developer machine.
+The TimeTravel workbench keeps operational records on the developer machine.
 Its session controls cover the parts of a pre-production run that need to be
 inspected before an agent reaches a deployed environment. The current
-decorator-first entry point is `from rewind import RewindContext, rewind` with
-`@rewind.agent`; use `rewind dev app:rewind` for a local workbench run.
-For a custom title or separate registry, use `from rewind import Rewind,
-RewindContext` and define `rewind = Rewind(title="...")` in your app module;
+decorator-first entry point is `from agent_timetravel import TimeTravelContext, timetravel` with
+`@timetravel.agent`; use `timetravel dev app:timetravel` for a local workbench run.
+For a custom title or separate registry, use `from agent_timetravel import TimeTravel,
+TimeTravelContext` and define `timetravel = TimeTravel(title="...")` in your app module;
 existing names such as `debugger` remain supported.
 
 ## Run Records
@@ -28,7 +28,7 @@ it does not count time spent paused for a developer decision as model latency.
 
 The completion summary includes model names, checkpoint count, prompt variant
 count, parameter-set count, and tool-schema count. **Export redacted bundle**
-downloads a `rewind-bundle/v1` JSON record. Rewind removes values associated
+downloads a `timetravel-bundle/v1` JSON record. TimeTravel removes values associated
 with common secret keys plus bearer and `sk-...` token strings before writing
 the file. Review the exported bundle before sharing it outside the machine.
 Use **Import bundle** in Saved sessions to bring a compatible exported record
@@ -38,7 +38,7 @@ back into the local session library for inspection and search.
 
 The verified interactive demo uses the local OpenAI-compatible Gemma/Unsloth
 endpoint at `http://127.0.0.1:8888/v1`, configured with
-`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `REWIND_MODEL`. Check
+`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `TIMETRAVEL_MODEL`. Check
 `http://127.0.0.1:8888/v1/models` before recording or testing. Keep the API
 key in the environment or local `.env`; never place it in source, logs,
 screenshots, or a recording.
@@ -48,7 +48,7 @@ During a workbench run, official OpenAI Python SDK Chat Completions calls
 including when that SDK is configured for an OpenAI-compatible endpoint.
 LangGraph / langchain apps get the same auto-activation: every
 `BaseChatModel` and `BaseTool` `invoke`/`ainvoke` inside the run is stepped,
-replayed, and captured — `rewind app:main` accepts a bare compiled graph as
+replayed, and captured — `timetravel app:main` accepts a bare compiled graph as
 the launch target. Replay adapters for Google ADK, CrewAI, PydanticAI, and
 SmolAgents remain explicit; generic decorator auto-activation for them is
 unavailable and reports an actionable wrapper. See
@@ -58,5 +58,5 @@ framework package is installed locally.
 
 For a short LinkedIn capture, follow the
 [recording-ready checklist](./demo-recording.md). It describes production
-preparation only; Rewind does not provide video capture or caption-burning
+preparation only; TimeTravel does not provide video capture or caption-burning
 tooling.

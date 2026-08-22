@@ -9,7 +9,7 @@ contract against a stand-in ADK ``BaseLlm``:
 
 Install the extra to run them::
 
-    pip install rewind-debugger[adk]
+    pip install agent-timetravel[adk]
 """
 
 from __future__ import annotations
@@ -22,13 +22,13 @@ from typing import Any
 
 import pytest
 
-from rewind.adapters.adk import _llm_response_to_text
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import (
+from agent_timetravel.adapters.adk import _llm_response_to_text
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import (
     replay as replay_ctx,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 _HAS_ADK = (
     importlib.util.find_spec("google") is not None
@@ -72,7 +72,7 @@ def _adk_request(parts_text: str = "hello") -> Any:
 
 def _wrapped_llm() -> tuple[Any, list[Any]]:
     """Build a wrapped ADK-style LLM plus its outbound-call log."""
-    from rewind.adapters.adk import replay_llm
+    from agent_timetravel.adapters.adk import replay_llm
 
     calls: list[Any] = []
 

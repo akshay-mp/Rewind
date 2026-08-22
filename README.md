@@ -1,8 +1,8 @@
-# Rewind
+# TimeTravel
 
 ### Time-travel debugging for AI agents — an OTel-in / replay-out engine
 
-> Rewind an agent to any span, change a prompt, and re-run **live** from there —
+> TimeTravel an agent to any span, change a prompt, and re-run **live** from there —
 > branching a new timeline you can diff against the original.
 > Consumes standard OpenTelemetry / OpenInference traces. No cloud, no API keys,
 > no persistent production proxy, no data leaving the machine.
@@ -12,7 +12,7 @@
 ## What it does
 
 A developer running an agent on `qwen3:32b` via Ollama captures a run with any
-OpenInference/OTel instrumentor, rewinds to span 4, edits the system prompt,
+OpenInference/OTel instrumentor, timetravels to span 4, edits the system prompt,
 branches the execution forward live against the same local model, and sees a
 side-by-side diff of what changed — all offline, in under a minute of setup.
 
@@ -21,17 +21,17 @@ side-by-side diff of what changed — all offline, in under a minute of setup.
 ```
 Capture = PASSIVE   ->  an OTel span only exists *after* a call completes.
                         OpenTelemetry + OpenInference solve this. We ingest.
-Replay  = ACTIVE    ->  to rewind we *inject* the cached response during a
+Replay  = ACTIVE    ->  to timetravel we *inject* the cached response during a
                         re-run. That is runtime patching, not observability.
 ```
 
-So Rewind does **not** need its own capture proxy. It needs:
+So TimeTravel does **not** need its own capture proxy. It needs:
 
 1. A **local OTLP receiver** that stores traces into SQLite (production path,
    zero agent-side lock-in).
 2. A **decorator-first workbench** that invokes registered agents with typed
-   inputs and a `RewindContext` only during a debug session.
-3. An **opt-in replay-time LLM-client wrapper** (`rewind.replay()`) — *only*
+   inputs and a `TimeTravelContext` only during a debug session.
+3. An **opt-in replay-time LLM-client wrapper** (`timetravel.replay()`) — *only*
    active during a debug session, never in production.
 
 ## Status
@@ -53,42 +53,42 @@ So Rewind does **not** need its own capture proxy. It needs:
 ## Quick start
 
 ```bash
-pip install rewind-debugger
+pip install agent-timetravel
 # The wheel includes the built timeline UI; no separate frontend build is needed.
-rewind serve --port 4318 --db ./rewind.db
+timetravel serve --port 4318 --db ./timetravel.db
 # Point your OTel/OpenInference-instrumented agent at:
 #   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 # Run a trace, then inspect it in the browser:
-rewind ui --port 8484 --db ./rewind.db
+timetravel ui --port 8484 --db ./timetravel.db
 # → http://127.0.0.1:8484/ui
 ```
 
 ### Decorator-first agents
 
-The current workbench entry point is a `Rewind` object with typed agent inputs:
+The current workbench entry point is a `TimeTravel` object with typed agent inputs:
 
 ```python
-from rewind import RewindContext, rewind
+from agent_timetravel import TimeTravelContext, timetravel
 
-@rewind.agent(description="Answer a question")
-async def answer(question: str, context: RewindContext | None = None) -> str:
+@timetravel.agent(description="Answer a question")
+async def answer(question: str, context: TimeTravelContext | None = None) -> str:
     return question
 ```
 
-Run `rewind dev app:rewind` to expose the agent list and interactive
+Run `timetravel dev app:timetravel` to expose the agent list and interactive
 sessions at the local UI. Direct calls to `answer(...)` remain ordinary
-pass-through calls; `RewindContext` is injected only for workbench runs.
+pass-through calls; `TimeTravelContext` is injected only for workbench runs.
 For a custom title or separate registry, use:
 
 ```python
-from rewind import Rewind, RewindContext
+from agent_timetravel import TimeTravel, TimeTravelContext
 
-rewind = Rewind(title="Research")
+timetravel = TimeTravel(title="Research")
 ```
 
 Existing names such as `debugger` remain supported.
 
-During a workbench run, Rewind auto-activates interception for the
+During a workbench run, TimeTravel auto-activates interception for the
 frameworks below — no manual model wrapping required:
 
 * **OpenAI** — official OpenAI Python SDK Chat Completions calls
@@ -110,16 +110,16 @@ framework is installed.
 
 ### Run any LangGraph app
 
-A foreign LangGraph project needs no Rewind-specific code. Install
-`rewind-debugger[langgraph]` alongside the app, then point the CLI at the
+A foreign LangGraph project needs no TimeTravel-specific code. Install
+`agent-timetravel[langgraph]` alongside the app, then point the CLI at the
 exported graph:
 
 ```bash
-pip install rewind-debugger[langgraph]   # or: pip install -e /path/to/rewind[langgraph]
-rewind app:main                          # ≡ rewind dev app:main
+pip install agent-timetravel[langgraph]   # or: pip install -e /path/to/timetravel[langgraph]
+timetravel app:main                          # ≡ timetravel dev app:main
 ```
 
-`app:main` may be a `rewind.Rewind` registry, a compiled LangGraph graph /
+`app:main` may be a `timetravel.TimeTravel` registry, a compiled LangGraph graph /
 langchain runnable (wrapped into a one-agent registry automatically), or a
 plain callable. The workbench opens in your browser
 (`--no-open` to suppress) with the graph registered as an interactive agent:
@@ -130,19 +130,19 @@ step-by-step debugger.
 
 ```bash
 # Read-only inspection (prints cursor + branch info):
-rewind replay <trace_id> --mode frozen --db ./rewind.db
+timetravel replay <trace_id> --mode frozen --db ./timetravel.db
 
 # Branch from span index 4 and go live from there:
-rewind replay <trace_id> --branch-at 4 --mode branch --db ./rewind.db
+timetravel replay <trace_id> --branch-at 4 --mode branch --db ./timetravel.db
 ```
 
 ### From Python (the load-bearing integration point)
 
 ```python
-from rewind.replay import replay
-from rewind.storage import TraceStore
+from agent_timetravel.replay import replay
+from agent_timetravel.storage import TraceStore
 
-store = TraceStore("~/.rewind/db.sqlite")
+store = TraceStore("~/.timetravel/db.sqlite")
 
 # Frozen replay — zero outbound calls, deterministic:
 with replay(store, trace_id="<trace>", mode="frozen"):
@@ -159,44 +159,44 @@ One import + one wrapper call per agent — no upstream framework changes:
 
 ```python
 # Google ADK
-from rewind.adapters.adk import replay_llm
+from agent_timetravel.adapters.adk import replay_llm
 agent = Agent(model=replay_llm(real_adk_llm))
 
 # CrewAI
-from rewind.adapters.crewai import replay_llm
+from agent_timetravel.adapters.crewai import replay_llm
 crew.llm = replay_llm(real_crewai_llm)
 
 # PydanticAI
-from rewind.adapters.pydantic_ai import replay_model
+from agent_timetravel.adapters.pydantic_ai import replay_model
 agent = Agent(model=replay_model(real_model))
 
 # HuggingFace SmolAgents
-from rewind.adapters.smolagents import replay_model
+from agent_timetravel.adapters.smolagents import replay_model
 agent.model = replay_model(real_smol_model)
 
 # LangGraph (Phase 3 — adapter pattern origin)
-from rewind.adapters.langgraph import replay_chat_model
+from agent_timetravel.adapters.langgraph import replay_chat_model
 graph.compiled = replay_chat_model(real_chat_model)
 ```
 
 Install the optional extras as needed:
 
 ```bash
-pip install rewind-debugger[adk]              # one framework
-pip install rewind-debugger[adk,pydantic-ai] # several Rewind-managed frameworks
+pip install agent-timetravel[adk]              # one framework
+pip install agent-timetravel[adk,pydantic-ai] # several TimeTravel-managed frameworks
 pip install crewai                             # CrewAI adapter dependency
-pip install rewind-debugger[adapters]         # all four
+pip install agent-timetravel[adapters]         # all four
 ```
 
 Without an extra installed, the corresponding factory raises
-`rewind.adapters.<fw>.AdapterError` with an actionable install hint at call
-time. `rewind --version` and `import rewind.adapters.<fw>` both succeed
+`timetravel.adapters.<fw>.AdapterError` with an actionable install hint at call
+time. `timetravel --version` and `import timetravel.adapters.<fw>` both succeed
 without any framework installed.
 
 ### Eval a replay candidate against a baseline (Phase 5.5)
 
 ```bash
-rewind eval suite.yaml --db ./rewind.db --suite-name my-suite
+timetravel eval suite.yaml --db ./timetravel.db --suite-name my-suite
 # exit 0 = PASS, 1 = FAIL, 2 = ERROR/validation
 ```
 
@@ -212,7 +212,7 @@ commands and acceptance walkthrough are in
 The current walkthrough verifies fresh sessions, automatic `PROCEED`
 advancement, substantive-call pauses after the final response, separate
 thinking, token/cost/latency/context panels, checkpoints, saved-step
-navigation, no-call rewind/forward, continue-from-checkpoint, and the
+navigation, no-call timetravel/forward, continue-from-checkpoint, and the
 available edit, variant, assertion, review, and regression flows. It does not
 claim that every planned recording or framework-integration feature is
 implemented or demonstrated.
@@ -224,14 +224,14 @@ it is not the primary decorator-first usage path.
 ## Development
 
 ```bash
-# from rewind/
+# from timetravel/
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 # full quality gate (run before commit)
-ruff check src/rewind tests
-pylint src/rewind/
-mypy --strict src/rewind
+ruff check src/timetravel tests
+pylint src/timetravel/
+mypy --strict src/timetravel
 python -m pytest tests --no-cov -q
 
 # per-phase security scan (ruff S-rules + bandit, deepsec if available)
@@ -250,8 +250,8 @@ for the live workbench checks.
 ## Layout
 
 ```
-rewind/
-  src/rewind/          Python package
+timetravel/
+  src/timetravel/          Python package
     adapters/          Phase 6 — per-framework replay wrappers (adk, crewai,
                        pydantic_ai, smolagents, langgraph) + shared _common.py
     receiver.py        OTLP/HTTP ingest (Phase 1)

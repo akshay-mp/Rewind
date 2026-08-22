@@ -1,7 +1,7 @@
 sequenceDiagram
     autonumber
     participant U as User or eval harness
-    participant CLI as rewind replay CLI
+    participant CLI as timetravel replay CLI
     participant S as ReplaySession
     participant H as GitRollbackHandler
     participant G as git CLI local
@@ -14,7 +14,7 @@ sequenceDiagram
     U->>CLI: replay trace_id branch_at N mode branch handler git
     CLI->>S: fork branch_at N handler GitRollbackHandler
     S->>H: on_branch branch_id hex
-    H->>G: git stash list grep rewind-branch-ID
+    H->>G: git stash list grep timetravel-branch-ID
     G-->>H: existing stash SHA or none
     alt existing stash for tag found stale reuse
         H->>G: git stash drop existing
@@ -22,14 +22,14 @@ sequenceDiagram
     end
     H->>G: git rev-parse HEAD
     G-->>H: anchor SHA
-    H->>G: git update-ref refs rewind rewind-branch-ID anchor
+    H->>G: git update-ref refs timetravel timetravel-branch-ID anchor
     H->>G: git stash create
     alt working tree clean
         G-->>H: empty stash no delta
         Note right of H: skip stash store save roundtrip
     else uncommitted delta exists
         G-->>H: stash SHA
-        H->>G: git stash store SHA with rewind tag
+        H->>G: git stash store SHA with timetravel tag
     end
     H-->>S: branch ready working tree is anchored
 
@@ -40,11 +40,11 @@ sequenceDiagram
     G->>WT: move HEAD and index forward
     Note right of WT: agent is free to mutate the tree
 
-    Note over U,A: Stage 3 rewind fires on_rewind restores pristine tree
-    U->>CLI: rewind to branch_id
-    CLI->>S: rewind branch_id
-    S->>H: on_rewind branch_id hex
-    H->>G: git rev-parse verify refs rewind rewind-branch-ID
+    Note over U,A: Stage 3 timetravel fires on_timetravel restores pristine tree
+    U->>CLI: timetravel to branch_id
+    CLI->>S: timetravel branch_id
+    S->>H: on_timetravel branch_id hex
+    H->>G: git rev-parse verify refs timetravel timetravel-branch-ID
     alt anchor missing silently skipped
         G-->>H: rc nonzero ref unknown
         Note right of H: no-op safe to call twice idempotent
@@ -58,7 +58,7 @@ sequenceDiagram
             H->>G: git stash pop
             WT-->>G: working changes restored on top of clean tree
         end
-        H->>G: git update-ref -d refs rewind rewind-branch-ID
+        H->>G: git update-ref -d refs timetravel timetravel-branch-ID
         Note right of H: cleanup prevents ref table growth
     end
     H-->>S: tree restored pristine plus stash popped

@@ -1,20 +1,20 @@
 # Recording-ready demo checklist
 
 This is a production checklist for the 2:40 LinkedIn demo. It is not video
-capture, editing, or caption-burning tooling implemented by Rewind.
+capture, editing, or caption-burning tooling implemented by TimeTravel.
 
 ## Before recording
 
-- Start with a clean demo DB, for example `/tmp/rewind-demo.db`, so the session
+- Start with a clean demo DB, for example `/tmp/timetravel-demo.db`, so the session
   opens fresh and saved navigation is easy to follow.
-- Put `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `REWIND_MODEL` in the shell
+- Put `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `TIMETRAVEL_MODEL` in the shell
   environment or local `.env`. Keep the key out of source, terminal captures,
   screenshots, logs, and the final video.
 - Prewarm the local OpenAI-compatible Gemma/Unsloth model at
   `http://127.0.0.1:8888/v1` and confirm `/v1/models` responds before opening
   the workbench.
 - Prepare a deterministic fallback for long generations so the recording fits
-  the time budget. This is demo-runner preparation, not an implemented Rewind
+  the time budget. This is demo-runner preparation, not an implemented TimeTravel
   recording feature.
 
 ## Suggested 2:40 sequence

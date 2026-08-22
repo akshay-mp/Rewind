@@ -1,6 +1,6 @@
 # Per-Framework OpenInference Wiring
 
-Rewind accepts OTLP/HTTP from any OpenTelemetry-compatible source. The
+TimeTravel accepts OTLP/HTTP from any OpenTelemetry-compatible source. The
 per-framework pages below cover the most common agent frameworks — each
 follows the same three-step shape:
 
@@ -9,7 +9,7 @@ follows the same three-step shape:
 3. Call `<Framework>Instrumentor().instrument()` once at process import.
 
 That's it. Every LLM call, tool call, and agent-level span afterwards is
-captured and visible in Rewind within ~100ms.
+captured and visible in TimeTravel within ~100ms.
 
 For end-to-end runnable demos, see [`examples/`](../examples).
 
@@ -20,7 +20,7 @@ For end-to-end runnable demos, see [`examples/`](../examples).
 OpenInference's OpenAI instrumentation monkey-patches
 `openai.resources.chat.completions.Completions.create` (and the async +
 streaming variants). Works equally well against `OPENAI_BASE_URL` pointed
-at a local Ollama (recommended for fully-offline Rewind demos).
+at a local Ollama (recommended for fully-offline TimeTravel demos).
 
 ```bash
 pip install openinference-instrumentation-openai opentelemetry-sdk opentelemetry-exporter-otlp
@@ -53,7 +53,7 @@ ADKInstrumentor().instrument()
 
 Captures `google.adk.models.BaseLlm.generate_content_async`. **Replay
 adapter**: [`docs/replay-adapters.md`](./replay-adapters.md#adk) — wrap
-your ADK `BaseLlm` with `rewind.adapters.adk.replay_llm(real_model)` to
+your ADK `BaseLlm` with `timetravel.adapters.adk.replay_llm(real_model)` to
 get time-travel branching in debug mode.
 
 ---
@@ -71,11 +71,11 @@ LangchainInstrumentor().instrument()
 
 Captures `langchain_core.language_models.BaseChatModel` invocations,
 LangGraph node transitions, and LangChain tool calls. **Workbench
-auto-activation**: during a `rewind dev` / `rewind app:main` run, Rewind
+auto-activation**: during a `timetravel dev` / `timetravel app:main` run, TimeTravel
 patches `BaseChatModel` / `BaseTool` `invoke`/`ainvoke` itself — every LLM
 and tool call pauses in the step-by-step debugger with no app changes.
 **Replay adapter** (for replay outside the workbench):
-`rewind.adapters.langgraph.replay_chat_model(model)` — see
+`timetravel.adapters.langgraph.replay_chat_model(model)` — see
 [`docs/replay-adapters.md`](./replay-adapters.md#langgraph).
 
 ---
@@ -92,7 +92,7 @@ CrewAIInstrumentor().instrument()
 ```
 
 Captures `BaseLLM.call[_async]` / `get_response[_async]`. **Replay
-adapter**: `rewind.adapters.crewai.replay_llm(llm)` — see
+adapter**: `timetravel.adapters.crewai.replay_llm(llm)` — see
 [`docs/replay-adapters.md`](./replay-adapters.md#crewai).
 
 ---
@@ -109,7 +109,7 @@ PydanticAIInstrumentor().instrument()
 ```
 
 Captures `pydantic_ai.models.Model.request[_stream]`. **Replay adapter**:
-`rewind.adapters.pydantic_ai.replay_model(model)` — see
+`timetravel.adapters.pydantic_ai.replay_model(model)` — see
 [`docs/replay-adapters.md`](./replay-adapters.md#pydanticai).
 
 ---
@@ -126,7 +126,7 @@ SmolagentsInstrumentor().instrument()
 ```
 
 Captures `smolagents.models.Model.__call__`, `generate`, and `astream`.
-**Replay adapter**: `rewind.adapters.smolagents.replay_model(model)` —
+**Replay adapter**: `timetravel.adapters.smolagents.replay_model(model)` —
 see [`docs/replay-adapters.md`](./replay-adapters.md#smolagents).
 
 ---
@@ -146,7 +146,7 @@ Captures tool invocations routed through the Model Context Protocol
 (regardless of which agent framework is the parent). This is the one
 instrumentation package you almost always want **in addition to** your
 LLM instrumentation — MCP is the open standard for tool-call capture and
-Rewind emits one `gen_ai.mcp` span per MCP tool invocation.
+TimeTravel emits one `gen_ai.mcp` span per MCP tool invocation.
 
 ---
 
@@ -180,6 +180,6 @@ export OPENINFERENCE_CAPTURE_MESSAGE_CONTENT=true
 A busy agent loop produces a lot of spans. Two mitigations:
 
 1. `OTEL_BSP_MAX_QUEUE_SIZE=10000` — caps the in-flight batch.
-2. Delete `~/.rewind/rewind.db` between projects — Rewind doesn't ship a
+2. Delete `~/.timetravel/timetravel.db` between projects — TimeTravel doesn't ship a
    retention policy in v1; an operator's local SQLite file is the
    single source of truth.

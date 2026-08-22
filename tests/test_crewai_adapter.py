@@ -19,12 +19,12 @@ from typing import Any
 
 import pytest
 
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import (
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import (
     replay as replay_ctx,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 _HAS_CREWAI = importlib.util.find_spec("crewai") is not None
 pytestmark = pytest.mark.skipif(not _HAS_CREWAI, reason="crewai not installed")
@@ -57,7 +57,7 @@ def _recorded_llm_span(trace_id: str, *, content: str = "recorded") -> Span:
 
 def _wrapped_llm() -> tuple[Any, list[Any]]:
     """Build a wrapped CrewAI BaseLLM stand-in plus an outbound-call log."""
-    from rewind.adapters.crewai import replay_llm
+    from agent_timetravel.adapters.crewai import replay_llm
 
     calls: list[Any] = []
 

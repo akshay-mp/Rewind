@@ -9,14 +9,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Span, Trace
-from rewind.stepping_api import (
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.stepping_api import (
     EvaluatorResult,
     mount_stepping,
     register_evaluator,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 _TRACE_ID = "e" * 32
 
@@ -56,7 +56,7 @@ def client(tmp_path: Path) -> TestClient:
 @pytest.fixture(autouse=True)
 def _isolate_registry() -> Any:
     """Snapshot + restore the evaluator registry per test."""
-    from rewind import stepping_api
+    from agent_timetravel import stepping_api
 
     saved = dict(stepping_api._EVALUATORS)
     stepping_api._EVALUATORS.clear()
@@ -74,7 +74,7 @@ class TestRegistry:
             return EvaluatorResult(passed="source" in result.lower())
 
         register_evaluator("cites_source", cites_source)
-        from rewind.stepping_api import get_evaluator
+        from agent_timetravel.stepping_api import get_evaluator
 
         assert get_evaluator("cites_source") is cites_source
 

@@ -20,7 +20,7 @@ sequenceDiagram
     Diff->>BQP: _base_quant_pairs(left.spans)
     loop each LLM span
         BQP->>QFS: quant_from_span(span)
-        QFS->>QFS: preferred: span.raw_attributes["rewind.local.quant"]
+        QFS->>QFS: preferred: span.raw_attributes["agent_timetravel.local.quant"]
         alt attr missing
             QFS->>PQ: parse_quant(span.model_name)
             PQ-->>QFS: QuantInfo(label, bits)

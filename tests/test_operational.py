@@ -2,11 +2,11 @@
 
 Covers:
 
-* **5.1** — :mod:`rewind.dag` (build_dag) + ``GET /traces/{id}/dag``.
-* **5.2** — :class:`rewind.models.LatencyBreakdown`.
-* **5.3** — :mod:`rewind.reproducibility` (capture_manifest) + storage.
-* **5.4** — :mod:`rewind.redaction` (RedactionPolicy + apply/preview) +
-  the ``rewind export`` CLI.
+* **5.1** — :mod:`timetravel.dag` (build_dag) + ``GET /traces/{id}/dag``.
+* **5.2** — :class:`timetravel.models.LatencyBreakdown`.
+* **5.3** — :mod:`timetravel.reproducibility` (capture_manifest) + storage.
+* **5.4** — :mod:`timetravel.redaction` (RedactionPolicy + apply/preview) +
+  the ``timetravel export`` CLI.
 """
 
 from __future__ import annotations
@@ -19,14 +19,14 @@ from click.testing import CliRunner
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.cli import cli
-from rewind.dag import build_dag
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import LatencyBreakdown, Span, Trace
-from rewind.redaction import RedactionPolicy, apply_redaction, preview_redaction
-from rewind.reproducibility import capture_manifest
-from rewind.storage import TraceStore
-from rewind.timeline import mount_timeline
+from agent_timetravel.cli import cli
+from agent_timetravel.dag import build_dag
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import LatencyBreakdown, Span, Trace
+from agent_timetravel.redaction import RedactionPolicy, apply_redaction, preview_redaction
+from agent_timetravel.reproducibility import capture_manifest
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.timeline import mount_timeline
 
 _TRACE_ID = "a" * 32
 
@@ -166,30 +166,30 @@ class TestLatencyBreakdown:
 
 class TestReproducibility:
     def test_capture_manifest_has_fields(self) -> None:
-        m = capture_manifest(rewind_version="0.1.0")
-        assert m.rewind_version == "0.1.0"
+        m = capture_manifest(timetravel_version="0.1.0")
+        assert m.timetravel_version == "0.1.0"
         assert m.python_version
         assert m.platform
         assert m.content_hash
         assert len(m.content_hash) == 16
 
     def test_content_hash_stable(self) -> None:
-        m1 = capture_manifest(rewind_version="0.1.0")
-        m2 = capture_manifest(rewind_version="0.1.0")
+        m1 = capture_manifest(timetravel_version="0.1.0")
+        m2 = capture_manifest(timetravel_version="0.1.0")
         assert m1.content_hash == m2.content_hash
 
     def test_different_version_changes_hash(self) -> None:
-        m1 = capture_manifest(rewind_version="0.1.0")
-        m2 = capture_manifest(rewind_version="0.2.0")
+        m1 = capture_manifest(timetravel_version="0.1.0")
+        m2 = capture_manifest(timetravel_version="0.2.0")
         assert m1.content_hash != m2.content_hash
 
     def test_storage_round_trip(self, store: TraceStore) -> None:
-        m = capture_manifest(rewind_version="0.1.0")
+        m = capture_manifest(timetravel_version="0.1.0")
         manifest_dict = {**m.to_dict(), "captured_at": "2026-08-03T00:00:00+00:00"}
         store.upsert_run_environment(manifest_dict)
         fetched = store.get_run_environment(m.content_hash)
         assert fetched is not None
-        assert fetched["rewind_version"] == "0.1.0"
+        assert fetched["timetravel_version"] == "0.1.0"
 
 
 # ===========================================================================

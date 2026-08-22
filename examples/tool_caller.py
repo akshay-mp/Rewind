@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Demo 1 — minimal tool-caller agent captured end-to-end by Rewind.
+"""Demo 1 — minimal tool-caller agent captured end-to-end by TimeTravel.
 
 Pattern:
     user prompt ─▶ LLM picks a tool ─▶ tool executes ─▶ LLM summarises
 
-This produces the smallest multi-span trace Rewind can capture: two LLM
-spans + one tool span. Use it as the "hello world" of Rewind-ingested agents
+This produces the smallest multi-span trace TimeTravel can capture: two LLM
+spans + one tool span. Use it as the "hello world" of TimeTravel-ingested agents
 and as a copy-paste base for richer tool agents.
 
 Run::
 
     # in terminal 1:
-    rewind serve
+    timetravel serve
 
     # in terminal 2:
     pip install openai openinference-instrumentation-openai opentelemetry-sdk
@@ -34,7 +34,7 @@ import os
 import sys
 from typing import Any
 
-# Point the OTLP exporter at the locally-running Rewind receiver. Must be
+# Point the OTLP exporter at the locally-running TimeTravel receiver. Must be
 # set before importing OpenInference / OpenTelemetry.
 os.environ.setdefault("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
 # Truncate rather than batch — we want the trace to appear in the UI the
@@ -114,7 +114,7 @@ def main() -> int:
     _ = resp1  # response shape logged by instrumentation
     messages.append(tool_call_msg)
 
-    # 2. Tool execution — Rewind will see this as a gen_ai.tool span via
+    # 2. Tool execution — TimeTravel will see this as a gen_ai.tool span via
     # tool_call_id linkage. (In production, OpenInference's
     # openinference-instrumentation-mcp does this automatically.)
     result = get_weather("Lisbon")
@@ -125,12 +125,12 @@ def main() -> int:
     final = fake_llm_completion(messages)
     print(f"[assistant] {final['choices'][0]['message']['content']}")
 
-    # Best-effort: print a hint that the trace should now be in Rewind.
+    # Best-effort: print a hint that the trace should now be in TimeTravel.
     # The instrumentor's trace id is internally generated — operators can
     # find the trace by filtering for "tool_caller demo" in the UI's
     # search box.
     print(
-        "\nTrace shipped to rewind serve. "
+        "\nTrace shipped to timetravel serve. "
         "Open http://127.0.0.1:8484/ui/ to inspect."
     )
     return 0

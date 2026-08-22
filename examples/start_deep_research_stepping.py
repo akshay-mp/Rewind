@@ -1,7 +1,7 @@
-"""Start the Rewind stepping server with the Deep Research Agent runner registered.
+"""Start the TimeTravel stepping server with the Deep Research Agent runner registered.
 
 Usage:
-    python examples/start_deep_research_stepping.py --db /tmp/rewind-demo.db
+    python examples/start_deep_research_stepping.py --db /tmp/timetravel-demo.db
 
 Then open http://127.0.0.1:8484/ui to step through the agent interactively step by step.
 """
@@ -18,10 +18,10 @@ from typing import Any
 
 import openai
 
-from rewind import Rewind, RewindContext, checkpoint, tool
-from rewind.openai_intercept import patch
+from agent_timetravel import TimeTravel, TimeTravelContext, checkpoint, tool
+from agent_timetravel.openai_intercept import patch
 
-rewind = Rewind(title="Deep Research")
+timetravel = TimeTravel(title="Deep Research")
 
 
 def load_local_env() -> None:
@@ -41,7 +41,7 @@ load_local_env()
 
 GEMMA_BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://127.0.0.1:8888/v1")
 GEMMA_API_KEY = os.environ.get("OPENAI_API_KEY", "local")
-GEMMA_MODEL = os.environ.get("REWIND_MODEL", "unsloth/gemma-4-12b-it-GGUF")
+GEMMA_MODEL = os.environ.get("TIMETRAVEL_MODEL", "unsloth/gemma-4-12b-it-GGUF")
 DEMO_TRACE_ID = "d3e0f00d1234567890abcdef12345678"
 
 PROMPTS: list[tuple[str, str, str]] = [
@@ -131,7 +131,7 @@ def _final_response(content: str) -> str:
 def _seed_demo_trace(store: Any) -> str:
     """Ensure a clean demo database has a replay root for interactive mode."""
     if store.get_trace(DEMO_TRACE_ID) is None:
-        from rewind.models import Trace
+        from agent_timetravel.models import Trace
 
         store.upsert_trace(Trace(trace_id=DEMO_TRACE_ID))
     return DEMO_TRACE_ID
@@ -153,7 +153,7 @@ def prepare_research_context(research_request: str) -> dict[str, Any]:
     }
 
 
-@rewind.agent(
+@timetravel.agent(
     name="deep-research",
     framework="openai",
     description="Step through the Deep Research demo.",
@@ -161,11 +161,11 @@ def prepare_research_context(research_request: str) -> dict[str, Any]:
 )
 async def deep_research_runner(
     query: str = "Compare RLHF vs DPO for aligning large language models, with citations.",
-    context: RewindContext | None = None,
+    context: TimeTravelContext | None = None,
 ) -> None:
     """Re-run the 8-step Deep Research Agent under interactive stepping against Gemma 4 via Unsloth Studio."""
     if context is None:
-        raise RuntimeError("deep_research_runner requires a Rewind workbench context")
+        raise RuntimeError("deep_research_runner requires a TimeTravel workbench context")
     session = context.session
     client = openai.AsyncOpenAI(base_url=GEMMA_BASE_URL, api_key=GEMMA_API_KEY)
     outputs: dict[int, str] = {}
@@ -222,18 +222,18 @@ async def deep_research_runner(
 def main() -> int:
     import uvicorn
 
-    from rewind.receiver import create_app
-    from rewind.storage import TraceStore
+    from agent_timetravel.receiver import create_app
+    from agent_timetravel.storage import TraceStore
 
     parser = argparse.ArgumentParser(description="Deep Research Stepping Server.")
-    parser.add_argument("--db", default="/tmp/rewind-demo.db", help="SQLite DB path.")
+    parser.add_argument("--db", default="/tmp/timetravel-demo.db", help="SQLite DB path.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8484)
     args = parser.parse_args()
 
     store = TraceStore(args.db)
     demo_trace_id = _seed_demo_trace(store)
-    app = create_app(store, registry=rewind)
+    app = create_app(store, registry=timetravel)
     print(
         f"[deep-research-stepping] runner 'deep-research' registered.\n"
         f"[deep-research-stepping] Serving on http://{args.host}:{args.port}/ui\n"

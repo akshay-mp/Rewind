@@ -34,10 +34,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import active_session
-from rewind.stepping import (
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import active_session
+from agent_timetravel.stepping import (
     Decision,
     DecisionKind,
     Step,
@@ -45,13 +45,13 @@ from rewind.stepping import (
     SteppingStopped,
     gate_async,
 )
-from rewind.stepping_api import (
+from agent_timetravel.stepping_api import (
     _SESSIONS,
     SSEApprovalChannel,
     mount_stepping,
     register_runner,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 _TRACE_ID = "abcd1234abcd1234abcd1234abcd1234"
 
@@ -105,7 +105,7 @@ def client(app: FastAPI) -> TestClient:
 @pytest.fixture(autouse=True)
 def _isolate_registry() -> Any:
     """Snapshot + restore the runner + live-session registries per test."""
-    from rewind import stepping_api
+    from agent_timetravel import stepping_api
 
     saved_runners = dict(stepping_api._RUNNERS)
     saved_live = dict(_SESSIONS._live)
@@ -197,7 +197,7 @@ class TestSessionDetail:
         assert body["items"] == []
 
     def test_list_reflects_inserted_row(self, client: TestClient, store: TraceStore) -> None:
-        from rewind.stepping import InteractiveSession
+        from agent_timetravel.stepping import InteractiveSession
 
         store.upsert_interactive_session(
             InteractiveSession(
@@ -232,7 +232,7 @@ class TestRunnerMechanics:
         channel.bind_loop(asyncio.get_running_loop())
         step = Step(
             kind=StepKind.TOOL,
-            payload={"name": "lookup", "args": ["rewind"], "kwargs": {}},
+            payload={"name": "lookup", "args": ["timetravel"], "kwargs": {}},
             cursor=0,
         )
 
@@ -284,9 +284,9 @@ class TestRunnerMechanics:
         from datetime import UTC, datetime
         from uuid import uuid4
 
-        from rewind.enums import ReplayMode
-        from rewind.replay import ReplaySession
-        from rewind.stepping_api import (
+        from agent_timetravel.enums import ReplayMode
+        from agent_timetravel.replay import ReplaySession
+        from agent_timetravel.stepping_api import (
             SSEApprovalChannel,
             _set_status,
         )
@@ -306,13 +306,13 @@ class TestRunnerMechanics:
             store, _TRACE_ID, mode=ReplayMode.INTERACTIVE
         )
         session_obj.approval = channel
-        from rewind.replay import _active_session
+        from agent_timetravel.replay import _active_session
 
         session_id = str(uuid4())
         now = datetime.now(tz=UTC).isoformat()
 
         async def wrapper() -> None:
-            from rewind.stepping import InteractiveSession
+            from agent_timetravel.stepping import InteractiveSession
 
             # Bind the ContextVar INSIDE the task — same fix as the server's
             # _runner_wrapper. asyncio.create_task copies the parent context
@@ -362,9 +362,9 @@ class TestRunnerMechanics:
         from datetime import UTC, datetime
         from uuid import uuid4
 
-        from rewind.enums import ReplayMode
-        from rewind.replay import ReplaySession
-        from rewind.stepping_api import _set_status
+        from agent_timetravel.enums import ReplayMode
+        from agent_timetravel.replay import ReplaySession
+        from agent_timetravel.stepping_api import _set_status
 
         async def stop_runner(session: Any) -> None:
             sess = active_session()
@@ -383,13 +383,13 @@ class TestRunnerMechanics:
             store, _TRACE_ID, mode=ReplayMode.INTERACTIVE
         )
         session_obj.approval = channel
-        from rewind.replay import _active_session
+        from agent_timetravel.replay import _active_session
 
         session_id = str(uuid4())
         now = datetime.now(tz=UTC).isoformat()
 
         async def wrapper() -> None:
-            from rewind.stepping import InteractiveSession
+            from agent_timetravel.stepping import InteractiveSession
 
             token = _active_session.set(session_obj)
             store.upsert_interactive_session(
@@ -436,22 +436,22 @@ class TestRunnerMechanics:
         from datetime import UTC, datetime
         from uuid import uuid4
 
-        from rewind.enums import ReplayMode
-        from rewind.replay import ReplaySession
-        from rewind.stepping_api import _set_status
+        from agent_timetravel.enums import ReplayMode
+        from agent_timetravel.replay import ReplaySession
+        from agent_timetravel.stepping_api import _set_status
 
         channel = SSEApprovalChannel()
         session_obj = ReplaySession.for_root(
             store, _TRACE_ID, mode=ReplayMode.INTERACTIVE
         )
         session_obj.approval = channel
-        from rewind.replay import _active_session
+        from agent_timetravel.replay import _active_session
 
         session_id = str(uuid4())
         now = datetime.now(tz=UTC).isoformat()
 
         async def wrapper() -> None:
-            from rewind.stepping import InteractiveSession
+            from agent_timetravel.stepping import InteractiveSession
 
             token = _active_session.set(session_obj)
             store.upsert_interactive_session(
@@ -595,7 +595,7 @@ class TestRegistry:
             pass
 
         register_runner("tmp", r)
-        from rewind.stepping_api import get_runner
+        from agent_timetravel.stepping_api import get_runner
 
         assert get_runner("tmp") is r
         assert get_runner("missing") is None
@@ -613,7 +613,7 @@ class TestRegistry:
 # ----------------------------------------------------------------------
 class TestStorageCRUD:
     def test_upsert_and_get(self, store: TraceStore) -> None:
-        from rewind.stepping import InteractiveSession
+        from agent_timetravel.stepping import InteractiveSession
 
         sid = "11111111-2222-3333-4444-555555555555"
         store.upsert_interactive_session(
@@ -652,7 +652,7 @@ class TestStorageCRUD:
         assert store.get_interactive_session("0" * 36) is None
 
     def test_list_pagination(self, store: TraceStore) -> None:
-        from rewind.stepping import InteractiveSession
+        from agent_timetravel.stepping import InteractiveSession
 
         for i in range(3):
             store.upsert_interactive_session(
@@ -671,7 +671,7 @@ class TestStorageCRUD:
         assert len(items) == 2
 
     def test_delete(self, store: TraceStore) -> None:
-        from rewind.stepping import InteractiveSession
+        from agent_timetravel.stepping import InteractiveSession
 
         sid = "22222222-3333-4444-5555-666666666666"
         store.upsert_interactive_session(
@@ -702,13 +702,13 @@ class TestDecisionKindsPhase1:
     at the channel / stepping-primitive level; these tests verify that
     * the ``DecisionRequest`` Pydantic model accepts the new ``kind`` strings,
     * the ``_build_decision`` helper maps them to the correct
-      :class:`~rewind.stepping.DecisionKind` enum value,
+      :class:`~timetravel.stepping.DecisionKind` enum value,
     * and the ``reason`` field is preserved on the resulting ``Decision``.
     """
 
     def test_reject_kind_accepted(self) -> None:
         """DecisionRequest.kind='reject' maps to DecisionKind.REJECT."""
-        from rewind.stepping_api import DecisionRequest, _build_decision
+        from agent_timetravel.stepping_api import DecisionRequest, _build_decision
 
         req = DecisionRequest(kind="reject")
         decision = _build_decision(req)
@@ -717,7 +717,7 @@ class TestDecisionKindsPhase1:
 
     def test_reject_with_reason_preserved(self) -> None:
         """The ``reason`` string is forwarded onto the Decision."""
-        from rewind.stepping_api import DecisionRequest, _build_decision
+        from agent_timetravel.stepping_api import DecisionRequest, _build_decision
 
         req = DecisionRequest(kind="reject", reason="this action is unsafe")
         decision = _build_decision(req)
@@ -726,7 +726,7 @@ class TestDecisionKindsPhase1:
 
     def test_run_until_breakpoint_kind_accepted(self) -> None:
         """DecisionRequest.kind='run_until_breakpoint' maps correctly."""
-        from rewind.stepping_api import DecisionRequest, _build_decision
+        from agent_timetravel.stepping_api import DecisionRequest, _build_decision
 
         req = DecisionRequest(kind="run_until_breakpoint")
         decision = _build_decision(req)
@@ -736,7 +736,7 @@ class TestDecisionKindsPhase1:
         """An unrecognised kind raises HTTPException(400)."""
         from fastapi import HTTPException
 
-        from rewind.stepping_api import DecisionRequest, _build_decision
+        from agent_timetravel.stepping_api import DecisionRequest, _build_decision
 
         req = DecisionRequest(kind="totally_unknown_kind")  # type: ignore[arg-type]
         with pytest.raises(HTTPException) as exc_info:
@@ -746,7 +746,7 @@ class TestDecisionKindsPhase1:
 
     def test_reject_reason_empty_string_treated_as_none(self) -> None:
         """An empty reason string is passed through unchanged (None in request = None)."""
-        from rewind.stepping_api import DecisionRequest, _build_decision
+        from agent_timetravel.stepping_api import DecisionRequest, _build_decision
 
         req = DecisionRequest(kind="reject", reason=None)
         decision = _build_decision(req)
@@ -760,7 +760,7 @@ class TestDecisionKindsPhase1:
         Uses the store directly to seed a session row (no live runner needed),
         then drives PATCH and GET through the HTTP client.
         """
-        from rewind.stepping import InteractiveSession
+        from agent_timetravel.stepping import InteractiveSession
 
         sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         store.upsert_interactive_session(

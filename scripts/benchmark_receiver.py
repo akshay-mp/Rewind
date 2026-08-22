@@ -44,7 +44,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from rewind.models import Span
+    from agent_timetravel.models import Span
 
 # Default ceilings (plan §6 Phase 8 exit criteria).
 DEFAULT_RECEIVER_P99_MS = 5.0
@@ -177,8 +177,8 @@ def bench_interceptor(iterations: int) -> dict[str, float]:
 
     Returns percentiles in **microseconds**.
     """
-    from rewind.enums import SpanKind  # pylint: disable=import-outside-toplevel
-    from rewind.models import Span  # pylint: disable=import-outside-toplevel
+    from agent_timetravel.enums import SpanKind  # pylint: disable=import-outside-toplevel
+    from agent_timetravel.models import Span  # pylint: disable=import-outside-toplevel
 
     spans: list[Span] = [
         Span(

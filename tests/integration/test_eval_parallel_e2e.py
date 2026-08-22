@@ -30,16 +30,16 @@ from uuid import UUID
 
 import pytest
 
-from rewind.enums import CandidateMode, EvaluatorKind, EvalVerdict, SpanKind
-from rewind.evaluate import (
+from agent_timetravel.enums import CandidateMode, EvaluatorKind, EvalVerdict, SpanKind
+from agent_timetravel.evaluate import (
     EvalScenario,
     EvalSuite,
     EvaluatorRequest,
     TokenBudgetExpectation,
     evaluate,
 )
-from rewind.models import Span, Trace
-from rewind.storage import TraceStore
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.storage import TraceStore
 
 if TYPE_CHECKING:
     pass
@@ -113,7 +113,7 @@ def _make_seed(
 @pytest.fixture
 def seeded_store(tmp_path: Path) -> tuple[TraceStore, dict[str, str]]:
     """Seed N traces, return (store, name→trace_id map)."""
-    store = TraceStore(tmp_path / "rewind.db")
+    store = TraceStore(tmp_path / "agent_timetravel.db")
     trace_ids: dict[str, str] = {}
     for i in range(N_SCENARIOS):
         # Each trace_id is a unique 32-char hex with the index embedded.
@@ -265,7 +265,7 @@ def test_one_failed_scenario_doesnt_block_suite(
     tmp_path: Path,
 ) -> None:
     """A SKIP scenario (missing seed trace) doesn't poison the others."""
-    store = TraceStore(tmp_path / "rewind.db")
+    store = TraceStore(tmp_path / "agent_timetravel.db")
     # Seed three valid scenarios; the middle one references a ghost trace.
     valid_tids = []
     for i in range(3):

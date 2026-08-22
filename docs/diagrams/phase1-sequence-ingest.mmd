@@ -5,7 +5,7 @@ sequenceDiagram
     participant R as FastAPI Receiver
     participant I as ingest.py
     participant S as TraceStore
-    participant D as rewind.db
+    participant D as timetravel.db
 
     A->>A: build OpenInference spans
     A->>X: emit ResourceSpans
@@ -31,4 +31,4 @@ sequenceDiagram
         R->>S: insert_span span
         S->>D: INSERT spans
     end
-    R-->>X: 200 OK<br/>x-rewind-spans-accepted N
+    R-->>X: 200 OK<br/>x-timetravel-spans-accepted N

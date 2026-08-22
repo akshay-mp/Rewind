@@ -4,7 +4,7 @@ sequenceDiagram
     participant S as FastAPI localhost 8484
     participant M as _mount_ui StaticFiles
     participant T as timeline.py read API
-    participant D as TraceStore rewind.db
+    participant D as TraceStore timetravel.db
 
     Note over U,D: Stage 1 fetch the SPA shell
     U->>S: GET /ui
@@ -30,8 +30,8 @@ sequenceDiagram
     T-->>U: 200 TraceDetail
 
     Note over U,D: Stage 4 user clicks a span SpanInspector opens
-    U->>T: GET /api/v1/spans/{rewind_id}
-    T->>D: store.get_span rewind_id
+    U->>T: GET /api/v1/spans/{timetravel_id}
+    T->>D: store.get_span timetravel_id
     D-->>T: Span
     T-->>U: 200 SpanView with tokens and model
 
@@ -39,4 +39,4 @@ sequenceDiagram
     U->>T: GET /api/v1/search q=tool name
     T->>D: store.list_traces plus text scan
     D-->>T: matching spans
-    T-->>U: 200 SearchResponse with rewind_id and snippet
+    T-->>U: 200 SearchResponse with timetravel_id and snippet

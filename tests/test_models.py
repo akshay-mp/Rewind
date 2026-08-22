@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import json
 
-from rewind.enums import SpanKind
-from rewind.models import Span, Trace
-from rewind.storage import TraceStore
+from agent_timetravel.enums import SpanKind
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.storage import TraceStore
 
 
 def test_round_trip_three_span_trace(
     tmp_path, sample_trace: Trace
 ) -> None:
     """Serialize → SQLite → reload → identical (Phase 0 exit criterion)."""
-    db = TraceStore(tmp_path / "rewind.db")
+    db = TraceStore(tmp_path / "agent_timetravel.db")
     db.upsert_trace(sample_trace)
     for span in sample_trace.spans:
         db.insert_span(span)
@@ -30,11 +30,11 @@ def test_round_trip_three_span_trace(
 
 def test_raw_attributes_byte_fidelity(tmp_path, llm_span: Span) -> None:
     """``raw_attributes`` must survive SQLite round-trip byte-for-byte."""
-    db = TraceStore(tmp_path / "rewind.db")
+    db = TraceStore(tmp_path / "agent_timetravel.db")
     db.upsert_trace(Trace(trace_id=llm_span.trace_id, spans=[llm_span]))
     db.insert_span(llm_span)
 
-    raw_bytes = db.raw_attributes_bytes(llm_span.rewind_id)
+    raw_bytes = db.raw_attributes_bytes(llm_span.timetravel_id)
     assert raw_bytes is not None
     # Re-loads to the same dict the source span held.
     assert json.loads(raw_bytes) == llm_span.raw_attributes
@@ -42,7 +42,7 @@ def test_raw_attributes_byte_fidelity(tmp_path, llm_span: Span) -> None:
 
 def test_span_parent_linking_round_trips(tmp_path, tool_span: Span, llm_span: Span) -> None:
     """Parent → child span linking must round-trip for a multi-step agent."""
-    db = TraceStore(tmp_path / "rewind.db")
+    db = TraceStore(tmp_path / "agent_timetravel.db")
     trace = Trace(trace_id=tool_span.trace_id, spans=[llm_span, tool_span])
     db.upsert_trace(trace)
     for s in trace.spans:

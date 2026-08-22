@@ -31,7 +31,7 @@ flowchart TB
         GateAsync["gate_async / gate_sync"]
     end
 
-    DB[("rewind.db<br/>interactive_sessions table<br/>+ spans under branch_id")]
+    DB[("agent_timetravel.db<br/>interactive_sessions table<br/>+ spans under branch_id")]
 
     %% Browser → server
     SessionList -->|POST /sessions| PostSessions

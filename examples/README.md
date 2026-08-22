@@ -1,13 +1,13 @@
-# Rewind Demo Agents
+# TimeTravel Demo Agents
 
-Three minimal end-to-end examples that exercise Rewind's full pipeline —
+Three minimal end-to-end examples that exercise TimeTravel's full pipeline —
 **OTLP capture → SQLite storage → timeline UI** — using OpenInference
 auto-instrumentation.
 
 Each demo is a single-file Python script designed to:
 
 1. auto-capture every LLM / tool call as an OTel span,
-2. ship those spans to a locally-running `rewind serve` instance via OTLP/HTTP,
+2. ship those spans to a locally-running `timetravel serve` instance via OTLP/HTTP,
 3. print the captured trace id so the user can switch to the Web UI and
    inspect the timeline,
 4. degrade gracefully when the optional instrumentation package isn't
@@ -19,25 +19,39 @@ structure — so they're easy to copy-paste into a new agent skeleton.
 ## Prerequisites (one-time)
 
 ```bash
-# Install Rewind (any of:)
-pipx install rewind-debugger
-pip install rewind-debugger            # if no pipx
+# Install TimeTravel (any of:)
+pipx install agent-timetravel
+pip install agent-timetravel            # if no pipx
 pip install -e .                 # dev install from the repo
 
 # Install one OpenInference instrumentation package per example:
 pip install openinference-instrumentation-openai
 
 # Start the receiver (in one terminal):
-rewind serve
+timetravel serve
 
 # Open the Timeline UI (in another terminal):
-rewind ui
+timetravel ui
 ```
 
 That's it. Each demo script below is hermetic — set `OTEL_EXPORTER_OTLP_ENDPOINT`
 and run.
 
 ## Demos
+
+### deepagents deep-research — the modern integration ⭐
+
+**[`deepagents_research/`](./deepagents_research/)** — a foreign LangGraph
+project (the deepagents deep-research agent) under the interactive
+step-by-step workbench with one dependency and one `app.py`. Plain-text
+query input, every LLM and tool call (subagents included) gated in the
+debugger, local-model support. Start here — this is the recommended
+integration path.
+
+```bash
+cd deepagents_research    # after arranging the graph project + .env
+timetravel app:main       # browser opens at http://127.0.0.1:8484/ui
+```
 
 ### Capture-only (toy agents)
 
@@ -49,13 +63,13 @@ and run.
 
 Each demo wraps the actual `openai` SDK with OpenInference's instrumentation
 context manager; the `OTEL_EXPORTER_OTLP_ENDPOINT` env var (set by these
-scripts to `http://127.0.0.1:4318`) points the OTLP exporter at Rewind.
+scripts to `http://127.0.0.1:4318`) points the OTLP exporter at TimeTravel.
 
 ### Deep-research integration (capture + replay + branch + diff)
 
 | File | What it is | Status |
 |---|---|---|
-| [`deep_research_demo.py`](./deep_research_demo.py) | **The recommended live demo (Python/CLI).** A flattened 8-step deep-research agent run against a local model (Unsloth/Ollama) through Rewind's real capture → frozen → branch+diff engine. Runs in ~3 min on a 27B model. | ✅ Working |
+| [`deep_research_demo.py`](./deep_research_demo.py) | **The recommended live demo (Python/CLI).** A flattened 8-step deep-research agent run against a local model (Unsloth/Ollama) through TimeTravel's real capture → frozen → branch+diff engine. Runs in ~3 min on a 27B model. | ✅ Working |
 | [`deep_research.py`](./deep_research.py) | A heavier variant that drives the full `open_deep_research` LangGraph graph. More faithful to ODR but heavier/fragile — see its README for the Python-3.14 / `jsonschema-rs` caveat. | ⚠️ Needs 3.11–3.13 |
 | [`deep_research_README.md`](./deep_research_README.md) | Setup + env vars + how-it-works for the Python demos. | — |
 
@@ -63,12 +77,12 @@ scripts to `http://127.0.0.1:4318`) points the OTLP exporter at Rewind.
 
 | Path | What it is |
 |---|---|
-| [`../web-demo/`](../web-demo/) | A Next.js + shadcn/ui app with a three-panel debugger: span timeline (left), span detail + prompt editor (right), branch diff (modal). Talks to your local model via the OpenAI SDK and mirrors spans into Rewind's receiver. **This is the demo to show people.** |
+| [`../web-demo/`](../web-demo/) | A Next.js + shadcn/ui app with a three-panel debugger: span timeline (left), span detail + prompt editor (right), branch diff (modal). Talks to your local model via the OpenAI SDK and mirrors spans into TimeTravel's receiver. **This is the demo to show people.** |
 | [`../docs/demo-run.md`](../docs/demo-run.md) | Step-by-step run guide for the web demo against Unsloth Studio. |
 
 ## After running
 
-Once a demo prints `trace_id=...`, switch to the Rewind UI running on
+Once a demo prints `trace_id=...`, switch to the TimeTravel UI running on
 `http://127.0.0.1:8484/ui/` — the trace will appear in the list almost
 instantly. From there:
 
@@ -83,7 +97,7 @@ instantly. From there:
   replay → branch → diff loop, use [`deep_research_demo.py`](./deep_research_demo.py)
   or the [`web-demo/`](../web-demo/) UI — see [`docs/demo-run.md`](../docs/demo-run.md).
 - **No Eval**: these demos produce one trace per run. Running them under
-  `rewind eval` (Phase 5.5) is the way to score agent variants at scale.
+  `timetravel eval` (Phase 5.5) is the way to score agent variants at scale.
 - **No framework deps** *(capture-only demos)*: each uses plain `openai` so
   they run anywhere with `pip install openinference-instrumentation-openai`.
   Demos for ADK / CrewAI / PydanticAI / SmolAgents follow the same shape but

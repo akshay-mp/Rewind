@@ -1,6 +1,6 @@
 # Branching & Diff Walkthrough
 
-This is the core debugging workflow Rewind unlocks. You captured a trace
+This is the core debugging workflow TimeTravel unlocks. You captured a trace
 of your agent; something about its behaviour surprised you; now you want
 to ask "what would have happened if the prompt were phrased differently?"
 
@@ -15,7 +15,7 @@ first N spans with its parent trace and diverges from span N+1 onwards.
 Branches form a tree, and **every span in a branch is real** — either
 served from the frozen recording, or captured from a live model call.
 
-The Rewind Replay Engine has three modes:
+The TimeTravel Replay Engine has three modes:
 
 | Mode | Behaviour | Use when |
 |---|---|---|
@@ -34,8 +34,8 @@ second LLM call diverge.
 ### Step 1 — Capture and open
 
 ```bash
-rewind serve &
-rewind ui &
+timetravel serve &
+timetravel ui &
 python examples/tool_caller.py
 ```
 
@@ -74,7 +74,7 @@ Branch A (original)             │   Branch B (your edit)
              in Lisbon today.    │            in Tokyo today.
 ```
 
-The **first divergent span** is highlighted; Rewind also surface any
+The **first divergent span** is highlighted; TimeTravel also surface any
 "hidden" divergences — e.g. if both branches happen to produce the
 *same* textual answer but the model is configured differently
 (`q4_K_M` vs `q8_0`), the `quant_diverges` flag from Phase 7 lights up
@@ -88,12 +88,12 @@ What actually happens behind the scenes when you click "Run live":
    are copied to a new branch id. No new model calls — pure SQLite write.
 2. **Switch mode**: the active `ReplaySession` for branch B is set to
    `BRANCH`. Calls to the agent from this point onward are routed
-   through Rewind.
+   through TimeTravel.
 3. **Serve the first N from fixtures**: any call whose hash matches a
    recorded span at index ≤ cursor returns the cached response. No HTTP
    egress.
 4. **Forward the (N+1)th call live**: the agent's prompt-change
-   generates a new `messages_hash`; Rewind doesn't recognise it; the
+   generates a new `messages_hash`; TimeTravel doesn't recognise it; the
    call is forwarded to your real model; the response is captured into
    the branch under a new span id.
 
@@ -107,7 +107,7 @@ You don't need to branch interactively. If you already have two traces
 quantisation), you can diff them directly:
 
 ```bash
-rewind diff TRACE_A TRACE_B            # CLI form
+timetravel diff TRACE_A TRACE_B            # CLI form
 ```
 
 Or in the UI: select two traces in the trace list → **Diff**. The diff
@@ -122,7 +122,7 @@ another), the diff surfaces a `quant_diverges` badge on the diverging
 span. This catches the silent quality regression where lower-VRAM
 hardware downgrades a run without changing any prompts.
 
-Run `rewind enrich TRACE --sample-vram` to additionally capture one-shot
+Run `timetravel enrich TRACE --sample-vram` to additionally capture one-shot
 VRAM samples per LLM span — those appear next to each span in the UI and
 are surfaceable in the diff.
 
@@ -133,7 +133,7 @@ are surfaceable in the diff.
 | See what an agent would have done with a different prompt | Branch from the relevant LLM span, edit the message, Run live. |
 | Find the first divergence between two captured runs | Open both traces, click Diff. |
 | Verify a model swap didn't break anything | Diff before/after; check `quant_diverges` flag. |
-| Roll back a side-effecting agent | Use `rewind.checkpoint()` in your agent + Phase 4's rollback handler. |
+| Roll back a side-effecting agent | Use `timetravel.checkpoint()` in your agent + Phase 4's rollback handler. |
 | Bulk-test 50 prompt variants | See [`docs/phases/phase-5.5.md`](./phases/phase-5.5.md) for the eval harness. |
 
 ## What you cannot do with branching
@@ -142,7 +142,7 @@ are surfaceable in the diff.
   the recorded tool result; the actual filesystem / API / database
   call is **not** re-executed. This is deliberate — replay is for
   inspection, not for re-running side effects. For side-effecting
-  agents, see Phase 4's `rewind.checkpoint()`.
+  agents, see Phase 4's `timetravel.checkpoint()`.
 - **You can't branch a streaming generation mid-token.** Branching
   granularity is per-span, not per-chunk. (Streaming fixtures are
   chunk-level inside a span, but the branch point itself is always a

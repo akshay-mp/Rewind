@@ -20,11 +20,11 @@ from pathlib import Path
 
 import pytest
 
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import ReplaySession
-from rewind.replay import replay as replay_ctx
-from rewind.stepping import (
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import ReplaySession
+from agent_timetravel.replay import replay as replay_ctx
+from agent_timetravel.stepping import (
     AsyncioChannel,
     Decision,
     DecisionKind,
@@ -36,7 +36,7 @@ from rewind.stepping import (
     gate_async,
     gate_sync,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 
 # ----------------------------------------------------------------------

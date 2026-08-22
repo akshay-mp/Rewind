@@ -1,4 +1,4 @@
-"""Unit tests for ``rewind.eval_api`` — the Phase 5.5 HTTP surface.
+"""Unit tests for ``timetravel.eval_api`` — the Phase 5.5 HTTP surface.
 
 Mirrors the pattern of ``tests/test_timeline.py``: real FastAPI app via
 ``TestClient``, real ``TraceStore`` at a temp path, and isolated fixture
@@ -25,17 +25,17 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind
-from rewind.eval_api import (
+from agent_timetravel.enums import SpanKind
+from agent_timetravel.eval_api import (
     EvalRunDetailView,
     EvalRunListResponse,
     EvalRunSummaryView,
     mount_eval,
     parse_suite_from_yaml,
 )
-from rewind.evaluate import SuiteValidationError
-from rewind.models import Span, Trace
-from rewind.storage import TraceStore
+from agent_timetravel.evaluate import SuiteValidationError
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.storage import TraceStore
 
 if TYPE_CHECKING:
     pass
@@ -61,7 +61,7 @@ scenarios:
 @pytest.fixture
 def store(tmp_path: Path) -> TraceStore:
     """A TraceStore with a 3-span seed trace already written."""
-    s = TraceStore(tmp_path / "rewind.db")
+    s = TraceStore(tmp_path / "agent_timetravel.db")
     spans = [
         Span(
             trace_id=_TRACE_ID,
@@ -429,7 +429,7 @@ class TestViewModels:
         assert r.total == 0
 
     def test_eval_run_detail_view_constructs_with_scenarios(self) -> None:
-        from rewind.enums import EvalVerdict
+        from agent_timetravel.enums import EvalVerdict
 
         v = EvalRunDetailView(
             run_id=str(uuid4()),

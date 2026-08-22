@@ -6,9 +6,9 @@ Exercises the class-level ``BaseChatModel`` / ``BaseTool`` patches:
 
 * gate approve / edit / stop for LLM and tool calls (sync + async);
 * replay hit from a recorded span (zero model calls) in FROZEN mode;
-* frozen divergence failing closed with :class:`~rewind.replay.ReplayError`;
+* frozen divergence failing closed with :class:`~timetravel.replay.ReplayError`;
 * live-forward capture of LLM and TOOL spans in INTERACTIVE sessions;
-* the ``replay_chat_model`` / ``@rewind.tool()`` double-handling guards;
+* the ``replay_chat_model`` / ``@timetravel.tool()`` double-handling guards;
 * patch restore and nested-patch idempotency.
 """
 
@@ -22,17 +22,17 @@ from typing import Any
 
 import pytest
 
-from rewind.enums import ReplayMode, SpanKind
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import replay as replay_ctx
-from rewind.stepping import (
+from agent_timetravel.enums import ReplayMode, SpanKind
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import replay as replay_ctx
+from agent_timetravel.stepping import (
     AsyncioChannel,
     Decision,
     DecisionKind,
     Step,
     ThreadBridgeChannel,
 )
-from rewind.storage import TraceStore
+from agent_timetravel.storage import TraceStore
 
 if not importlib.util.find_spec("langchain_core"):
     pytest.skip("langchain-core not installed", allow_module_level=True)
@@ -43,7 +43,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import BaseTool, StructuredTool
 
-from rewind.langgraph_intercept import _is_replay_wrapper, _is_rewind_tool, patch
+from agent_timetravel.langgraph_intercept import _is_replay_wrapper, _is_timetravel_tool, patch
 
 # pylint: enable=import-outside-toplevel
 
@@ -216,7 +216,7 @@ def trace_id() -> str:
 def _unpatched() -> None:
     """Force-restore the class patches even if a test leaks its context."""
     # pylint: disable=import-outside-toplevel
-    from rewind import langgraph_intercept as intercept_module
+    from agent_timetravel import langgraph_intercept as intercept_module
     # pylint: enable=import-outside-toplevel
 
     yield
@@ -322,7 +322,7 @@ def test_async_invoke_edit_rewrites_outbound_messages(
 
 
 def test_async_invoke_stop_unwinds(store: TraceStore, trace_id: str) -> None:
-    from rewind.stepping import SteppingStopped
+    from agent_timetravel.stepping import SteppingStopped
 
     _seed_trace(store, trace_id, [])
     model, tracker = _fake_model()
@@ -362,7 +362,7 @@ def test_frozen_replay_serves_recorded_message(store: TraceStore, trace_id: str)
 
 
 def test_frozen_divergence_fails_closed(store: TraceStore, trace_id: str) -> None:
-    from rewind.replay import ReplayError
+    from agent_timetravel.replay import ReplayError
 
     messages = [HumanMessage(content="expected").model_dump()]
     _seed_trace(store, trace_id, [_recorded_llm_span(trace_id, messages)])
@@ -376,7 +376,7 @@ def test_frozen_divergence_fails_closed(store: TraceStore, trace_id: str) -> Non
 
 
 def test_manual_replay_wrapper_skips_the_gate(store: TraceStore, trace_id: str) -> None:
-    from rewind.adapters.langgraph import replay_chat_model
+    from agent_timetravel.adapters.langgraph import replay_chat_model
 
     _seed_trace(store, trace_id, [])
     inner, inner_tracker = _fake_model()
@@ -448,7 +448,7 @@ def test_tool_reject_returns_structured_refusal(
         result = asyncio.run(tool.ainvoke({"command": "rm -rf"}))
         approver.join(timeout=2)
     assert result == {
-        "rewind": "tool rejected",
+        "timetravel": "tool rejected",
         "tool": "danger",
         "reason": "too risky",
     }
@@ -481,22 +481,22 @@ def test_tool_approve_captures_tool_span(store: TraceStore, trace_id: str) -> No
     assert span.raw_attributes["gen_ai.tool.output"] == "results-for:rlhf"
 
 
-def test_rewind_tool_wrapper_defers_to_its_own_dispatch(
+def test_timetravel_tool_wrapper_defers_to_its_own_dispatch(
     store: TraceStore, trace_id: str
 ) -> None:
-    from rewind.tool_intercept import tool as rewind_tool
+    from agent_timetravel.tool_intercept import tool as timetravel_tool
 
     _seed_trace(store, trace_id, [])
     calls: list[str] = []
 
-    @rewind_tool(name="owned")
+    @timetravel_tool(name="owned")
     def owned(query: str) -> str:
         """An owned tool."""
         calls.append(query)
         return "owned-result"
 
     tool = StructuredTool.from_function(func=owned, name="owned")
-    assert _is_rewind_tool(tool)
+    assert _is_timetravel_tool(tool)
 
     with patch(), replay_ctx(store, trace_id, mode=ReplayMode.INTERACTIVE) as session:
         result = asyncio.run(tool.ainvoke({"query": "q"}))
@@ -504,7 +504,7 @@ def test_rewind_tool_wrapper_defers_to_its_own_dispatch(
 
     assert result == "owned-result"
     assert calls == ["q"]
-    # Exactly one TOOL span — the @rewind.tool() path — despite both
+    # Exactly one TOOL span — the @timetravel.tool() path — despite both
     # interception layers being active.
     tool_spans = [
         s for s in store.get_spans(trace_id, branch_id=branch_id)
@@ -578,7 +578,7 @@ def test_frozen_replay_parses_openai_wire_tool_calls(store: TraceStore, trace_id
 
 
 def test_llm_result_text_summarizes_tool_call_steps() -> None:
-    from rewind.langgraph_intercept import _llm_result_text
+    from agent_timetravel.langgraph_intercept import _llm_result_text
 
     message = AIMessage(
         content="",
@@ -647,8 +647,8 @@ def test_command_tool_output_round_trips_on_replay(
     assert isinstance(live, Command)
     assert live.update == {"todos": ["plan"]}
     stored = store.get_trace(trace_id).spans[0].raw_attributes["gen_ai.tool.output"]
-    assert "__rewind_command__" in stored
-    assert stored["__rewind_command__"]["update"] == {"todos": ["plan"]}
+    assert "__timetravel_command__" in stored
+    assert stored["__timetravel_command__"]["update"] == {"todos": ["plan"]}
 
     with patch(), replay_ctx(store, trace_id, mode=ReplayMode.FROZEN):
         replayed = asyncio.run(tool.ainvoke({"todos": ["plan"]}))

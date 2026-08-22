@@ -6,11 +6,11 @@ contract that must hold even when none of the five agent frameworks is
 installed:
 
 1. Each adapter module imports **cleanly** without its framework present
-   (verifies the lazy-import contract — ``rewind --version`` stays fast).
+   (verifies the lazy-import contract — ``timetravel --version`` stays fast).
 2. Each adapter's ``__all__`` exposes the documented public surface.
 3. Calling each factory without the framework installed raises
    :class:`AdapterError` with a helpful install hint.
-4. The pure helpers in :mod:`rewind.adapters._common`
+4. The pure helpers in :mod:`timetravel.adapters._common`
    (:func:`build_live_span`, :func:`assert_not_frozen`) and the
    framework-specific message-flattening helpers behave correctly for
    every shape the recorded payloads can take.
@@ -31,11 +31,11 @@ from uuid import UUID
 
 import pytest
 
-from rewind.adapters import _common
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.replay import ReplayError
-from rewind.storage import TraceStore
+from agent_timetravel.adapters import _common
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.replay import ReplayError
+from agent_timetravel.storage import TraceStore
 
 # ----------------------------------------------------------------------
 # Pure-Python fixtures (lifted from tests/test_replay.py shape)
@@ -61,11 +61,11 @@ def fake_session() -> SimpleNamespace:
 # framework present. None of these frameworks are in the default dev env.
 # ----------------------------------------------------------------------
 _ADAPTER_MODULES = [
-    "rewind.adapters.adk",
-    "rewind.adapters.crewai",
-    "rewind.adapters.pydantic_ai",
-    "rewind.adapters.smolagents",
-    "rewind.adapters.langgraph",
+    "agent_timetravel.adapters.adk",
+    "agent_timetravel.adapters.crewai",
+    "agent_timetravel.adapters.pydantic_ai",
+    "agent_timetravel.adapters.smolagents",
+    "agent_timetravel.adapters.langgraph",
 ]
 
 
@@ -80,7 +80,7 @@ def test_adapter_module_imports_without_framework(module_name: str) -> None:
 
 def test_adapter_package_docstring_lists_all_five_frameworks() -> None:
     """`adapters/__init__.py` docstring must reference all five frameworks."""
-    import rewind.adapters as pkg
+    import agent_timetravel.adapters as pkg
 
     doc = pkg.__doc__ or ""
     for fw in ("langgraph", "adk", "pydantic_ai", "crewai", "smolagents"):
@@ -93,11 +93,11 @@ def test_adapter_package_docstring_lists_all_five_frameworks() -> None:
 @pytest.mark.parametrize(
     ("module_name", "expected"),
     [
-        ("rewind.adapters.adk", {"AdapterError", "replay_llm"}),
-        ("rewind.adapters.crewai", {"AdapterError", "replay_llm"}),
-        ("rewind.adapters.pydantic_ai", {"AdapterError", "replay_model"}),
-        ("rewind.adapters.smolagents", {"AdapterError", "replay_model"}),
-        ("rewind.adapters.langgraph", {"AdapterError", "replay_chat_model"}),
+        ("agent_timetravel.adapters.adk", {"AdapterError", "replay_llm"}),
+        ("agent_timetravel.adapters.crewai", {"AdapterError", "replay_llm"}),
+        ("agent_timetravel.adapters.pydantic_ai", {"AdapterError", "replay_model"}),
+        ("agent_timetravel.adapters.smolagents", {"AdapterError", "replay_model"}),
+        ("agent_timetravel.adapters.langgraph", {"AdapterError", "replay_chat_model"}),
     ],
 )
 def test_adapter_public_surface(module_name: str, expected: set[str]) -> None:
@@ -117,22 +117,22 @@ def _framework_installed(module_root: str) -> bool:
 @pytest.mark.parametrize(
     ("module_name", "factory_name", "fw_root", "arg"),
     [
-        ("rewind.adapters.adk", "replay_llm", "google", "adk-model"),
-        ("rewind.adapters.crewai", "replay_llm", "crewai", "crewai-model"),
+        ("agent_timetravel.adapters.adk", "replay_llm", "google", "adk-model"),
+        ("agent_timetravel.adapters.crewai", "replay_llm", "crewai", "crewai-model"),
         (
-            "rewind.adapters.pydantic_ai",
+            "agent_timetravel.adapters.pydantic_ai",
             "replay_model",
             "pydantic_ai",
             "pydantic-ai-model",
         ),
         (
-            "rewind.adapters.smolagents",
+            "agent_timetravel.adapters.smolagents",
             "replay_model",
             "smolagents",
             "smolagents-model",
         ),
         (
-            "rewind.adapters.langgraph",
+            "agent_timetravel.adapters.langgraph",
             "replay_chat_model",
             "langchain_core",
             "langchain-model",
@@ -204,7 +204,7 @@ def test_build_live_span_persists_into_store(
     fake_session: SimpleNamespace, tmp_path: Path
 ) -> None:
     """The span returned is in the shape ``TraceStore.insert_span`` accepts."""
-    from rewind.replay import ReplaySession
+    from agent_timetravel.replay import ReplaySession
 
     store = TraceStore(str(tmp_path / "adapter.db"))
     # Pre-seed an (empty) trace so `for_root` has something to load.
@@ -253,7 +253,7 @@ def test_adk_messages_helper_flattens_dicts() -> None:
     """``_messages_from_adk`` accepts dicts and proto-like Content objects."""
     if _framework_installed("google"):
         pytest.skip("ADK installed — gated suite covers it")
-    from rewind.adapters import adk
+    from agent_timetravel.adapters import adk
 
     request = SimpleNamespace(
         contents=[
@@ -275,7 +275,7 @@ def test_crewai_messages_helper_flattens_objects() -> None:
     """``_crewai_messages_to_jsonable`` accepts dict + duck-typed inputs."""
     if _framework_installed("crewai"):
         pytest.skip("crewai installed")
-    from rewind.adapters import crewai
+    from agent_timetravel.adapters import crewai
 
     out = crewai._crewai_messages_to_jsonable(
         [
@@ -291,7 +291,7 @@ def test_pydic_ai_messages_helper_flattens_dumpable() -> None:
     """``_messages_to_jsonable`` accepts dicts + model_dump-bearing objects."""
     if _framework_installed("pydantic_ai"):
         pytest.skip("pydantic-ai installed")
-    from rewind.adapters import pydantic_ai
+    from agent_timetravel.adapters import pydantic_ai
 
     class _Stub:
         def model_dump(self) -> dict[str, str]:
@@ -305,7 +305,7 @@ def test_pydic_ai_messages_helper_flattens_dumpable() -> None:
 def test_smolagents_messages_helper_flattens_objects() -> None:
     if _framework_installed("smolagents"):
         pytest.skip("smolagents installed")
-    from rewind.adapters import smolagents
+    from agent_timetravel.adapters import smolagents
 
     out = smolagents._smol_messages_to_jsonable(
         [SimpleNamespace(role="user", content="hi")]
@@ -316,7 +316,7 @@ def test_smolagents_messages_helper_flattens_objects() -> None:
 def test_smolagents_response_extractor_handles_strings() -> None:
     if _framework_installed("smolagents"):
         pytest.skip("smolagents installed")
-    from rewind.adapters import smolagents
+    from agent_timetravel.adapters import smolagents
 
     assert smolagents._smol_chat_message_to_text("raw") == "raw"
     assert smolagents._smol_chat_message_to_text(

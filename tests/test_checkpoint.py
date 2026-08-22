@@ -1,4 +1,4 @@
-"""Unit tests for :mod:`rewind.checkpoint` (Phase 4).
+"""Unit tests for :mod:`timetravel.checkpoint` (Phase 4).
 
 Covers the three paths in the behaviour matrix:
 
@@ -16,11 +16,11 @@ from uuid import UUID
 
 import pytest
 
-from rewind.checkpoint import CheckpointToken, checkpoint
-from rewind.enums import SpanKind
-from rewind.models import Checkpoint, Span
-from rewind.replay import ReplaySession
-from rewind.storage import TraceStore
+from agent_timetravel.checkpoint import CheckpointToken, checkpoint
+from agent_timetravel.enums import SpanKind
+from agent_timetravel.models import Checkpoint, Span
+from agent_timetravel.replay import ReplaySession
+from agent_timetravel.storage import TraceStore
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def store(tmp_path: Path) -> TraceStore:
 @pytest.fixture
 def trace_id(store: TraceStore) -> str:
     """Insert a minimal trace + one LLM span so replay can load it."""
-    from rewind.models import Trace
+    from agent_timetravel.models import Trace
 
     tid = "f" * 32
     s = Span(
@@ -126,7 +126,7 @@ def test_checkpoint_captures_on_live_forward(
     store: TraceStore, trace_id: str
 ) -> None:
     """A BRANCH session with no prior record captures the live state on exit."""
-    from rewind.enums import ReplayMode
+    from agent_timetravel.enums import ReplayMode
 
     root = ReplaySession.for_root(store, trace_id)
     branched = root.fork(branch_at=0, mode=ReplayMode.BRANCH, label="test")
@@ -149,9 +149,9 @@ def test_checkpoint_captured_payload_restores_on_subsequent_frozen(
     """A checkpoint captured in a BRANCH run is served back in FROZEN.
 
     This is the headline Phase 4 contract: an agent using
-    ``rewind.checkpoint`` restores full state after a rewind.
+    ``timetravel.checkpoint`` restores full state after a timetravel.
     """
-    from rewind.enums import ReplayMode
+    from agent_timetravel.enums import ReplayMode
 
     root = ReplaySession.for_root(store, trace_id)
     branched = root.fork(branch_at=0, mode=ReplayMode.BRANCH, label="cap")
@@ -184,7 +184,7 @@ def test_checkpoint_no_capture_call_is_safe(
     register intent without live capture — the supplied ``payload`` is
     what gets persisted (if anything).
     """
-    from rewind.enums import ReplayMode
+    from agent_timetravel.enums import ReplayMode
 
     root = ReplaySession.for_root(store, trace_id)
     branched = root.fork(branch_at=0, mode=ReplayMode.BRANCH)
@@ -205,12 +205,12 @@ def test_checkpoint_no_capture_call_is_safe(
 def _bind(session: ReplaySession) -> Iterator[None]:
     """Bind ``session`` to the active-session ContextVar for the duration.
 
-    Mirrors what :func:`rewind.replay.replay` does, so we can test
+    Mirrors what :func:`timetravel.replay.replay` does, so we can test
     :func:`checkpoint` without going through the public context manager
     (which would advance the cursor itself).
     """
     # pylint: disable=import-outside-toplevel,protected-access
-    from rewind.replay import _active_session
+    from agent_timetravel.replay import _active_session
     # pylint: enable=import-outside-toplevel,protected-access
 
     token = _active_session.set(session)

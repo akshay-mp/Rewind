@@ -1,4 +1,4 @@
-"""``rewind app:main`` shorthand and bare-graph workbench launch tests."""
+"""``timetravel app:main`` shorthand and bare-graph workbench launch tests."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import uvicorn
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
 
-from rewind.cli import cli
-from rewind.graph_app import GraphAppError, is_langchain_runnable, registry_from_object
+from agent_timetravel.cli import cli
+from agent_timetravel.graph_app import GraphAppError, is_langchain_runnable, registry_from_object
 
 _HAS_LANGCHAIN = importlib.util.find_spec("langchain_core") is not None
 
@@ -88,7 +88,7 @@ def test_registry_from_callable_uses_auto_detection() -> None:
 
 
 def test_registry_from_object_rejects_unsupported_targets() -> None:
-    with pytest.raises(GraphAppError, match=r"expected a rewind\.Rewind instance"):
+    with pytest.raises(GraphAppError, match=r"expected a timetravel\.TimeTravel instance"):
         registry_from_object(42, name="main")
 
     def varargs(*args: Any) -> Any:
@@ -102,7 +102,7 @@ def test_shorthand_launches_graph_app(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    module = ModuleType("rewind_graph_test_app")
+    module = ModuleType("timetravel_graph_test_app")
     graph = FakeGraph()
     module.main = graph
     monkeypatch.setitem(sys.modules, module.__name__, module)
@@ -137,7 +137,7 @@ def test_dev_rejects_unsupported_object_with_actionable_error(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    module = ModuleType("rewind_graph_bad_app")
+    module = ModuleType("timetravel_graph_bad_app")
     module.main = 42
     monkeypatch.setitem(sys.modules, module.__name__, module)
 
@@ -147,4 +147,4 @@ def test_dev_rejects_unsupported_object_with_actionable_error(
     )
 
     assert result.exit_code != 0
-    assert "expected a rewind.Rewind instance" in result.output
+    assert "expected a timetravel.TimeTravel instance" in result.output

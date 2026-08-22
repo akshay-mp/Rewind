@@ -4,7 +4,7 @@ sequenceDiagram
     participant SDK as checkpoint ctxmgr
     participant AS as active_session ContextVar
     participant S as ReplaySession
-    participant DB as rewind.db checkpoints table
+    participant DB as timetravel.db checkpoints table
 
     Note over A,DB: Setup: agent runs inside replay for_root, mode FROZEN or BRANCH.
 

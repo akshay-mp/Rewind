@@ -1,8 +1,8 @@
-"""Phase 3 Track 3B.3 — unit tests for the Rewind tool-call interceptor.
+"""Phase 3 Track 3B.3 — unit tests for the TimeTravel tool-call interceptor.
 
 Strategy
 --------
-We exercise the public ``@rewind.tool()`` decorator with a small seeded
+We exercise the public ``@timetravel.tool()`` decorator with a small seeded
 span tree whose ``gen_ai.tool.input_hash`` is computed using the very
 same normaliser the dispatcher uses (``_tool_args_hash``). This keeps
 the tests stable under future changes to the JSON canonicalisation.
@@ -24,13 +24,13 @@ from typing import Any
 
 import pytest
 
-from rewind import tool as rewind_tool
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace
-from rewind.replay import active_session
-from rewind.replay import replay as replay_ctx
-from rewind.storage import TraceStore
-from rewind.tool_intercept import ToolCacheMiss, _tool_args_hash
+from agent_timetravel import tool as timetravel_tool
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.replay import active_session
+from agent_timetravel.replay import replay as replay_ctx
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.tool_intercept import ToolCacheMiss, _tool_args_hash
 
 
 # ----------------------------------------------------------------------
@@ -67,7 +67,7 @@ def _tool_span(
 
 @pytest.fixture
 def store(tmp_path: Path) -> TraceStore:
-    return TraceStore(str(tmp_path / "rewind.db"))
+    return TraceStore(str(tmp_path / "agent_timetravel.db"))
 
 
 @pytest.fixture
@@ -100,7 +100,7 @@ def test_tool_decorator_passthrough_without_session() -> None:
     """Without ``replay()`` active, the wrapper behaves like the function."""
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str, *, limit: int = 5) -> list[str]:
         calls.append(((query,), {"limit": limit}))
         return [f"hit-{query}-{limit}"]
@@ -121,7 +121,7 @@ def test_frozen_serves_cached_tool_output_and_advances_cursor(
     """A matching span returns the recorded output; cursor advances past it."""
     store, span, args = seeded_tool_trace
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[dict[str, float]]:
         raise AssertionError("live search must not run in frozen mode")
 
@@ -144,7 +144,7 @@ def test_frozen_raises_toolcachemiss_on_args_mismatch(
     """Different tool args in FROZEN mode raise ToolCacheMiss."""
     store, _span, _args = seeded_tool_trace
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("should not be called")
 
@@ -160,7 +160,7 @@ def test_frozen_raises_toolcachemiss_when_cursor_exhausted(
     """After the only span is consumed, a second call is a miss."""
     store, _span, args = seeded_tool_trace
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("should not be called")
 
@@ -178,7 +178,7 @@ def test_frozen_raises_toolcachemiss_on_name_mismatch(
     """A different tool name in FROZEN mode doesn't match the cached span."""
     store, _span, args = seeded_tool_trace
 
-    @rewind_tool(name="calculate")
+    @timetravel_tool(name="calculate")
     def calculate(expr: str) -> float:
         raise AssertionError("should not be called")
 
@@ -197,7 +197,7 @@ def test_branch_calls_live_and_records_new_span(
     """In BRANCH mode a cache miss forwards live and records a TOOL span."""
     store, _span, args = seeded_tool_trace
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         return [f"live-{query}"]
 
@@ -228,7 +228,7 @@ def test_branch_serves_cached_on_match_then_forwards_on_next_call(
     """BRANCH mode still prefers cache; only misses forward live."""
     store, _span, args = seeded_tool_trace
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         return [f"live-{query}"]
 
@@ -264,11 +264,11 @@ def test_kind_parameter_distinguishes_tool_from_mcp(
     store.upsert_trace(Trace(trace_id=trace_id, spans=[mcp_span]))
     store.insert_span(mcp_span)
 
-    @rewind_tool(name="read_file", kind=SpanKind.MCP)
+    @timetravel_tool(name="read_file", kind=SpanKind.MCP)
     def read_file(path: str) -> str:
         raise AssertionError("live MCP call must not run in frozen replay")
 
-    @rewind_tool(name="read_file")  # default kind = TOOL
+    @timetravel_tool(name="read_file")  # default kind = TOOL
     def read_file_tool(path: str) -> str:
         raise AssertionError("live tool call must not run in frozen replay")
 
@@ -284,13 +284,13 @@ def test_kind_parameter_distinguishes_tool_from_mcp(
 # ----------------------------------------------------------------------
 # Phase 9 — INTERACTIVE tool stepping
 #
-# The sync @rewind.tool() path is the only genuinely sync-only interception
+# The sync @timetravel.tool() path is the only genuinely sync-only interception
 # surface. These tests drive the ThreadBridgeChannel with a background
 # approver thread so the main thread's blocking gate_sync call resolves.
 # ----------------------------------------------------------------------
 import threading  # noqa: E402
 
-from rewind.stepping import (  # noqa: E402
+from agent_timetravel.stepping import (  # noqa: E402
     Decision,
     DecisionKind,
     SteppingStopped,
@@ -323,7 +323,7 @@ def test_interactive_approve_proceeds_with_tool_call(
     store, _span, args = seeded_tool_trace
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         return [f"live-{query}"]
 
@@ -364,7 +364,7 @@ def test_interactive_edit_rewrites_tool_args(
 
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[dict[str, str]]:
         return [{"symbol": query, "price": "live"}]
 
@@ -390,7 +390,7 @@ def test_interactive_stop_raises_stepping_stopped(
     store, _span, args = seeded_tool_trace
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("live search must not run on STOP")
 
@@ -411,7 +411,7 @@ def test_interactive_mock_result_never_calls_live_tool(
     store, _span, args = seeded_tool_trace
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("mocked tool must not run")
 
@@ -435,7 +435,7 @@ def test_interactive_skip_returns_structured_result(
     store, _span, args = seeded_tool_trace
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("skipped tool must not run")
 
@@ -447,7 +447,7 @@ def test_interactive_skip_returns_structured_result(
     t = threading.Thread(target=resolve, daemon=True)
     t.start()
     with replay_ctx(store, trace_id, mode=ReplayMode.INTERACTIVE, approval=channel):
-        assert search(*args) == {"rewind": "tool skipped", "tool": "search"}
+        assert search(*args) == {"timetravel": "tool skipped", "tool": "search"}
     t.join(timeout=2)
 
 
@@ -464,7 +464,7 @@ def test_interactive_reject_returns_structured_reject(
     store, _span, args = seeded_tool_trace
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("rejected tool must not run")
 
@@ -480,7 +480,7 @@ def test_interactive_reject_returns_structured_reject(
     t.join(timeout=2)
 
     assert result == {
-        "rewind": "tool rejected",
+        "timetravel": "tool rejected",
         "tool": "search",
         "reason": "vetoed by developer",
     }
@@ -494,7 +494,7 @@ def test_interactive_reject_without_reason_uses_default(
     store, _span, args = seeded_tool_trace
     channel = ThreadBridgeChannel()
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("rejected tool must not run")
 
@@ -509,7 +509,7 @@ def test_interactive_reject_without_reason_uses_default(
         result = search(*args)
     t.join(timeout=2)
 
-    assert result["rewind"] == "tool rejected"
+    assert result["timetravel"] == "tool rejected"
     assert result["reason"] == "rejected by developer"
 
 
@@ -520,7 +520,7 @@ def test_interactive_no_channel_falls_through_to_cache(
     """INTERACTIVE without a channel behaves like BRANCH — no-op gate."""
     store, _span, args = seeded_tool_trace
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("cached hit should not reach the live body")
 
@@ -540,12 +540,12 @@ def test_interactive_async_only_channel_raises_stepping_stopped(
     so the gate raises SteppingStopped with an actionable hint rather than
     silently skipping the pause (which would hide the contract violation).
     """
-    from rewind.stepping import AsyncioChannel
+    from agent_timetravel.stepping import AsyncioChannel
 
     store, _span, args = seeded_tool_trace
     channel = AsyncioChannel()
 
-    @rewind_tool(name="search")
+    @timetravel_tool(name="search")
     def search(query: str) -> list[str]:
         raise AssertionError("should not be reached")
 

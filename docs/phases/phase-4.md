@@ -5,11 +5,11 @@
 > the world** — filesystem commits, DB writes, external API calls.
 > Phase 3 assumed span outputs were sufficient ground truth; Phase 4
 > adds two opt-in mechanisms so that's no longer required:
-> (1) **`rewind.checkpoint(name, payload)`** — a context manager that
+> (1) **`timetravel.checkpoint(name, payload)`** — a context manager that
 > symmetrically *restores* recorded state on FROZEN replay and *captures*
 > it on BRANCH/FULL forward, and
 > (2) **`RollbackHandler`** — a Protocol that snapshots the working tree
-> on `on_branch` and restores it on `on_rewind`. The reference
+> on `on_branch` and restores it on `on_timetravel`. The reference
 > implementation is `GitRollbackHandler`, which uses a HEAD-anchor +
 > stash strategy so that even committed agent writes round-trip safely.
 > Also adds **`TraceStore.iter_spans`** for memory-bounded timeline
@@ -34,13 +34,13 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| `CheckpointToken` + `checkpoint()` ctxmgr | `src/rewind/checkpoint.py` | The single entry point agents use. Restores recorded state on FROZEN, captures on BRANCH/FULL, **no-op when no session active**. Symmetric API regardless of mode. |
-| `Checkpoint` dataclass | `src/rewind/models.py` | `(trace_id, branch_id DEFAULT NULL, name, cursor_index, label, payload: JSONObject, created_at)`. UNIQUE over `(branch_id, name)` so each branch has at most one snapshot per name. |
-| `checkpoints` table + `iter_spans` | `src/rewind/storage.py` | `SCHEMA_VERSION` bumped 1→2. Migration is `CREATE TABLE IF NOT EXISTS`, so existing v1 DBs upgrade cleanly on first open. `iter_spans(..., page_size=N)` yields spans in pages so 100k-span timelines never load into memory at once. |
-| `RollbackHandler` Protocol | `src/rewind/rollback/base.py` | Two-method symmetric Protocol: `on_branch(branch_id)` snapshot, `on_rewind(branch_id)` restore. Both **idempotent** by contract — unknown `branch_id` in `on_rewind` is a no-op, never an error. |
-| `GitRollbackHandler` | `src/rewind/rollback/git.py` | Reference implementation using a HEAD-anchor + stash strategy. Handles commits as well as working-tree changes — not just uncommitted deltas. |
-| CLI inspect/recover | `src/rewind/cli.py` | `rewind checkpoint list <trace-id>` and `rewind checkpoint restore <trace-id> <name>`. Read-only operations for developers — *production* restore is via the SDK (inside `replay`), not the CLI. |
-| Public surface | `src/rewind/__init__.py` | Re-exports `checkpoint`, `CheckpointToken`, `RollbackHandler`, `RollbackError`, `GitRollbackHandler`. |
+| `CheckpointToken` + `checkpoint()` ctxmgr | `src/timetravel/checkpoint.py` | The single entry point agents use. Restores recorded state on FROZEN, captures on BRANCH/FULL, **no-op when no session active**. Symmetric API regardless of mode. |
+| `Checkpoint` dataclass | `src/timetravel/models.py` | `(trace_id, branch_id DEFAULT NULL, name, cursor_index, label, payload: JSONObject, created_at)`. UNIQUE over `(branch_id, name)` so each branch has at most one snapshot per name. |
+| `checkpoints` table + `iter_spans` | `src/timetravel/storage.py` | `SCHEMA_VERSION` bumped 1→2. Migration is `CREATE TABLE IF NOT EXISTS`, so existing v1 DBs upgrade cleanly on first open. `iter_spans(..., page_size=N)` yields spans in pages so 100k-span timelines never load into memory at once. |
+| `RollbackHandler` Protocol | `src/timetravel/rollback/base.py` | Two-method symmetric Protocol: `on_branch(branch_id)` snapshot, `on_timetravel(branch_id)` restore. Both **idempotent** by contract — unknown `branch_id` in `on_timetravel` is a no-op, never an error. |
+| `GitRollbackHandler` | `src/timetravel/rollback/git.py` | Reference implementation using a HEAD-anchor + stash strategy. Handles commits as well as working-tree changes — not just uncommitted deltas. |
+| CLI inspect/recover | `src/timetravel/cli.py` | `timetravel checkpoint list <trace-id>` and `timetravel checkpoint restore <trace-id> <name>`. Read-only operations for developers — *production* restore is via the SDK (inside `replay`), not the CLI. |
+| Public surface | `src/timetravel/__init__.py` | Re-exports `checkpoint`, `CheckpointToken`, `RollbackHandler`, `RollbackError`, `GitRollbackHandler`. |
 
 ### 1.2 The two orthogonal mechanisms
 
@@ -50,7 +50,7 @@ failure modes. They compose but are independent:
 | Mechanism | Granularity | Where state lives | Restored on FROZEN? | Agent opt-in? |
 |---|---|---|---|---|
 | **`checkpoint(name, payload)`** | Application state (in-process dict) | `checkpoints` table | ✅ Yes — row served via `token.restored` | Yes — agent annotates its code with `with checkpoint(...)` |
-| **`RollbackHandler` (git ref)** | Entire working tree (filesystem + git index) | `refs/rewind/rewind-branch-<hex>` + a stash entry | N/A — handlers fire on `fork()` and on explicit rewind, never mid-FROZEN | Yes — user passes `handler=GitRollbackHandler(...)` to `fork()` |
+| **`RollbackHandler` (git ref)** | Entire working tree (filesystem + git index) | `refs/timetravel/timetravel-branch-<hex>` + a stash entry | N/A — handlers fire on `fork()` and on explicit timetravel, never mid-FROZEN | Yes — user passes `handler=GitRollbackHandler(...)` to `fork()` |
 
 **When to use which:**
 
@@ -69,7 +69,7 @@ failure modes. They compose but are independent:
 
 ### 1.3 Why `checkpoint()` is a ctxmgr (and not a callback)
 
-A decorator (`@rewind.checkpoint("name")`) was the original sketch in
+A decorator (`@timetravel.checkpoint("name")`) was the original sketch in
 the plan but discarded because:
 
 1. **No scope mismatch.** A ctxmgr's `__exit__` always runs even on
@@ -92,7 +92,7 @@ upfront; the ctxmgr merges `payload` with whatever the agent later
 **Why not stash-only?** Code-editing agents frequently **commit** their
 writes — `git commit -am "intermediate"` is the norm, not the exception.
 A stash-only handler restores *uncommitted* deltas but leaves the
-agent's commits in place, producing silent state corruption on rewind.
+agent's commits in place, producing silent state corruption on timetravel.
 
 **Strategy (two layers, both keyed by `branch_id`):**
 
@@ -102,22 +102,22 @@ agent's commits in place, producing silent state corruption on rewind.
    drop` if the tag matches) — prevents stale entries from prior
    aborted branches leaking into a fresh round-trip.
 2. Capture the **HEAD commit** as the anchor via `git rev-parse HEAD`,
-   store it in `refs/rewind/rewind-branch-<hex>` via `git update-ref`.
+   store it in `refs/timetravel/timetravel-branch-<hex>` via `git update-ref`.
 3. `git stash create` to capture any **uncommitted delta** (modified,
    staged, but not-yet-committed files). Empty output → tree was clean,
-   skip the stash store. Otherwise `git stash store -m "rewind-branch-..."`
+   skip the stash store. Otherwise `git stash store -m "timetravel-branch-..."`
    to attach the tag and keep it off the standard stash stack.
 
-`on_rewind(branch_id)` — restore to the anchor + replay the delta:
+`on_timetravel(branch_id)` — restore to the anchor + replay the delta:
 
 1. Look up the anchor via `git rev-parse --verify --quiet`. *If the ref
    is missing*, return silently (the Protocol's idempotency contract —
-   calling rewind twice or rewinding an unknown id must never raise).
-2. `git reset --hard <anchor>` — rewinds any commits the agent made.
+   calling timetravel twice or timetraveling an unknown id must never raise).
+2. `git reset --hard <anchor>` — timetravels any commits the agent made.
 3. `git clean -fd` — drops untracked files the agent wrote outside git.
 4. `git stash pop` — if we captured a delta at `on_branch`, replay it on
    top of the clean tree. Otherwise skipped.
-5. `git update-ref -d refs/rewind/rewind-branch-<hex>` — clean up the
+5. `git update-ref -d refs/timetravel/timetravel-branch-<hex>` — clean up the
    ref so the table doesn't grow.
 
 **Critical implementation detail:** `git rev-parse --verify --quiet
@@ -143,7 +143,7 @@ class RollbackHandler(Protocol):
         Raises RollbackError on snapshot failure (never silently continue).
         """
 
-    def on_rewind(self, branch_id: UUID) -> None:
+    def on_timetravel(self, branch_id: UUID) -> None:
         """Restore the state saved at on_branch and drop the tag.
 
         Idempotent for an unknown branch_id (returns silently).
@@ -155,8 +155,8 @@ class RollbackHandler(Protocol):
 
 1. **`on_branch` must succeed or raise `RollbackError`.** Never
    partially snapshot — a corrupted snapshot is worse than no snapshot.
-2. **`on_rewind` is a no-op for unknown `branch_id`.** Callers may
-   invoke rewind twice, or for an id the handler never snapshotted;
+2. **`on_timetravel` is a no-op for unknown `branch_id`.** Callers may
+   invoke timetravel twice, or for an id the handler never snapshotted;
    the Protocol must not turn that into an error.
 3. **Handlers namespace state under `branch_id` themselves.** Two
    concurrent branches can be active in the same tree (parallel eval
@@ -191,7 +191,7 @@ asserts the peak resident set stays under 50 MiB.
 ### 1.7 The `checkpoint()` API surface
 
 ```python
-from rewind import checkpoint
+from agent_timetravel import checkpoint
 
 with checkpoint("after_db_write", payload={"user_id": 42}) as state_token:
     if state_token.restored:
@@ -231,7 +231,7 @@ flowchart TB
             Ingest["ingest.py"]
             StoreW["TraceStore<br/>SQLite + WAL"]
         end
-        DB[("rewind.db<br/>traces, spans, branches,<br/>checkpoints (NEW)")]
+        DB[("agent_timetravel.db<br/>traces, spans, branches,<br/>checkpoints (NEW)")]
         subgraph CheckpointPlane["Checkpoint SDK (NEW)"]
             CtxMgr["checkpoint ctxmgr<br/>checkpoint.py"]
             Token["CheckpointToken<br/>restored flag + capture_fn"]
@@ -239,7 +239,7 @@ flowchart TB
         end
         subgraph RollbackPlane["Rollback control plane (NEW)"]
             Session["ReplaySession.fork<br/>hands handler the branch_id"]
-            Protocol["RollbackHandler Protocol<br/>on_branch + on_rewind"]
+            Protocol["RollbackHandler Protocol<br/>on_branch + on_timetravel"]
             GitHandler["GitRollbackHandler<br/>HEAD anchor + stash delta"]
         end
     end
@@ -267,7 +267,7 @@ flowchart TB
     CtxMgr -->|insert checkpoints row| DB
     Session -->|fork branch_at handler GitHandler| Protocol
     Protocol -->|on_branch branch_id| GitHandler
-    Protocol -->|on_rewind branch_id| GitHandler
+    Protocol -->|on_timetravel branch_id| GitHandler
     GitHandler -->|git rev-parse HEAD| Git
     GitHandler -->|git stash create plus store| Git
     GitHandler -->|git reset --hard anchor| Git
@@ -295,7 +295,7 @@ git CLI and working tree.
 
 ## 3. Sequence Diagrams
 
-### 3.1 `rewind.checkpoint()` — restore / capture decision tree
+### 3.1 `timetravel.checkpoint()` — restore / capture decision tree
 
 ```mermaid
 sequenceDiagram
@@ -304,7 +304,7 @@ sequenceDiagram
     participant SDK as checkpoint ctxmgr
     participant AS as active_session ContextVar
     participant S as ReplaySession
-    participant DB as rewind.db checkpoints table
+    participant DB as timetravel.db checkpoints table
     Note over A,DB: Setup agent runs inside replay for_root mode FROZEN or BRANCH.
     Note over A,DB: Stage 1 entry checkpoint name and payload are given
     A->>SDK: with checkpoint(name init payload default state)
@@ -353,7 +353,7 @@ Source: [`docs/diagrams/phase4-sequence-checkpoint.mmd`](../diagrams/phase4-sequ
 sequenceDiagram
     autonumber
     participant U as User or eval harness
-    participant CLI as rewind replay CLI
+    participant CLI as timetravel replay CLI
     participant S as ReplaySession
     participant H as GitRollbackHandler
     participant G as git CLI local
@@ -364,7 +364,7 @@ sequenceDiagram
     U->>CLI: replay trace_id branch_at N mode branch handler git
     CLI->>S: fork branch_at N handler GitRollbackHandler
     S->>H: on_branch branch_id hex
-    H->>G: git stash list grep rewind-branch-ID
+    H->>G: git stash list grep timetravel-branch-ID
     G-->>H: existing stash SHA or none
     alt existing stash for tag found stale reuse
         H->>G: git stash drop existing
@@ -372,14 +372,14 @@ sequenceDiagram
     end
     H->>G: git rev-parse HEAD
     G-->>H: anchor SHA
-    H->>G: git update-ref refs rewind rewind-branch-ID anchor
+    H->>G: git update-ref refs timetravel timetravel-branch-ID anchor
     H->>G: git stash create
     alt working tree clean
         G-->>H: empty stash no delta
         Note right of H: skip stash store save roundtrip
     else uncommitted delta exists
         G-->>H: stash SHA
-        H->>G: git stash store SHA with rewind tag
+        H->>G: git stash store SHA with timetravel tag
     end
     H-->>S: branch ready working tree is anchored
     Note over U,A: Stage 2 agent runs commits or writes freely
@@ -388,11 +388,11 @@ sequenceDiagram
     A->>G: git checkout -b scratch OR git commit -am work
     G->>WT: move HEAD and index forward
     Note right of WT: agent is free to mutate the tree
-    Note over U,A: Stage 3 rewind fires on_rewind restores pristine tree
-    U->>CLI: rewind to branch_id
-    CLI->>S: rewind branch_id
-    S->>H: on_rewind branch_id hex
-    H->>G: git rev-parse verify refs rewind rewind-branch-ID
+    Note over U,A: Stage 3 timetravel fires on_timetravel restores pristine tree
+    U->>CLI: timetravel to branch_id
+    CLI->>S: timetravel branch_id
+    S->>H: on_timetravel branch_id hex
+    H->>G: git rev-parse verify refs timetravel timetravel-branch-ID
     alt anchor missing silently skipped
         G-->>H: rc nonzero ref unknown
         Note right of H: no-op safe to call twice idempotent
@@ -406,7 +406,7 @@ sequenceDiagram
             H->>G: git stash pop
             WT-->>G: working changes restored on top of clean tree
         end
-        H->>G: git update-ref -d refs rewind rewind-branch-ID
+        H->>G: git update-ref -d refs timetravel timetravel-branch-ID
         Note right of H: cleanup prevents ref table growth
     end
     H-->>S: tree restored pristine plus stash popped
@@ -425,14 +425,14 @@ Source: [`docs/diagrams/phase4-sequence-rollback.mmd`](../diagrams/phase4-sequen
 | Exit criterion | Verification |
 |---|---|
 | **A 1000-step synthetic trace rewrites from step 500 in <2s** (fixtures served, no live call). | `tests/integration/test_checkpoint_e2e.py::test_phase4_perf_1000_step_rewrite_under_2_seconds` — builds a 1000-LLM-span trace, forks at span 500, inserts 500 divergent spans under the new `branch_id`, then asserts the storage round-trip + timeline-materialize completes well under 2s on the dev machine baseline. |
-| **An agent using `rewind.checkpoint()` restores full state after a rewind.** | `tests/integration/test_checkpoint_e2e.py::test_phase4_e2e_checkpoint_capture_then_frozen_restore` — a BRANCH run captures a checkpoint with `token.capture({"committed": True, "sha": ...})` and persists to the `checkpoints` table; a subsequent FROZEN run of the same branch restores the snapshot via `token.restored == True` and the agent's side-effect body is **not** re-invoked. |
+| **An agent using `timetravel.checkpoint()` restores full state after a timetravel.** | `tests/integration/test_checkpoint_e2e.py::test_phase4_e2e_checkpoint_capture_then_frozen_restore` — a BRANCH run captures a checkpoint with `token.capture({"committed": True, "sha": ...})` and persists to the `checkpoints` table; a subsequent FROZEN run of the same branch restores the snapshot via `token.restored == True` and the agent's side-effect body is **not** re-invoked. |
 | **A trace with 100k+ spans loads its timeline without OOM.** | `tests/integration/test_checkpoint_e2e.py::test_phase4_perf_100k_spans_iter_no_oom` — inserts 100,000 spans, iterates via `store.iter_spans(trace_id, page_size=1000)`, asserts `tracemalloc.get_traced_memory()` peak stays under 50 MiB. (Phase 1-2 `get_spans()` would have held the full serialized list in memory.) |
 
 **Bonus end-to-end coverage** (not in the plan, but pins the full stack):
 
 | Test | What it pins |
 |---|---|
-| `test_phase4_e2e_git_rollback_restores_after_agent_commit` | `GitRollbackHandler.on_branch` (anchor + stash) → agent commits real work → `handler.on_rewind` (`reset --hard` + `clean -fd` + `stash pop`) restores the pristine tree byte-for-byte. Below-2s budget not applicable, but covers the rollback round-trip across the real git CLI in a tmp repo. |
+| `test_phase4_e2e_git_rollback_restores_after_agent_commit` | `GitRollbackHandler.on_branch` (anchor + stash) → agent commits real work → `handler.on_timetravel` (`reset --hard` + `clean -fd` + `stash pop`) restores the pristine tree byte-for-byte. Below-2s budget not applicable, but covers the rollback round-trip across the real git CLI in a tmp repo. |
 
 ### 4.2 Test inventory
 
@@ -440,7 +440,7 @@ Source: [`docs/diagrams/phase4-sequence-rollback.mmd`](../diagrams/phase4-sequen
 |---|---|---|---|
 | Phase 4 unit: checkpoint SDK | `tests/test_checkpoint.py` | 7 | No-session pass-through; FROZEN restore from recorded row; BRANCH/FULL capture via `token.capture()`; payload-merge semantics; SessionLookup via contextvars |
 | Phase 4 unit: storage chunking | `tests/test_storage_chunking.py` | 14 | `iter_spans` page boundaries (exact, partial last page, empty trace, 100k-span peak memory); `upsert_checkpoint` / `get_checkpoint` round-trip; UNIQUE over `(branch_id, name)`; SCHEMA_VERSION bump from 1→2 on open of v1 DB |
-| Phase 4 unit: rollback | `tests/test_rollback.py` | 8 | Protocol structural compliance; `on_branch`+`on_rewind` round-trip restores files; unknown branch_id is a no-op; idempotent `on_branch`; empty working tree is safe; non-git directory raises `RollbackError`; missing git binary raises with a helpful message; stash entries carry the `rewind-branch-` prefix |
+| Phase 4 unit: rollback | `tests/test_rollback.py` | 8 | Protocol structural compliance; `on_branch`+`on_timetravel` round-trip restores files; unknown branch_id is a no-op; idempotent `on_branch`; empty working tree is safe; non-git directory raises `RollbackError`; missing git binary raises with a helpful message; stash entries carry the `timetravel-branch-` prefix |
 | Phase 4 unit: `Checkpoint` model | `tests/test_models.py` (delta) | (in suite) | `Checkpoint` dataclass field defaults + serialization round-trip (already part of the suite total) |
 | Phase 4 unit: enums / models | `tests/test_enums_models.py` (delta) | (in suite) | Schema bump integrates with existing model tests |
 | **Integration** | `tests/integration/test_checkpoint_e2e.py` | 4 | All 3 exit criteria + the git round-trip |
@@ -450,17 +450,17 @@ Source: [`docs/diagrams/phase4-sequence-rollback.mmd`](../diagrams/phase4-sequen
 
 | Module | Coverage |
 |---|---|
-| `src/rewind/checkpoint.py` | **100%** |
-| `src/rewind/rollback/base.py` | **100%** |
-| `src/rewind/rollback/git.py` | **81%** — uncovered branches are exception-translation paths (`subprocess.TimeoutExpired`, missing-binary `FileNotFoundError` → `RollbackError`) exercised only when git is unavailable; the happy path + unknown-ref fallback are covered |
-| `src/rewind/storage.py` | **96%** — gap is the schema-migration branch for v1→v2 on an *empty* DB, which is exercised by integration but not counted by coverage on the first run |
+| `src/timetravel/checkpoint.py` | **100%** |
+| `src/timetravel/rollback/base.py` | **100%** |
+| `src/timetravel/rollback/git.py` | **81%** — uncovered branches are exception-translation paths (`subprocess.TimeoutExpired`, missing-binary `FileNotFoundError` → `RollbackError`) exercised only when git is unavailable; the happy path + unknown-ref fallback are covered |
+| `src/timetravel/storage.py` | **96%** — gap is the schema-migration branch for v1→v2 on an *empty* DB, which is exercised by integration but not counted by coverage on the first run |
 
 ### 4.4 Lint / type gates (mirror CI)
 
 ```text
-ruff check src/rewind tests            -> All checks passed!
-pylint src/rewind                       -> 10.00/10
-mypy --strict src/rewind                -> Success: no issues found in 20 source files
+ruff check src/timetravel tests            -> All checks passed!
+pylint src/timetravel                       -> 10.00/10
+mypy --strict src/timetravel                -> Success: no issues found in 20 source files
 pytest                                  -> 173 passed, 1 warning in 62s
 python scripts/security_scan.py --phase 4
   ruff S      -> rc=0
@@ -491,15 +491,15 @@ Phase 1-3 surfaces are unchanged. Phase 4 adds **two** new surfaces:
 | Threat | Vector | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
 | **Shell injection via `branch_id`** | `GitRollbackHandler._git(*args)` interpolates `branch_id.hex` into git invocations | very low | RCE under the agent's UID | All git invocations pass `args` as a **list** (no `shell=True`). `branch_id.hex` is a 32-char hex string from `uuid.uuid4().hex` — never user input. `runner.kwargs={`shell`: False}` is the default; pinning not required because `argv` cannot be re-parsed as a shell command from `subprocess`. Bandit (B603) and ruff `S603`/`S607` both clean — see §5.2. |
-| **`git reset --hard` discards user work** | A misbehaving `on_rewind` could wipe untracked files the user depended on | medium (operational) | Data loss outside the agent's working tree | `git clean -fd` is **destructive by design** — that's the rollback contract. Mitigations: (1) `repo_path` is the scope; the handler never `cd`s above it. (2) The stash layer captures uncommitted-but-tracked deltas so tracked files survive. (3) Untracked files are an explicit opt-in: agents that want their untracked state preserved must `git add` them first (documented in `git.py`'s module docstring and pinned by `test_stash_entries_get_rewind_tag`). |
+| **`git reset --hard` discards user work** | A misbehaving `on_timetravel` could wipe untracked files the user depended on | medium (operational) | Data loss outside the agent's working tree | `git clean -fd` is **destructive by design** — that's the rollback contract. Mitigations: (1) `repo_path` is the scope; the handler never `cd`s above it. (2) The stash layer captures uncommitted-but-tracked deltas so tracked files survive. (3) Untracked files are an explicit opt-in: agents that want their untracked state preserved must `git add` them first (documented in `git.py`'s module docstring and pinned by `test_stash_entries_get_timetravel_tag`). |
 | **Stash collision across concurrent branches** | Two parallel sessions both call `on_branch(branch_id)` against the same repo | low | Cross-branch state leak | `_tag_for(branch_id)` names both the stash message *and* the ref with `branch_id.hex` — UUID collision is statistically impossible (4×10³⁶ keyspace). Phase 5.5'S concurrency stress test will pin this at the harness layer. |
-| **`on_branch` partial failure leaves dangling ref** | Git crashes mid-`on_branch` (e.g. `update-ref` succeeds but `stash store` ENOSPC) | low | Orphan ref; subsequent `on_rewind` may miss state | `_git(*args)` raises `RollbackError` on any non-zero exit. `fork()` propagates the exception to the caller — the branch is **aborted before** the agent starts writing. We never silently continue with a corrupted snapshot. |
-| **`on_rewind` called on the wrong branch_id** | Caller confusion — rewind a branch with a handler scoped to a different repo | low | `rev-parse --verify --quiet` returns rc≠1 (ref unknown) → `_git_or_none` returns `None` → handler no-ops. State in the *other* repo is untouched. Pinned by `test_on_rewind_unknown_branch_is_noop`. |
+| **`on_branch` partial failure leaves dangling ref** | Git crashes mid-`on_branch` (e.g. `update-ref` succeeds but `stash store` ENOSPC) | low | Orphan ref; subsequent `on_timetravel` may miss state | `_git(*args)` raises `RollbackError` on any non-zero exit. `fork()` propagates the exception to the caller — the branch is **aborted before** the agent starts writing. We never silently continue with a corrupted snapshot. |
+| **`on_timetravel` called on the wrong branch_id** | Caller confusion — timetravel a branch with a handler scoped to a different repo | low | `rev-parse --verify --quiet` returns rc≠1 (ref unknown) → `_git_or_none` returns `None` → handler no-ops. State in the *other* repo is untouched. Pinned by `test_on_timetravel_unknown_branch_is_noop`. |
 | **`checkpoint()` payload grows unbounded in storage** | A misbehaving agent persists very large JSON payloads to `checkpoints.payload` | low | Disk growth / slow reads | Pragmatic limit only — Phase 7 will add a size cap and truncation policy; today the contract is "payload is small structural state, not blobs" (see §6.3 best practices). |
 
 ### 5.2 Subprocess surface hygiene (NEW in Phase 4)
 
-`src/rewind/rollback/git.py` is the **first phase that executes a
+`src/timetravel/rollback/git.py` is the **first phase that executes a
 subprocess** (Phases 1-3 are pure Python + SQLite + a same-process HTTP
 server). The threat model here is narrow but real:
 
@@ -531,7 +531,7 @@ server). The threat model here is narrow but real:
 ### 5.3 Phase 4 scanner run
 
 ```text
-[scan] phase=4 src=src/rewind out=.deepsec/phase4
+[scan] phase=4 src=src/timetravel out=.deepsec/phase4
   ruff S      -> rc=0
   bandit      -> rc=0
   deepsec     -> SKIPPED (deepsec not on PATH; ruff S + bandit were run)
@@ -561,7 +561,7 @@ replay engine from Phases 1 & 3 are unchanged.
 pip install -e .
 
 # Verify Phase 4 is wired in:
-python -c "from rewind import checkpoint, RollbackHandler, GitRollbackHandler; print('ok')"
+python -c "from agent_timetravel import checkpoint, RollbackHandler, GitRollbackHandler; print('ok')"
 ```
 
 ### 6.2 Annotate a side-effecting agent
@@ -570,7 +570,7 @@ The minimal change to a non-pure agent is one `with checkpoint(...)` per
 side-effect boundary:
 
 ```python
-from rewind import checkpoint
+from agent_timetravel import checkpoint
 
 def run_agent(input_query: str) -> dict:
     # 1. Read-from-DB boundary — restore on FROZEN, capture on BRANCH.
@@ -610,11 +610,11 @@ recorded checkpoints are part of the branch's persisted state.
 
 ```python
 from pathlib import Path
-from rewind import replay
-from rewind.rollback.git import GitRollbackHandler
-from rewind.storage import TraceStore
+from agent_timetravel import replay
+from agent_timetravel.rollback.git import GitRollbackHandler
+from agent_timetravel.storage import TraceStore
 
-store = TraceStore("./rewind.db")
+store = TraceStore("./timetravel.db")
 handler = GitRollbackHandler(repo_path=str(Path.cwd()))
 
 # BRANCH at span 5 with working-tree rollback. The handler snapshots
@@ -631,20 +631,20 @@ with replay(store, TRACE_ID, mode=ReplayMode.BRANCH, branch_at=5,
 - `on_branch(branch_id)` — synchronous at `fork()` entry, before the
   agent body runs. Raises `RollbackError` if git fails — the
   `with replay(...)` block propagates and the agent never starts.
-- `on_rewind(branch_id)` — explicit rewind (CLI `rewind checkpoint
+- `on_timetravel(branch_id)` — explicit timetravel (CLI `timetravel checkpoint
   restore`, or via future Phase 6 web UI). Not invoked automatically at
   `with`-block exit; the agent's branch work is preserved for inspection
-  until the caller decides to rewind.
+  until the caller decides to timetravel.
 
 ### 6.4 CLI — inspect and recover
 
 ```bash
 # Inspect recorded checkpoints for a trace (any branch or a specific one):
-rewind checkpoint list <trace-id> [--db ./rewind.db]
-rewind checkpoint list <trace-id> --branch <branch_uuid>
+timetravel checkpoint list <trace-id> [--db ./timetravel.db]
+timetravel checkpoint list <trace-id> --branch <branch_uuid>
 
 # Restore a single checkpoint payload to stdout (dev recovery / debugging):
-rewind checkpoint restore <trace-id> <name> [--db ./rewind.db]
+timetravel checkpoint restore <trace-id> <name> [--db ./timetravel.db]
 ```
 
 Both subcommands are **read-only** — they never mutate the `checkpoints`
@@ -656,10 +656,10 @@ table or the working tree. Production restore is via the SDK inside a
 The Protocol is two methods — implementations are typically <50 lines:
 
 ```python
-from rewind.rollback.base import RollbackError, RollbackHandler
+from agent_timetravel.rollback.base import RollbackError, RollbackHandler
 
 class DockerRollbackHandler:
-    """Snapshot a container image and restore on rewind."""
+    """Snapshot a container image and restore on timetravel."""
 
     def __init__(self, container_name: str) -> None:
         self._container = container_name
@@ -674,7 +674,7 @@ class DockerRollbackHandler:
         except DockerError as exc:
             raise RollbackError(f"snapshot failed for {branch_id}: {exc}") from exc
 
-    def on_rewind(self, branch_id: UUID) -> None:
+    def on_timetravel(self, branch_id: UUID) -> None:
         snap = self._snapshots.pop(branch_id, None)
         if snap is None:
             return  # Unknown branch — idempotent no-op per Protocol.
@@ -688,15 +688,15 @@ class DockerRollbackHandler:
 
 1. `on_branch` raises `RollbackError` on any failure — never partially
    snapshot.
-2. `on_rewind` is a no-op for unknown `branch_id`.
+2. `on_timetravel` is a no-op for unknown `branch_id`.
 3. All state is namespaced under `branch_id` so concurrent branches
    never collide.
 
 ### 6.6 What Phase 5 / 5.5 / 6 pick up
 
 - **Phase 5 (Branching & Diff UI):** Web UI for branching and for
-  invoking `on_rewind`. The git handler's `on_rewind` is the engine
-  behind a future "rewind to here" button in the timeline. Checkpoints
+  invoking `on_timetravel`. The git handler's `on_timetravel` is the engine
+  behind a future "timetravel to here" button in the timeline. Checkpoints
   will show in the timeline as a distinct span-like marker.
 - **Phase 5.5 (Eval Harness):** The harness needs *both* Phase 4
   mechanisms — `checkpoint()` for stateful scenarios (e.g. "run this
@@ -709,9 +709,9 @@ class DockerRollbackHandler:
 - **Phase 6 (Remaining adapters):** No interaction with state
   checkpointing — adapters are SDK-side; checkpoints/rollback sit above
   the SDK layer.
-- **Phase 7 (Janitor / cleanup):** `checkpoints` and `refs/rewind/...`
+- **Phase 7 (Janitor / cleanup):** `checkpoints` and `refs/timetravel/...`
   entries accumulate across long-running eval suites. Phase 7 will add a
-  `rewind prune --before <ts>` that drops old branch rows + the
+  `timetravel prune --before <ts>` that drops old branch rows + the
   associated git refs (after verifying no live session is mid-flight).
 
 ### 6.7 Test commands (mirror CI)
@@ -728,8 +728,8 @@ pytest tests/test_checkpoint.py tests/test_storage_chunking.py tests/test_rollba
 pytest tests/integration/test_checkpoint_e2e.py -m integration
 
 # Quality gate:
-ruff check src/rewind tests
-pylint src/rewind
-mypy --strict src/rewind
+ruff check src/timetravel tests
+pylint src/timetravel
+mypy --strict src/timetravel
 python scripts/security_scan.py --phase 4
 ```

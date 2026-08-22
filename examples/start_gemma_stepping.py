@@ -1,7 +1,7 @@
 """Start the stepping server with a real Gemma runner registered.
 
 Usage:
-    python examples/start_gemma_stepping.py --db /tmp/rewind-demo.db
+    python examples/start_gemma_stepping.py --db /tmp/timetravel-demo.db
 
 Then open http://127.0.0.1:8484/ui, click "sessions", and start a session
 with the captured trace id + runner ref "gemma".
@@ -26,9 +26,9 @@ import sys
 
 import openai
 
-from rewind.openai_intercept import patch
-from rewind.replay import ReplaySession
-from rewind.stepping_api import register_runner
+from agent_timetravel.openai_intercept import patch
+from agent_timetravel.replay import ReplaySession
+from agent_timetravel.stepping_api import register_runner
 
 GEMMA_BASE_URL = "http://127.0.0.1:49301/v1"
 GEMMA_MODEL = "gemma-4-12b-it-UD-Q4_KL"
@@ -82,11 +82,11 @@ def main() -> int:
     # pylint: disable=import-outside-toplevel
     import uvicorn
 
-    from rewind.receiver import create_app
-    from rewind.storage import TraceStore
+    from agent_timetravel.receiver import create_app
+    from agent_timetravel.storage import TraceStore
 
     parser = argparse.ArgumentParser(description="Gemma stepping server.")
-    parser.add_argument("--db", default="/tmp/rewind-demo.db", help="SQLite DB path.")
+    parser.add_argument("--db", default="/tmp/timetravel-demo.db", help="SQLite DB path.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8484)
     args = parser.parse_args()

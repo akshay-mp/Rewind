@@ -9,9 +9,9 @@ Phase 3 exit criterion (plan §6):
 > fork's ``branch_id``.
 
 This test exercises the full stack — :class:`TraceStore` on disk, the
-:class:`contextvars.ContextVar` session plumbing, the ``@rewind.tool``
-decorator, ``rewind.openai_intercept.patch()``, and the SSE-free
-:class:`rewind.replay.ReplaySession` — *without* touching the network.
+:class:`contextvars.ContextVar` session plumbing, the ``@timetravel.tool``
+decorator, ``timetravel.openai_intercept.patch()``, and the SSE-free
+:class:`timetravel.replay.ReplaySession` — *without* touching the network.
 
 We don't spawn the FastAPI receiver here; we pre-seed the store directly
 because Phase 3 ships the replay engine in isolation. Phase 4 will stitch
@@ -29,14 +29,14 @@ from typing import Any
 
 import pytest
 
-from rewind import tool as rewind_tool
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.openai_intercept import patch
-from rewind.replay import active_session
-from rewind.replay import replay as replay_ctx
-from rewind.storage import TraceStore
-from rewind.tool_intercept import _tool_args_hash
+from agent_timetravel import tool as timetravel_tool
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.openai_intercept import patch
+from agent_timetravel.replay import active_session
+from agent_timetravel.replay import replay as replay_ctx
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.tool_intercept import _tool_args_hash
 
 pytestmark = pytest.mark.integration
 
@@ -253,7 +253,7 @@ def _seed_agent_trace(store: TraceStore) -> dict[str, Any]:
 def _build_agent(completions: Any) -> Any:
     """Construct a tiny agent object that talks through ``completions``."""
 
-    @rewind_tool(name="get_weather")
+    @timetravel_tool(name="get_weather")
     def get_weather(city: str) -> list[dict[str, Any]]:
         # In frozen replay this is never called; in branch divergence it is.
         return [{"city": city, "temp_c": -999, "live": True}]
@@ -293,7 +293,7 @@ def test_frozen_replay_is_offline(
     tmp_path: Path,
 ) -> None:
     """Running the agent in FROZEN mode serves all calls from cache."""
-    store = TraceStore(str(tmp_path / "rewind.db"))
+    store = TraceStore(str(tmp_path / "agent_timetravel.db"))
     seed = _seed_agent_trace(store)
 
     with _fake_openai_module() as fake:
@@ -320,7 +320,7 @@ def test_frozen_replay_audits_no_side_effects(
     tmp_path: Path,
 ) -> None:
     """A frozen replay does not invoke the live tool callable side-effects."""
-    store = TraceStore(str(tmp_path / "rewind.db"))
+    store = TraceStore(str(tmp_path / "agent_timetravel.db"))
     seed = _seed_agent_trace(store)
     side_effect_log: list[str] = []
 
@@ -328,7 +328,7 @@ def test_frozen_replay_audits_no_side_effects(
         Completions = fake["Completions"]
         completions_instance = Completions()
 
-        @rewind_tool(name="get_weather")
+        @timetravel_tool(name="get_weather")
         def get_weather(city: str) -> list[dict[str, Any]]:
             side_effect_log.append(f"LIVE:{city}")
             return [{"city": city, "live": True}]
@@ -365,11 +365,11 @@ def test_branch_fork_captures_divergent_spans(
     ``branch_id``. The final LLM call also forwards live (because the
     messages hash has changed) and persists a new LLM span.
     """
-    store = TraceStore(str(tmp_path / "rewind.db"))
+    store = TraceStore(str(tmp_path / "agent_timetravel.db"))
     seed = _seed_agent_trace(store)
 
     with _fake_openai_module():
-        @rewind_tool(name="get_weather")
+        @timetravel_tool(name="get_weather")
         def get_weather(city: str) -> list[dict[str, Any]]:
             return [{"city": city, "temp_c": -5, "live": True}]
 

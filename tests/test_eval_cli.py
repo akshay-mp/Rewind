@@ -1,4 +1,4 @@
-"""Unit tests for ``rewind eval`` (the Phase 5.5 CLI subcommand).
+"""Unit tests for ``timetravel eval`` (the Phase 5.5 CLI subcommand).
 
 Uses Click's ``CliRunner`` to drive the command end-to-end against a
 real ``TraceStore`` at a temp path and a real file-based YAML suite.
@@ -20,10 +20,10 @@ from uuid import UUID
 import pytest
 from click.testing import CliRunner
 
-from rewind.cli import cli
-from rewind.enums import EvalVerdict, SpanKind
-from rewind.models import Span, Trace
-from rewind.storage import TraceStore
+from agent_timetravel.cli import cli
+from agent_timetravel.enums import EvalVerdict, SpanKind
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.storage import TraceStore
 
 _TRACE_ID = "a" * 32
 
@@ -34,7 +34,7 @@ _TRACE_ID = "a" * 32
 @pytest.fixture
 def seeded_db(tmp_path: Path) -> Path:
     """A SQLite DB with a 3-span seed trace already written."""
-    db_path = tmp_path / "rewind.db"
+    db_path = tmp_path / "agent_timetravel.db"
     store = TraceStore(db_path)
     spans = [
         Span(
@@ -114,7 +114,7 @@ scenarios:
 
 
 def test_eval_help_lists_options() -> None:
-    """`rewind eval --help` advertises --db, --save/--no-save, --suite-name."""
+    """`timetravel eval --help` advertises --db, --save/--no-save, --suite-name."""
     runner = CliRunner()
     result = runner.invoke(cli, ["eval", "--help"])
     assert result.exit_code == 0

@@ -242,7 +242,7 @@ function MessageDiffBlock({
     setLoading(true);
     setError(null);
     api
-      .messageDiff(left.rewind_id, right.rewind_id)
+      .messageDiff(left.timetravel_id, right.timetravel_id)
       .then((d) => {
         if (!cancelled) setDiff(d);
       })
@@ -255,7 +255,7 @@ function MessageDiffBlock({
     return () => {
       cancelled = true;
     };
-  }, [left.rewind_id, right.rewind_id]);
+  }, [left.timetravel_id, right.timetravel_id]);
 
   if (loading) {
     return <div className="diff-view__msg-body muted">computing message diff…</div>;

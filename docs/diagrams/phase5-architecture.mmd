@@ -12,7 +12,7 @@ flowchart TB
             StoreW["TraceStore<br/>SQLite + WAL"]
         end
 
-        DB[("rewind.db<br/>traces, spans, branches,<br/>checkpoints")]
+        DB[("agent_timetravel.db<br/>traces, spans, branches,<br/>checkpoints")]
 
         subgraph DiffEngine["Pure diff engine (NEW — diff.py)"]
             SpanDiff["span_diff<br/>zip + _spans_equal<br/>false → diverged"]

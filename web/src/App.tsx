@@ -7,16 +7,16 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { useRewindStore } from "@/lib/rewind/store";
-import { spanCost } from "@/lib/rewind/diff";
-import { resumeSession, startAgentSession } from "@/lib/rewind/session-client";
+import { useTimeTravelStore } from "@/lib/timetravel/store";
+import { spanCost } from "@/lib/timetravel/diff";
+import { resumeSession, startAgentSession } from "@/lib/timetravel/session-client";
 import { AgentStartDialog } from "@/components/AgentStartDialog";
 import type { AgentView } from "@/types";
-import { SpanTimeline } from "@/components/rewind/span-timeline";
-import { SpanDetail } from "@/components/rewind/span-detail";
-import { DiffView } from "@/components/rewind/diff-view";
-import { ThinkingPanel } from "@/components/rewind/thinking-panel";
-import { SessionView } from "@/components/rewind/session-view";
+import { SpanTimeline } from "@/components/timetravel/span-timeline";
+import { SpanDetail } from "@/components/timetravel/span-detail";
+import { DiffView } from "@/components/timetravel/diff-view";
+import { ThinkingPanel } from "@/components/timetravel/thinking-panel";
+import { SessionView } from "@/components/timetravel/session-view";
 import {
   ChevronDown,
   GitCompare,
@@ -48,7 +48,7 @@ function TopBar() {
     exitBranchMode,
     uiView,
     setUIView,
-  } = useRewindStore();
+  } = useTimeTravelStore();
 
   const [sessStarting, setSessStarting] = useState(false);
   const [agents, setAgents] = useState<AgentView[]>([]);
@@ -105,7 +105,7 @@ function TopBar() {
       setDialogAgent(null);
       setUIView("session");
     } catch (error) {
-      useRewindStore.setState({ runError: error instanceof Error ? error.message : String(error) });
+      useTimeTravelStore.setState({ runError: error instanceof Error ? error.message : String(error) });
       throw error;
     } finally {
       setSessStarting(false);
@@ -131,7 +131,7 @@ function TopBar() {
             </div>
             <div>
               <div className="text-sm font-semibold leading-tight flex items-center gap-2">
-                Rewind Debugger
+                TimeTravel Debugger
                 <Badge variant="outline" className="text-[10px] py-0 border-emerald-500/30 text-emerald-400">
                   Step-by-Step
                 </Badge>
@@ -238,7 +238,7 @@ function TopBar() {
                 variant="outline"
                 onClick={stepDown}
                 disabled={!canStep || cursor <= 0}
-                title="Step back (rewind to previous span)"
+                title="Step back (timetravel to previous span)"
                 className="gap-1"
               >
                 <Undo2 className="size-3.5" /> Step Back
@@ -290,7 +290,7 @@ function TopBar() {
         {runError && (
           <div className="rounded-md bg-destructive/15 border border-destructive/30 px-3 py-1.5 text-xs text-destructive flex items-center justify-between">
             <span>{runError}</span>
-            <button onClick={() => useRewindStore.setState({ runError: null })} className="underline">dismiss</button>
+            <button onClick={() => useTimeTravelStore.setState({ runError: null })} className="underline">dismiss</button>
           </div>
         )}
         {!agentsLoading && agents.length === 0 && !agentsError && (
@@ -321,15 +321,15 @@ function TopBar() {
 }
 
 export default function App() {
-  const { uiView, diff, liveSession, setUIView } = useRewindStore();
+  const { uiView, diff, liveSession, setUIView } = useTimeTravelStore();
 
   useEffect(() => {
     if (liveSession || typeof window === "undefined") return;
-    const sessionId = window.localStorage.getItem("rewind-active-session");
+    const sessionId = window.localStorage.getItem("timetravel-active-session");
     if (!sessionId) return;
     void resumeSession(sessionId)
       .then(() => setUIView("session"))
-      .catch(() => window.localStorage.removeItem("rewind-active-session"));
+      .catch(() => window.localStorage.removeItem("timetravel-active-session"));
   }, [liveSession, setUIView]);
 
   return (

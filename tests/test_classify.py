@@ -1,9 +1,9 @@
-"""Tests for the GenAI → Rewind ``SpanKind`` classifier."""
+"""Tests for the GenAI → TimeTravel ``SpanKind`` classifier."""
 
 from __future__ import annotations
 
-from rewind.classify import classify_span
-from rewind.enums import SpanKind
+from agent_timetravel.classify import classify_span
+from agent_timetravel.enums import SpanKind
 
 
 def test_openinference_llm_kind() -> None:

@@ -10,7 +10,7 @@ import type { SpanSearchHit } from "../types";
 
 interface Props {
   onClose: () => void;
-  onSelectResult: (traceId: string, rewindId: string) => void;
+  onSelectResult: (traceId: string, timetravelId: string) => void;
 }
 
 export function SearchOverlay({ onClose, onSelectResult }: Props): JSX.Element {
@@ -80,7 +80,7 @@ export function SearchOverlay({ onClose, onSelectResult }: Props): JSX.Element {
               <option value="gen_ai.tool">Tool</option>
               <option value="gen_ai.mcp">MCP</option>
               <option value="gen_ai.agent">Agent</option>
-              <option value="rewind.unknown">Unknown</option>
+              <option value="timetravel.unknown">Unknown</option>
             </select>
           </label>
           <label>
@@ -102,11 +102,11 @@ export function SearchOverlay({ onClose, onSelectResult }: Props): JSX.Element {
 
         <ul className="search-results">
           {results.map((hit) => (
-            <li key={hit.rewind_id}>
+            <li key={hit.timetravel_id}>
               <button
                 type="button"
                 className="search-hit"
-                onClick={() => onSelectResult(hit.trace_id, hit.rewind_id)}
+                onClick={() => onSelectResult(hit.trace_id, hit.timetravel_id)}
               >
                 <span
                   className="kind-pill"

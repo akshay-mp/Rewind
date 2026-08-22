@@ -11,7 +11,7 @@ import { formatDuration, formatTimestamp, kindStyle, statusStyle } from "../styl
 import type { SpanView } from "../types";
 
 interface Props {
-  rewindId: string;
+  timetravelId: string;
   onClose: () => void;
   /**
    * Optional Phase 5 hook — switches the parent view to the branch panel.
@@ -23,7 +23,7 @@ interface Props {
 
 type Tab = "structured" | "raw";
 
-export function SpanInspector({ rewindId, onClose, onViewBranches }: Props): JSX.Element {
+export function SpanInspector({ timetravelId, onClose, onViewBranches }: Props): JSX.Element {
   const [span, setSpan] = useState<SpanView | null>(null);
   const [tab, setTab] = useState<Tab>("structured");
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export function SpanInspector({ rewindId, onClose, onViewBranches }: Props): JSX
     setLoading(true);
     setError(null);
     api
-      .getSpan(rewindId)
+      .getSpan(timetravelId)
       .then((s) => {
         if (!cancelled) setSpan(s);
       })
@@ -47,7 +47,7 @@ export function SpanInspector({ rewindId, onClose, onViewBranches }: Props): JSX
     return () => {
       cancelled = true;
     };
-  }, [rewindId]);
+  }, [timetravelId]);
 
   return (
     <aside className="inspector" role="dialog" aria-label="Span inspector">

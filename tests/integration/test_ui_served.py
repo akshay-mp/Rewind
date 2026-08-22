@@ -1,4 +1,4 @@
-"""End-to-end integration test: ``rewind ui`` serves the timeline UI.
+"""End-to-end integration test: ``timetravel ui`` serves the timeline UI.
 
 Phase 2 exit criterion (plan §6):
 
@@ -41,7 +41,7 @@ _LLM_HEX = "8899aabbccddeeff"
 _TOOL_HEX = "ffeeddccbbaa9988"
 
 #: Title must appear in index.html and the unbuilt Vite template.
-_EXPECTED_TITLE = "Rewind — Agent Timeline"
+_EXPECTED_TITLE = "TimeTravel — Agent Timeline"
 
 
 def _free_port() -> int:
@@ -156,10 +156,10 @@ def web_dist_built() -> None:
 
 @pytest.fixture(scope="module")
 def ui_server(web_dist_built: None, tmp_path_factory: pytest.TempPathFactory) -> str:
-    """Boot ``rewind ui`` against a temp DB; return the base URL.
+    """Boot ``timetravel ui`` against a temp DB; return the base URL.
 
     Returns the base URL once /healthz is up. Spawns the subprocess with the
-    same Python interpreter so the venv (and its ``rewind`` install) is used.
+    same Python interpreter so the venv (and its ``timetravel`` install) is used.
     """
     db = tmp_path_factory.mktemp("ui_served") / "ui.db"
     port = _free_port()
@@ -172,7 +172,7 @@ def ui_server(web_dist_built: None, tmp_path_factory: pytest.TempPathFactory) ->
         [
             sys.executable,
             "-m",
-            "rewind",
+            "agent_timetravel",
             "ui",
             "--host",
             "127.0.0.1",
@@ -200,7 +200,7 @@ def ui_server(web_dist_built: None, tmp_path_factory: pytest.TempPathFactory) ->
         )
         with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
             assert resp.status == 200
-            assert resp.headers["x-rewind-spans-accepted"] == "3"
+            assert resp.headers["x-timetravel-spans-accepted"] == "3"
 
         yield base
     finally:
@@ -274,20 +274,20 @@ def test_same_origin_search(ui_server: str) -> None:
     assert llm_hits[0]["model_name"] == "gpt-4o"
 
 
-def test_get_span_by_rewind_id(ui_server: str) -> None:
-    """``GET /api/v1/spans/{rewind_id}`` resolves a span by UUID."""
+def test_get_span_by_timetravel_id(ui_server: str) -> None:
+    """``GET /api/v1/spans/{timetravel_id}`` resolves a span by UUID."""
     import json
 
-    # Discover a rewind_id via the trace list → trace detail flow.
+    # Discover a timetravel_id via the trace list → trace detail flow.
     detail_url = f"{ui_server}/api/v1/traces/{_TRACE_HEX}"
     # S310: loopback only.
     with urllib.request.urlopen(detail_url, timeout=5) as r:  # noqa: S310
         detail = json.loads(r.read().decode("utf-8"))
     span = next(s for s in detail["spans"] if s["kind"] == "gen_ai.tool")
-    rewind_id = span["rewind_id"]
+    timetravel_id = span["timetravel_id"]
 
     # S310: loopback only.
-    with urllib.request.urlopen(f"{ui_server}/api/v1/spans/{rewind_id}", timeout=5) as r:  # noqa: S310
+    with urllib.request.urlopen(f"{ui_server}/api/v1/spans/{timetravel_id}", timeout=5) as r:  # noqa: S310
         body = json.loads(r.read().decode("utf-8"))
-    assert body["rewind_id"] == rewind_id
+    assert body["timetravel_id"] == timetravel_id
     assert body["name"] == "tool.search_products"

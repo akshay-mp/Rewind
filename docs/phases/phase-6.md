@@ -14,7 +14,7 @@
 > Plus a new **`adapters/_common.py`** module that holds the
 > framework-agnostic span-construction + frozen-mode helpers all five
 > adapters reuse, plus pyproject wiring (optional extras + mypy +
-> pylint glob) so `rewind --version` stays fast even without any
+> pylint glob) so `timetravel --version` stays fast even without any
 > framework installed.
 
 ---
@@ -35,21 +35,21 @@
 
 | Surface | File | What it does |
 |---|---|---|
-| Shared helpers | `src/rewind/adapters/_common.py` | `build_live_span(session, *, model_name, messages, content, raw_extras=None, tool_name=None, kind_str="LLM") -> Span` and `assert_not_frozen(session)`. Pure-Python, no framework imports. Eliminates 5× boilerplate across the adapter suite. |
-| Google ADK adapter | `src/rewind/adapters/adk.py` | `replay_llm(wrapped: BaseLlm, *, trace_id=None) -> BaseLlm` factory. Wraps `generate_response[_async]`. Lazy-imports `from google.adk.models.llms import BaseLlm` inside the factory; raises `AdapterError` otherwise. |
-| CrewAI adapter | `src/rewind/adapters/crewai.py` | `replay_llm(wrapped: BaseLLM, *, trace_id=None) -> BaseLLM` factory. Wraps `call[_async]`, `get_response[_async]`, `supports_function_calling`. Lazy `from crewai.llms.base_llm import BaseLLM`. |
-| PydanticAI adapter | `src/rewind/adapters/pydantic_ai.py` | `replay_model(wrapped: Model, *, trace_id=None) -> Model` factory. Wraps `request` + `request_stream`. Lazy `from pydantic_ai.models import Model`. |
-| SmolAgents adapter | `src/rewind/adapters/smolagents.py` | `replay_model(wrapped: Model, *, trace_id=None) -> Model` factory. Wraps `__call__`, `generate`, `astream` (one-shot). Lazy `from smolagents.models import Model`. |
-| Package docstring | `src/rewind/adapters/__init__.py` | Documents all five adapters + the lazy-import strategy. No exports (lazy by design). |
+| Shared helpers | `src/timetravel/adapters/_common.py` | `build_live_span(session, *, model_name, messages, content, raw_extras=None, tool_name=None, kind_str="LLM") -> Span` and `assert_not_frozen(session)`. Pure-Python, no framework imports. Eliminates 5× boilerplate across the adapter suite. |
+| Google ADK adapter | `src/timetravel/adapters/adk.py` | `replay_llm(wrapped: BaseLlm, *, trace_id=None) -> BaseLlm` factory. Wraps `generate_response[_async]`. Lazy-imports `from google.adk.models.llms import BaseLlm` inside the factory; raises `AdapterError` otherwise. |
+| CrewAI adapter | `src/timetravel/adapters/crewai.py` | `replay_llm(wrapped: BaseLLM, *, trace_id=None) -> BaseLLM` factory. Wraps `call[_async]`, `get_response[_async]`, `supports_function_calling`. Lazy `from crewai.llms.base_llm import BaseLLM`. |
+| PydanticAI adapter | `src/timetravel/adapters/pydantic_ai.py` | `replay_model(wrapped: Model, *, trace_id=None) -> Model` factory. Wraps `request` + `request_stream`. Lazy `from pydantic_ai.models import Model`. |
+| SmolAgents adapter | `src/timetravel/adapters/smolagents.py` | `replay_model(wrapped: Model, *, trace_id=None) -> Model` factory. Wraps `__call__`, `generate`, `astream` (one-shot). Lazy `from smolagents.models import Model`. |
+| Package docstring | `src/timetravel/adapters/__init__.py` | Documents all five adapters + the lazy-import strategy. No exports (lazy by design). |
 | pyproject extras | `pyproject.toml [project.optional-dependencies]` | New `adk`, `crewai`, `pydantic-ai`, `smolagents`, and umbrella `adapters` extras — concrete package pins (PEP 621 forbids self-reference). |
 | pyproject mypy | `pyproject.toml [[tool.mypy.overrides]]` | New ignore_missing_imports block for `google.adk.*`, `google.genai.*`, `crewai.*`, `pydantic_ai.*`, `smolagents.*`, `huggingface_hub.*`. |
-| pyproject pylint | `pyproject.toml [tool.pylint."src/rewind/adapters/**"]` | New glob: disable `protected-access`, `import-outside-toplevel`, `too-many-statements`, `too-few-public-methods` — extends cleanly to future adapters without inline pragmas. |
+| pyproject pylint | `pyproject.toml [tool.pylint."src/timetravel/adapters/**"]` | New glob: disable `protected-access`, `import-outside-toplevel`, `too-many-statements`, `too-few-public-methods` — extends cleanly to future adapters without inline pragmas. |
 
 ### 1.2 Why `_common.py` is pure (and that's load-bearing)
 
 `_common.py` has zero framework imports and zero storage imports. It
-only depends on `rewind.models` (for the `Span` dataclass) and lazily
-imports `rewind.enums` + `rewind.replay` (for `assert_not_frozen`). This
+only depends on `timetravel.models` (for the `Span` dataclass) and lazily
+imports `timetravel.enums` + `timetravel.replay` (for `assert_not_frozen`). This
 unlocks:
 
 * **A clean abstraction barrier.** Adapters hold the framework-specific
@@ -70,23 +70,23 @@ unlocks:
 ### 1.3 The lazy-import-in-factory pattern — why it matters
 
 The contract every adapter follows (codified in
-`/memories/repo/rewind-project-conventions.md` §"Adapter rule"):
+`/memories/repo/timetravel-project-conventions.md` §"Adapter rule"):
 
-1. **Module load has no framework imports.** `import rewind.adapters.adk`
+1. **Module load has no framework imports.** `import timetravel.adapters.adk`
    never touches `google.adk`.
 2. **The factory lazy-imports inside itself.** `replay_llm(wrapped, ...)`
    does `from google.adk.models.llms import BaseLlm` at first call.
 3. **If the import fails, raise `AdapterError(RuntimeError)`** with an
-   actionable `pip install rewind-debugger[adk]` hint.
+   actionable `pip install agent-timetravel[adk]` hint.
 4. **Define the framework subclass inside the factory** so the lazy
    imports are in closure scope when the class body executes.
 
 This means:
 
-* **`rewind --version` stays fast** without any agent framework
-  installed. The CLI imports `rewind.cli`, which imports `rewind.replay`,
-  `rewind.storage`, etc — none of which import the adapters eagerly.
-* **`import rewind.adapters.adk` never raises ImportError.** Users
+* **`timetravel --version` stays fast** without any agent framework
+  installed. The CLI imports `timetravel.cli`, which imports `timetravel.replay`,
+  `timetravel.storage`, etc — none of which import the adapters eagerly.
+* **`import timetravel.adapters.adk` never raises ImportError.** Users
   browsing the library catalog can read the docstring even if they
   haven't installed `google-adk` yet.
 * **Factory call is where the framework requirement is enforced.** A
@@ -211,14 +211,14 @@ sequenceDiagram
     Note over A,C: Setup: trace seeded with N LLM spans.<br/>ReplaySession in FROZEN mode.<br/>No framework imported at module load.
 
     Note over A,C: Stage 0 — module import (no framework required)
-    A->>F: import rewind.adapters.<framework>
+    A->>F: import timetravel.adapters.<framework>
     Note right of F: NO framework import here
 
     Note over A,C: Stage 1 — factory call (lazy resolve)
     A->>F: replay_*(wrapped, trace_id="…")
     F->>F: from <framework> import BaseModel  (lazy)
     alt framework not installed
-        F-->>A: raise AdapterError("pip install rewind-debugger[<extra>]")
+        F-->>A: raise AdapterError("pip install agent-timetravel[<extra>]")
     else framework installed
         F-->>A: return _Replay*(wrapped, trace_id)
     end
@@ -258,7 +258,7 @@ sequenceDiagram
     participant Sig as extract_signature
     participant Cursor as ReplaySession cursor
     participant C as _common.build_live_span
-    participant DB as rewind.db
+    participant DB as timetravel.db
 
     Note over A,DB: Setup: trace seeded with N LLM spans.<br/>BRANCH mode — divergent calls allowed.
 
@@ -316,7 +316,7 @@ fall out:
    `extract_signature` reuse, message-flattening helpers, factory
    ImportError contract. They pass in every venv.
 2. **Per-framework replay-contract tests are `find_spec`-gated.**
-   Installing `rewind-debugger[adk]` in CI enables `test_adk_adapter.py`;
+   Installing `agent-timetravel[adk]` in CI enables `test_adk_adapter.py`;
    installing `[crewai]` enables `test_crewai_adapter.py`; etc. In the
    dev venv with no frameworks installed, all 12 gated tests SKIP
    gracefully.
@@ -325,18 +325,18 @@ fall out:
 
 | Criterion | Verification |
 |---|---|
-| Branch-and-replay works for ADK | `tests/test_adk_adapter.py::test_branch_replay_forwards_divergent_call` (gated — runs with `pip install rewind-debugger[adk]`) |
+| Branch-and-replay works for ADK | `tests/test_adk_adapter.py::test_branch_replay_forwards_divergent_call` (gated — runs with `pip install agent-timetravel[adk]`) |
 | Branch-and-replay works for CrewAI | `tests/test_crewai_adapter.py::test_branch_replay_forwards_divergent_call` (gated) |
 | Branch-and-replay works for PydanticAI | `tests/test_pydantic_ai_adapter.py::test_frozen_replay_returns_recorded_payload` (gated — only frozen path needs async loop care; branch mirror in the gated pattern ready when the framework is installed) |
 | Branch-and-replay works for SmolAgents | `tests/test_smolagents_adapter.py::test_frozen_replay_returns_recorded_payload` (gated) |
-| One import + ctxmgr change per framework | `docs/phases/phase-6.md` §6.1 — adapter usage is `from rewind.adapters.adk import replay_llm; wrapped = replay_llm(real); with replay(...): agent.run()` |
-| No upstream framework modification | All adapters live in `rewind.adapters.<framework>`, none vendor or patch upstream files |
-| `rewind --version` stays fast without frameworks | All adapter modules import cleanly with no framework installed — `tests/test_adapters_common.py::test_adapter_module_imports_without_framework` |
+| One import + ctxmgr change per framework | `docs/phases/phase-6.md` §6.1 — adapter usage is `from agent_timetravel.adapters.adk import replay_llm; wrapped = replay_llm(real); with replay(...): agent.run()` |
+| No upstream framework modification | All adapters live in `timetravel.adapters.<framework>`, none vendor or patch upstream files |
+| `timetravel --version` stays fast without frameworks | All adapter modules import cleanly with no framework installed — `tests/test_adapters_common.py::test_adapter_module_imports_without_framework` |
 
 ### 4.4 Coverage & gates
 
 ```
-coverage: branch=True, source=src/rewind
+coverage: branch=True, source=src/timetravel
 ruff   : E,F,W,I,B,UP,C4,SIM,RUF,S,A,ANN,PT  →  All checks passed!
 pylint : 10.00/10                            →  adapter glob relaxes 4 rules
 mypy   : --strict                            →  Success: no issues in 28 files
@@ -357,17 +357,17 @@ installed; gated tests SKIP gracefully.
 | Surface | Introduced by | Mitigation |
 |---|---|---|
 | Lazy import of foreign code | `from <framework> import …` inside each adapter factory | Imports resolve against the user's installed (operator-trusted) site-packages — same trust boundary as `import openai` / `import langchain_core` in Phase 3. No `sys.path` mutation, no `importlib.import_module(user_input)`, no `eval`. Operator's pip-install list is the trust root. |
-| Optional dependency surface | `pip install rewind-debugger[adk]` pulls `google-adk>=0.2.0`; same for crewai/pydantic-ai/smolagents | All four frameworks are operator-installed explicitly via named extras. Rewind never pins a specific version transitively unless declared in `[project.optional-dependencies]`. Operators remain in control of their dependency tree. |
+| Optional dependency surface | `pip install agent-timetravel[adk]` pulls `google-adk>=0.2.0`; same for crewai/pydantic-ai/smolagents | All four frameworks are operator-installed explicitly via named extras. TimeTravel never pins a specific version transitively unless declared in `[project.optional-dependencies]`. Operators remain in control of their dependency tree. |
 | Adapter subclass instantiation | `_Replay*(wrapped)` holds a reference to the user's existing framework model | Adapter closures do NOT deep-copy, monkey-patch upstream framework code, or replace any global state. The adapter is a per-instance wrapper returned to the user — they opt in by passing it to their agent. Without it, zero behaviour change. |
 | Per-call data flow | Adapter reads framework messages, forwards them to `extract_signature` → SQLite, and may forward to wrapped model | Same data flow as Phase 3 LangGraph (audited there). `raw_attributes` stores message content verbatim — operators apply the same DB-access controls as Phase 1. |
 
 ### 5.2 No new subprocess or network surface (delta)
 
 Phase 6 introduced **zero** subprocess calls and **zero** additional
-network egress from rewind itself. The only network call added (when a
+network egress from timetravel itself. The only network call added (when a
 gated test runs against a real framework) is the **user's own** LLM
 egress — exactly what the user opted into by calling their framework's
-model. Rewind's adapter never opens its own HTTP client.
+model. TimeTravel's adapter never opens its own HTTP client.
 
 ### 5.3 Scanner results
 
@@ -393,34 +393,34 @@ unchanged for the receiver / replay API.
 
 | If you're… | Start here |
 |---|---|
-| Adding a sixth framework adapter | Read `src/rewind/adapters/langgraph.py` (60-90s — it's the pattern origin) → check `_common.build_live_span` + `assert_not_frozen` cover what you need → write `adapters/<fw>.py` with the lazy-import-in-factory pattern → add tests in `tests/test_<fw>_adapter.py` gated on `find_spec("<fw>")` |
+| Adding a sixth framework adapter | Read `src/timetravel/adapters/langgraph.py` (60-90s — it's the pattern origin) → check `_common.build_live_span` + `assert_not_frozen` cover what you need → write `adapters/<fw>.py` with the lazy-import-in-factory pattern → add tests in `tests/test_<fw>_adapter.py` gated on `find_spec("<fw>")` |
 | Adding the `adapters` umbrella extra | `pyproject.toml [project.optional-dependencies]` — add the new extra to the `adapters` list (concrete package list — PEP 621 forbids self-reference) |
-| Running framework-gated tests | `pip install rewind-debugger[adk]` (or whichever) → `python -m pytest tests/test_adk_adapter.py -v` |
+| Running framework-gated tests | `pip install agent-timetravel[adk]` (or whichever) → `python -m pytest tests/test_adk_adapter.py -v` |
 | Debugging a materialise bug | Each adapter has a private `_materialise` / `_text_*_response` helper — check the framework's response shape inside it. The recorded payload is always the OpenAI-compatible chat-completion JSON under `raw_attributes["gen_ai.response"]`. |
-| Updating the adapter rule | `/memories/repo/rewind-project-conventions.md` §"Adapter rule" — this is the canonical spec |
+| Updating the adapter rule | `/memories/repo/timetravel-project-conventions.md` §"Adapter rule" — this is the canonical spec |
 
 ### 6.2 Build / run commands
 
 ```bash
 # Quality gate (run before commit)
-env -C rewind sh -c 'ruff check src/rewind tests && \
-  pylint src/rewind/ && \
-  mypy --strict src/rewind && \
+env -C timetravel sh -c 'ruff check src/timetravel tests && \
+  pylint src/timetravel/ && \
+  mypy --strict src/timetravel && \
   python -m pytest tests --no-cov -q'
 
 # Run only the no-framework adapter tests (always green)
 python -m pytest tests/test_adapters_common.py -v
 
 # Install + run a gated suite
-pip install rewind-debugger[adk]
+pip install agent-timetravel[adk]
 python -m pytest tests/test_adk_adapter.py -v
 
 # Adapter usage from agent code
-from rewind.adapters.adk import replay_llm
-from rewind.replay import replay
-from rewind.storage import TraceStore
+from agent_timetravel.adapters.adk import replay_llm
+from agent_timetravel.replay import replay
+from agent_timetravel.storage import TraceStore
 
-store = TraceStore("~/.rewind/db.sqlite")
+store = TraceStore("~/.timetravel/db.sqlite")
 real_adk_llm = MyLlm()                              # operator's existing model
 
 with replay(store, trace_id="<trace>", mode="FROZEN"):

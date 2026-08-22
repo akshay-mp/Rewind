@@ -2,7 +2,7 @@
 
 > **Status:** ✅ Complete · **Exit criteria:** all three verified (see QA)
 > **Scope:** Expose a working local OTLP/HTTP receiver. Any OpenInference-
-> instrumented agent can ship to `rewind serve`, and every span round-trips
+> instrumented agent can ship to `timetravel serve`, and every span round-trips
 > through SQLite with verbatim `raw_attributes` fidelity and correct
 > parent → child linking.
 
@@ -24,11 +24,11 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| Pure proto decoder | `src/rewind/ingest.py` | `decode_export_request` (protobuf) → `ExportTraceServiceRequest`; `decode_export_request_json` (JSON); `spans_from_request` flattens to a `list[Span]`. No I/O. |
-| Attribute unwrapping | `src/rewind/ingest.py` | `anyvalue_to_python` & `attrs_to_dict` fully unwrap the OTel `AnyValue` oneof (string/bool/int/double/bytes/array/kvlist/unset). |
-| Wire surface | `src/rewind/receiver.py` | FastAPI app: `POST /v1/traces` (protobuf + JSON), `GET /healthz`. Returns OTLP-spec empty protobuf on success with `x-rewind-spans-accepted` header. |
-| **Ingestion contract** | `src/rewind/receiver.py::_persist` | Groups spans by trace_id, upserts a trace row per group, inserts every span on the root branch. Multi-span batches in one request handled atomically. |
-| CLI serve command | `src/rewind/cli.py::serve` | `rewind serve --host 127.0.0.1 --port 4318 --db ./rewind.db`. Loopback-default; lazy-imports `uvicorn` so `rewind --version` stays fast. |
+| Pure proto decoder | `src/timetravel/ingest.py` | `decode_export_request` (protobuf) → `ExportTraceServiceRequest`; `decode_export_request_json` (JSON); `spans_from_request` flattens to a `list[Span]`. No I/O. |
+| Attribute unwrapping | `src/timetravel/ingest.py` | `anyvalue_to_python` & `attrs_to_dict` fully unwrap the OTel `AnyValue` oneof (string/bool/int/double/bytes/array/kvlist/unset). |
+| Wire surface | `src/timetravel/receiver.py` | FastAPI app: `POST /v1/traces` (protobuf + JSON), `GET /healthz`. Returns OTLP-spec empty protobuf on success with `x-timetravel-spans-accepted` header. |
+| **Ingestion contract** | `src/timetravel/receiver.py::_persist` | Groups spans by trace_id, upserts a trace row per group, inserts every span on the root branch. Multi-span batches in one request handled atomically. |
+| CLI serve command | `src/timetravel/cli.py::serve` | `timetravel serve --host 127.0.0.1 --port 4318 --db ./timetravel.db`. Loopback-default; lazy-imports `uvicorn` so `timetravel --version` stays fast. |
 | Dev dependency | `types-protobuf` | mypy stubs for `google.protobuf.*`; declared in `[project.optional-dependencies].dev`. |
 
 ### 1.2 The no-fidelity-loss contract (re-established)
@@ -74,7 +74,7 @@ SQLite as the same byte**. Concretely:
   authentication, TLS termination, or rate-limiting** — this is a debug
   tool. The threat model in §5 documents the consequence: only expose when
   you trust everyone on the network.
-- **`x-rewind-spans-accepted` response header.** The OTLP spec only
+- **`x-timetravel-spans-accepted` response header.** The OTLP spec only
   requires an empty `ExportTraceServiceResponse`. We add a non-standard
   header because every OpenInference wiring doc and the integration test
   benefits from a one-line success assertion, and it costs nothing for
@@ -94,12 +94,12 @@ in [`docs/diagrams/phase0-er-schema.mmd`](../diagrams/phase0-er-schema.mmd).
 ```mermaid
 flowchart TB
     subgraph P1Delivered["Phase 1 — delivered (green)"]
-        CLI["rewind serve"]
+        CLI["timetravel serve"]
         Receiver["FastAPI receiver"]
         Ingest["ingest.py"]
         Classify["classify_span"]
         Store["TraceStore"]
-        DB[("rewind.db WAL")]
+        DB[("agent_timetravel.db WAL")]
     end
     subgraph P1Future["Future (faded)"]
         TimelineUI["Phase 2 — Timeline UI"]
@@ -143,7 +143,7 @@ sequenceDiagram
     participant R as FastAPI Receiver
     participant I as ingest.py
     participant S as TraceStore
-    participant D as rewind.db
+    participant D as timetravel.db
     A->>A: build OpenInference spans
     A->>X: emit ResourceSpans
     X->>R: POST /v1/traces protobuf
@@ -176,17 +176,17 @@ Source: [`docs/diagrams/phase1-sequence-ingest.mmd`](../diagrams/phase1-sequence
 ### 3.2 Integration test lifecycle
 
 Phase 1's integration test exercises the **whole stack** through a real
-`subprocess.Popen` of `python -m rewind serve`. It is the only test that
+`subprocess.Popen` of `python -m timetravel serve`. It is the only test that
 can catch a CLI wiring regression on its own.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant T as Test
-    participant S as rewind serve
+    participant S as timetravel serve
     participant C as client code
-    participant D as rewind.db
-    T->>S: spawn python -m rewind serve
+    participant D as timetravel.db
+    T->>S: spawn python -m timetravel serve
     T->>C: wait_for_health poll
     loop until healthz 200
         C->>S: GET /healthz
@@ -212,7 +212,7 @@ Source: [`docs/diagrams/phase1-sequence-integration.mmd`](../diagrams/phase1-seq
 
 | # | Exit criterion | Status | Evidence |
 |---|---|---|---|
-| 1 | A real OpenInference-instrumented agent produces a queryable trace in Rewind. | ✅ | `tests/integration/test_e2e_ingest.py::TestEndToEndIngest::test_three_span_agent_trace_round_trips_with_fidelity` — a 3-span agent trace is built with OpenInference attrs, shipped to a live `rewind serve`, reloaded via `TraceStore.get_trace`. |
+| 1 | A real OpenInference-instrumented agent produces a queryable trace in TimeTravel. | ✅ | `tests/integration/test_e2e_ingest.py::TestEndToEndIngest::test_three_span_agent_trace_round_trips_with_fidelity` — a 3-span agent trace is built with OpenInference attrs, shipped to a live `timetravel serve`, reloaded via `TraceStore.get_trace`. |
 | 2 | Hash of `span.attributes['gen_ai.prompt']` matches the source byte-for-byte. | ✅ | `assert hash_payload(source_prompt) == hash_payload(source_messages_str)` (last assertion of the integration test). Also covered in isolation by `tests/test_ingest.py::TestFidelity::test_messages_hash_matches_source_payload`. |
 | 3 | Span linking (parent → child) round-trips for a multi-step agent. | ✅ | `by_span_id[_LLM_HEX].parent_span_id == _AGENT_HEX` and likewise for the tool span; root's `parent_span_id is None`. |
 
@@ -232,7 +232,7 @@ Source: [`docs/diagrams/phase1-sequence-integration.mmd`](../diagrams/phase1-seq
 
 | File | Test | What it covers |
 |---|---|---|
-| `tests/integration/test_e2e_ingest.py` | `TestEndToEndIngest::test_three_span_agent_trace_round_trips_with_fidelity` | Real `subprocess.Popen(`python -m rewind serve`)`, real socket, real on-disk SQLite; all 3 exit criteria above. |
+| `tests/integration/test_e2e_ingest.py` | `TestEndToEndIngest::test_three_span_agent_trace_round_trips_with_fidelity` | Real `subprocess.Popen(`python -m timetravel serve`)`, real socket, real on-disk SQLite; all 3 exit criteria above. |
 
 **Run modes:**
 - Fast: `pytest` → 56 unit tests, integration deselected (~0.24 s).
@@ -243,11 +243,11 @@ Source: [`docs/diagrams/phase1-sequence-integration.mmd`](../diagrams/phase1-seq
 
 | Module | Stmts | Miss | Branch | Cover |
 |---|---|---|---|---|
-| `src/rewind/ingest.py` | 111 | 2 | 36 | **99 %** — the two misses are the defensive `except DecodeError` paths that require malformed framing (annotated `pragma: no cover`). |
-| `src/rewind/receiver.py` | 46 | 0 | 12 | **100 %** |
-| `src/rewind/classify.py` | 31 | 4 | 20 | 82 % (Phase 0 plateau — error paths). |
-| `src/rewind/storage.py` | 89 | 11 | 4 | 86 % (Phase 0 — UPSERT/branch paths unexercised yet). |
-| `src/rewind/cli.py` | 29 | 10 | 2 | 65 % — the `uvicorn.run` block is unreachable from unit tests; covered by the integration test which spawns the binary instead. |
+| `src/timetravel/ingest.py` | 111 | 2 | 36 | **99 %** — the two misses are the defensive `except DecodeError` paths that require malformed framing (annotated `pragma: no cover`). |
+| `src/timetravel/receiver.py` | 46 | 0 | 12 | **100 %** |
+| `src/timetravel/classify.py` | 31 | 4 | 20 | 82 % (Phase 0 plateau — error paths). |
+| `src/timetravel/storage.py` | 89 | 11 | 4 | 86 % (Phase 0 — UPSERT/branch paths unexercised yet). |
+| `src/timetravel/cli.py` | 29 | 10 | 2 | 65 % — the `uvicorn.run` block is unreachable from unit tests; covered by the integration test which spawns the binary instead. |
 | **TOTAL (9 files)** | 406 | 39 | 88 | **89 %** |
 
 ### 4.5 Quality gates — final Phase 1 run
@@ -293,16 +293,16 @@ carry over unchanged.
 |---|---|---|---|---|
 | **Untrusted OTLP body** | Malformed protobuf crashes the worker | medium | DoS (single request) | `decode_export_request` wraps `ParseFromString` in `try/except IngestError`; receiver returns `400` and the worker survives. |
 | **Huge request body** | Client streams GB of attributes | low | Memory exhaustion (per worker) | Uvicorn default body cap applies; not yet tuned. Phase 5 hardening will set `--limit-concurrency` + max body size. |
-| **Open bind to 0.0.0.0** | Operator passes `--host 0.0.0.0` on shared host | medium | Unauthenticated writes to `rewind.db`; reads via storage layer | Default is loopback. `--help` warns. No auth is *intentional* — this is documented in the CLI help and §1.3. |
+| **Open bind to 0.0.0.0** | Operator passes `--host 0.0.0.0` on shared host | medium | Unauthenticated writes to `timetravel.db`; reads via storage layer | Default is loopback. `--help` warns. No auth is *intentional* — this is documented in the CLI help and §1.3. |
 | **SSRF via `gen_ai.prompt` containing link URLs** | Future Phase 3 replay engine | n/a (not yet built) | n/a | Not applicable in Phase 1: receiver never calls out to any LLM/URL, only writes to disk. |
 | **SQL injection** | Span attribute text containing `'` etc. | very low | n/a | All SQLite writes use parameterised statements (`?` placeholders) via `TraceStore`. There are zero string-formatted SQL writes. Pinned by `tests/test_models.py::test_raw_attributes_byte_fidelity`. |
 | **Prototype pollution / attribute-shadowing** | Resource `service.name` shadowed by span `service.name` | low | Display confusion | Documented contract: span attrs win on conflict. Honoured at `_span_from_proto`. |
-| **Subprocess escape** | CLI invokes `python -m rewind` in a way that could be hijacked | very low | n/a | The `serve` command spawns no further subprocesses; uvicorn is in-process. Unit-tested `test_serve_*` confirms only documented options are accepted. |
+| **Subprocess escape** | CLI invokes `python -m timetravel` in a way that could be hijacked | very low | n/a | The `serve` command spawns no further subprocesses; uvicorn is in-process. Unit-tested `test_serve_*` confirms only documented options are accepted. |
 
 ### 5.2 Phase 1 scanner run
 
 ```text
-[scan] phase=1 src=src/rewind out=.deepsec/phase1
+[scan] phase=1 src=src/timetravel out=.deepsec/phase1
   ruff S      -> rc=0
   bandit      -> rc=0
   deepsec     -> SKIPPED (deepsec not on PATH; ruff S + bandit were run)
@@ -318,7 +318,7 @@ when present on `PATH`. To enable:
 
 ```bash
 # Provision deepsec (operator responsibility) then:
-python scripts/security_scan.py --phase 1 --src src/rewind --out .deepsec
+python scripts/security_scan.py --phase 1 --src src/timetravel --out .deepsec
 ```
 
 If `deepsec` is missing, the scan completes with `ruff` S rules + `bandit`
@@ -340,11 +340,11 @@ A regression in either is a Phase 1 → 2 security drift and will fail CI.
 ### 6.1 Run commands
 
 ```bash
-# Start the local OTLP/HTTP receiver (defaults: 127.0.0.1:4318, ./rewind.db)
-rewind serve
+# Start the local OTLP/HTTP receiver (defaults: 127.0.0.1:4318, ./timetravel.db)
+timetravel serve
 
 # Override host / port / db
-rewind serve --port 4319 --db /tmp/rewind.db
+timetravel serve --port 4319 --db /tmp/timetravel.db
 
 # Probe it
 curl http://127.0.0.1:4318/healthz      # {"status":"ok"}
@@ -356,20 +356,20 @@ pytest
 pytest -m integration
 
 # Full quality gate sweep (mirror CI)
-ruff check src/rewind tests/
-pylint src/rewind
-mypy --strict src/rewind/
+ruff check src/timetravel tests/
+pylint src/timetravel
+mypy --strict src/timetravel/
 pytest -m "" tests/ tests/integration
-python scripts/security_scan.py --phase 1 --src src/rewind --out .deepsec
+python scripts/security_scan.py --phase 1 --src src/timetravel --out .deepsec
 ```
 
 ### 6.2 File inventory (Phase 1 deltas)
 
 | Path | Type | Notes |
 |---|---|---|
-| `src/rewind/ingest.py` | **new** (293 lines) | Pure proto → Span decoder. No I/O. |
-| `src/rewind/receiver.py` | **new** (132 lines) | FastAPI surface, `create_app(store)`. |
-| `src/rewind/cli.py` | modified | `serve` subcommand added. |
+| `src/timetravel/ingest.py` | **new** (293 lines) | Pure proto → Span decoder. No I/O. |
+| `src/timetravel/receiver.py` | **new** (132 lines) | FastAPI surface, `create_app(store)`. |
+| `src/timetravel/cli.py` | modified | `serve` subcommand added. |
 | `pyproject.toml` | modified | `types-protobuf` + `bandit` in dev deps; mypy override widened to `opentelemetry.proto.*` + `google.protobuf.*`. |
 | `tests/test_ingest.py` | **new** | 26 unit tests. |
 | `tests/test_receiver.py` | **new** | 10 unit tests. |
@@ -383,10 +383,10 @@ python scripts/security_scan.py --phase 1 --src src/rewind --out .deepsec
 
 ### 6.3 What Phase 2 must do
 
-- Add a **Timeline UI** that reads `rewind.db` directly. Likely Streamlit
+- Add a **Timeline UI** that reads `timetravel.db` directly. Likely Streamlit
   for v1 (plan §6 Phase 2); the storage layer already supports
   `TraceStore.get_trace` and `list_branches`, which is the read surface.
-- Add a new CLI subcommand, probably `rewind ui` (port default `8501`),
+- Add a new CLI subcommand, probably `timetravel ui` (port default `8501`),
   mirroring the `serve` pattern. **Do not** change `serve` — its surface is
   now the contract OpenInference wiring docs will be written against.
 - Treat the receiver as **frozen** for additions: any new endpoint belongs
@@ -403,14 +403,14 @@ python scripts/security_scan.py --phase 1 --src src/rewind --out .deepsec
 - **Do not** add CORS to the receiver UI surface without first reproducing
   the `test_no_cors_headers_leak` pattern as a positive assertion.
 - **Do not** couple the UI to the OTLP/HTTP receiver process; the design
-  contract is that they share `rewind.db` and are otherwise independent
+  contract is that they share `timetravel.db` and are otherwise independent
   processes. Phase 4 will *separate* them further with a renderer API.
 
 ### 6.5 Open items / TODOs
 
 - **Per-framework wiring docs.** Deferred to Phase 2 (see §4.6). The
   canonical pattern is shaped by the integration test: build an OTLP
-  `ExportTraceServiceRequest`, `urlopen` it to `rewind serve`. Per-SDK
+  `ExportTraceServiceRequest`, `urlopen` it to `timetravel serve`. Per-SDK
   boilerplate (OpenAI/ADK/LangGraph/CrewAI/PydanticAI/SmolAgents/MCP)
   will be a separate `docs/wiring/` tree.
 - **Body-size cap + concurrency tuning.** Currently uvicorn defaults.

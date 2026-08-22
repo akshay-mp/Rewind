@@ -1,6 +1,6 @@
 """Unit tests for the Phase 1.1 checkpoint state inspector API.
 
-Covers the two read endpoints added to :mod:`rewind.timeline`:
+Covers the two read endpoints added to :mod:`timetravel.timeline`:
 
 - ``GET /api/v1/traces/{trace_id}/branches/{branch_id}/checkpoints``
 - ``GET /api/v1/branches/{branch_id}/checkpoints/{name}``
@@ -18,10 +18,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Branch, Checkpoint, Span, Trace
-from rewind.storage import TraceStore
-from rewind.timeline import mount_timeline
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import Branch, Checkpoint, Span, Trace
+from agent_timetravel.storage import TraceStore
+from agent_timetravel.timeline import mount_timeline
 
 # --- shared helpers --------------------------------------------------------
 

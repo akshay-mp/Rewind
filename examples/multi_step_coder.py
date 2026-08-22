@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Demo 3 — multi-step coding agent captured by Rewind.
+"""Demo 3 — multi-step coding agent captured by TimeTravel.
 
 Pattern (the "ReWOO" trace shape — a real coding agent skeleton):
 
@@ -17,7 +17,7 @@ diverged.
 
 Run::
 
-    rewind serve
+    timetravel serve
     python examples/multi_step_coder.py
 """
 

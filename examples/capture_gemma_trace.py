@@ -2,11 +2,11 @@
 
 Prerequisites:
   * llama-server running Gemma at http://127.0.0.1:49998 (Unsloth)
-  * Rewind OTLP receiver running at http://127.0.0.1:4318
-    (start it first:  python -m rewind.cli serve --port 4318 --db ~/.rewind/rewind.db)
+  * TimeTravel OTLP receiver running at http://127.0.0.1:4318
+    (start it first:  python -m timetravel.cli serve --port 4318 --db ~/.timetravel/timetravel.db)
 
 This script:
-  1. Configures OpenTelemetry to export to the Rewind receiver via OTLP/HTTP.
+  1. Configures OpenTelemetry to export to the TimeTravel receiver via OTLP/HTTP.
   2. Instruments the OpenAI SDK with OpenInference (captures gen_ai.* spans).
   3. Points an OpenAI client at the local Gemma endpoint.
   4. Runs a 2-step "agent": a planner call, then an executor call.
@@ -21,29 +21,29 @@ from __future__ import annotations
 import sys
 import time
 
-# --- OpenTelemetry → Rewind OTLP receiver --------------------------------
+# --- OpenAI client pointed at local Gemma --------------------------------
+import openai
+
+# --- OpenInference OpenAI instrumentation --------------------------------
+from openinference.instrumentation.openai import OpenAIInstrumentor
+
+# --- OpenTelemetry → TimeTravel OTLP receiver --------------------------------
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-# --- OpenInference OpenAI instrumentation --------------------------------
-from openinference.instrumentation.openai import OpenAIInstrumentor
-
-# --- OpenAI client pointed at local Gemma --------------------------------
-import openai
-
 GEMMA_BASE_URL = "http://127.0.0.1:49301/v1"
 GEMMA_MODEL = "gemma-4-12b-it-UD-Q4_K_XL"
 REWIND_OTLP_ENDPOINT = "http://127.0.0.1:4318"
-DB_PATH = "~/.rewind/rewind.db"
+DB_PATH = "~/.timetravel/timetravel.db"
 
 
 def setup_tracing() -> None:
-    """Wire OpenTelemetry → Rewind's OTLP receiver, and instrument OpenAI."""
+    """Wire OpenTelemetry → TimeTravel's OTLP receiver, and instrument OpenAI."""
     resource = Resource.create(
-        {"service.name": "gemma-capture", "openinference.scope": "rewind-demo"}
+        {"service.name": "gemma-capture", "openinference.scope": "timetravel-demo"}
     )
     provider = TracerProvider(resource=resource)
     exporter = OTLPSpanExporter(endpoint=f"{REWIND_OTLP_ENDPOINT}/v1/traces")

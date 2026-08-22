@@ -3,12 +3,12 @@
 From zero to viewing a captured trace in your browser in **under five
 minutes**.
 
-## 1. Install Rewind
+## 1. Install TimeTravel
 
 ```bash
-pipx install rewind-debugger          # recommended — isolated, no venv juggling
+pipx install agent-timetravel          # recommended — isolated, no venv juggling
 # OR
-pip install rewind-debugger
+pip install agent-timetravel
 # OR, from the repo:
 pip install -e .
 ```
@@ -16,29 +16,29 @@ pip install -e .
 Verify:
 
 ```bash
-rewind --version
+timetravel --version
 ```
 
 ## Decorator-first workbench
 
-For a local interactive agent, define one `Rewind` object and load it with:
+For a local interactive agent, define one `TimeTravel` object and load it with:
 
 ```python
-from rewind import RewindContext, rewind
+from agent_timetravel import TimeTravelContext, timetravel
 
-@rewind.agent(description="Answer a question", tags=("demo",))
-async def answer(question: str, context: RewindContext | None = None) -> str:
+@timetravel.agent(description="Answer a question", tags=("demo",))
+async def answer(question: str, context: TimeTravelContext | None = None) -> str:
     return question
 ```
 
-Start it with `rewind dev app:rewind`. Direct calls to `answer(...)` remain
-ordinary pass-through calls; `RewindContext` is injected only for workbench
+Start it with `timetravel dev app:timetravel`. Direct calls to `answer(...)` remain
+ordinary pass-through calls; `TimeTravelContext` is injected only for workbench
 runs. For a custom title or separate registry, use:
 
 ```python
-from rewind import Rewind, RewindContext
+from agent_timetravel import TimeTravel, TimeTravelContext
 
-rewind = Rewind(title="My agents")
+timetravel = TimeTravel(title="My agents")
 ```
 
 Existing names such as `debugger` remain supported. Official OpenAI Python SDK
@@ -47,8 +47,8 @@ Chat Completions calls
 including when that SDK is configured for an OpenAI-compatible endpoint.
 LangGraph / langchain apps get the same auto-activation: every
 `BaseChatModel` and `BaseTool` `invoke`/`ainvoke` is stepped, replayed, and
-captured — and `rewind app:main` accepts a bare compiled graph as the target
-(no Rewind-specific code in the app). Replay adapters for the remaining
+captured — and `timetravel app:main` accepts a bare compiled graph as the target
+(no TimeTravel-specific code in the app). Replay adapters for the remaining
 frameworks (CrewAI, PydanticAI, ADK, SmolAgents) remain explicit; generic
 decorator auto-activation for them is unavailable and reports an actionable
 wrapper hint. See [`replay-adapters.md`](./replay-adapters.md).
@@ -59,22 +59,22 @@ For the live verified demo, use the exact local model and UI setup in
 ## 2. Start the receiver
 
 ```bash
-rewind serve
+timetravel serve
 ```
 
 Output will look like:
 
 ```
-rewind serve → http://127.0.0.1:4318/v1/traces  (db=~/.rewind/rewind.db, version=0.1.2)
+timetravel serve → http://127.0.0.1:4318/v1/traces  (db=~/.timetravel/timetravel.db, version=0.1.2)
 ```
 
 The receiver now accepts OTLP/HTTP at `http://127.0.0.1:4318/v1/traces`
-and persists every span into `~/.rewind/rewind.db`.
+and persists every span into `~/.timetravel/timetravel.db`.
 
 ## 3. Open the Timeline UI (second terminal)
 
 ```bash
-rewind ui
+timetravel ui
 ```
 
 A browser tab opens at `http://127.0.0.1:8484/ui/`. It's empty until
@@ -121,25 +121,25 @@ token-level changes between the two runs.
 - See [`docs/replay-adapters.md`](./replay-adapters.md) to wire replay
   (time-travel) into a debug iteration loop.
 - See [`docs/phases/phase-7.md`](./phases/phase-7.md) for local-model
-  enrichment commands (`rewind enrich`, `rewind render-template`).
+  enrichment commands (`timetravel enrich`, `timetravel render-template`).
 
 ## Troubleshooting
 
 **"Trace doesn't appear in the UI"** — verify your agent actually emitted.
-The fastest way is `rewind --help` to check the DB path, then query it:
+The fastest way is `timetravel --help` to check the DB path, then query it:
 
 ```bash
-sqlite3 ~/.rewind/rewind.db "SELECT COUNT(*) FROM traces;"
+sqlite3 ~/.timetravel/timetravel.db "SELECT COUNT(*) FROM traces;"
 ```
 
-If the count is zero, the OTLP exporter isn't reaching Rewind — check
-`OTEL_EXPORTER_OTLP_ENDPOINT` and that `rewind serve` is bound to the same
+If the count is zero, the OTLP exporter isn't reaching TimeTravel — check
+`OTEL_EXPORTER_OTLP_ENDPOINT` and that `timetravel serve` is bound to the same
 interface the exporter can reach.
 
-**"receiver says `db=~/.rewind/rewind.db` but the file doesn't exist"** —
-that's expected: Rewind creates `~/.rewind/` on first write. If your
+**"receiver says `db=~/.timetravel/timetravel.db` but the file doesn't exist"** —
+that's expected: TimeTravel creates `~/.timetravel/` on first write. If your
 agent hasn't sent a trace yet, the file is not yet created.
 
-**"`rewind serve` crashes with `Address already in use`"** — another
-rewind instance (or another process) is on 4318. Use `--port 4319` and
+**"`timetravel serve` crashes with `Address already in use`"** — another
+timetravel instance (or another process) is on 4318. Use `--port 4319` and
 update `OTEL_EXPORTER_OTLP_ENDPOINT` accordingly.

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from rewind.enums import ReplayMode, SpanKind
-from rewind.models import Branch, Span, hash_payload
+from agent_timetravel.enums import ReplayMode, SpanKind
+from agent_timetravel.models import Branch, Span, hash_payload
 
 
 def test_replay_modes_are_unique() -> None:

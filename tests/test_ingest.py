@@ -1,4 +1,4 @@
-"""Unit tests for ``rewind.ingest`` — pure protobuf → Span decoding.
+"""Unit tests for ``timetravel.ingest`` — pure protobuf → Span decoding.
 
 These tests do **not** spin up a server: they call the pure decode functions
 directly on constructed proto messages. Fidelity (the Phase 1 exit criterion)
@@ -14,8 +14,8 @@ import pytest
 from opentelemetry.proto.collector.trace.v1 import trace_service_pb2 as ts
 from opentelemetry.proto.common.v1 import common_pb2 as c
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.ingest import (
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.ingest import (
     IngestError,
     anyvalue_to_python,
     attrs_to_dict,
@@ -23,7 +23,7 @@ from rewind.ingest import (
     decode_export_request_json,
     spans_from_request,
 )
-from rewind.models import hash_payload
+from agent_timetravel.models import hash_payload
 
 # Deterministic trace/span byte ids. OTel uses raw bytes; the canonical hex-id
 # for an OTel trace is 32 hex chars; a span id is 16 hex chars.
@@ -78,7 +78,7 @@ def _build_three_span_request() -> ts.ExportTraceServiceRequest:
     agent = ss.spans.add()
     agent.trace_id = _TRACE_ID_BYTES
     agent.span_id = _AGENT_SPAN_ID
-    # parent_span_id stays empty → None on the Rewind model.
+    # parent_span_id stays empty → None on the TimeTravel model.
     agent.name = "ADK.CustomerCareAgent"
     agent.start_time_unix_nano = 1_700_000_000_000_000_000
     agent.end_time_unix_nano = 1_700_000_005_000_000_000

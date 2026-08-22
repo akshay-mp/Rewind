@@ -22,12 +22,12 @@
 
 | Component | File | Responsibility |
 |---|---|---|
-| Domain models | `src/rewind/models.py` | `Span`, `Trace`, `Branch`, `RewindModel` + `hash_payload`. Pydantic v2, `extra="forbid"`. |
-| Enums | `src/rewind/enums.py` | `SpanKind` (`gen_ai.llm/tool/mcp/agent`), `ReplayMode` (frozen/branch/full), `SpanStatus`. |
-| Classifier | `src/rewind/classify.py` | Defensive map from raw GenAI/OpenInference attrs → `SpanKind`. Unclassifiable → `UNKNOWN` (never dropped). |
-| Storage | `src/rewind/storage.py` | `TraceStore`: SQLite + WAL, foreign keys, explicit transactions. Verbatim `raw_attributes` JSON column. |
-| CLI scaffold | `src/rewind/cli.py` | `rewind --version` / `rewind version`. Phase 1 adds `serve`. |
-| Packaging | `pyproject.toml` | hatchling build, `rewind-debugger` console script, dev extras (ruff/pylint/mypy/pytest). |
+| Domain models | `src/timetravel/models.py` | `Span`, `Trace`, `Branch`, `TimeTravelModel` + `hash_payload`. Pydantic v2, `extra="forbid"`. |
+| Enums | `src/timetravel/enums.py` | `SpanKind` (`gen_ai.llm/tool/mcp/agent`), `ReplayMode` (frozen/branch/full), `SpanStatus`. |
+| Classifier | `src/timetravel/classify.py` | Defensive map from raw GenAI/OpenInference attrs → `SpanKind`. Unclassifiable → `UNKNOWN` (never dropped). |
+| Storage | `src/timetravel/storage.py` | `TraceStore`: SQLite + WAL, foreign keys, explicit transactions. Verbatim `raw_attributes` JSON column. |
+| CLI scaffold | `src/timetravel/cli.py` | `timetravel --version` / `timetravel version`. Phase 1 adds `serve`. |
+| Packaging | `pyproject.toml` | hatchling build, `agent-timetravel` console script, dev extras (ruff/pylint/mypy/pytest). |
 
 ### 1.2 The no-fidelity-loss contract (the core invariant)
 
@@ -50,7 +50,7 @@ This invariant is enforced by:
 | **`StrEnum` (not `str, Enum`)** | Python 3.11+ native; ruff-clean (`UP042`); JSON-serializable as the semconv string value directly. |
 | **Explicit `BEGIN/COMMIT/ROLLBACK`** with `isolation_level=None` | The stdlib context manager commits but **does not close**. PRAGMAs implicitly commit, so classic mode fights our wrapper. Autocommit + manual txn is the only combination that is correct *and* leak-free (verified under `-W error::ResourceWarning`). |
 | **`hash_payload` = SHA-256(sorted JSON)** | Frozen replay (Phase 3) matches calls on `model + messages_hash + tools_hash` rather than fragile byte equality. Deterministic, collision-safe. |
-| **`rewind_id: UUID`** separate from OTel `span_id` | OTel `span_id` may legitimately repeat across replay branches; we need a stable primary key for branches. |
+| **`timetravel_id: UUID`** separate from OTel `span_id` | OTel `span_id` may legitimately repeat across replay branches; we need a stable primary key for branches. |
 
 ### 1.4 ER schema
 
@@ -75,7 +75,7 @@ erDiagram
         TEXT created_at
     }
     spans {
-        TEXT rewind_id PK
+        TEXT timetravel_id PK
         TEXT trace_id FK
         TEXT span_id
         TEXT parent_span_id
@@ -108,12 +108,12 @@ Indexes (defined in `storage.py::_SCHEMA_SQL`):
 ```mermaid
 flowchart TB
     subgraph P0["PHASE 0 — Foundation (delivered)"]
-        CLI["rewind CLI<br/>(click)<br/>── version ──"]
+        CLI["timetravel CLI<br/>(click)<br/>── version ──"]
         Model["Domain Models<br/>models.py<br/>Span · Trace · Branch"]
         Enums["enums.py<br/>SpanKind · ReplayMode · SpanStatus"]
         Classify["classify.py<br/>GenAI semconv → SpanKind"]
         Store["TraceStore<br/>storage.py<br/>SQLite + WAL"]
-        DB[("rewind.db<br/>WAL mode<br/>traces · branches · spans<br/>raw_attributes JSON")]
+        DB[("agent_timetravel.db<br/>WAL mode<br/>traces · branches · spans<br/>raw_attributes JSON")]
     end
 
     subgraph FUTURE1["Future: Phase 1 (capture boundary)"]
@@ -174,7 +174,7 @@ sequenceDiagram
 
     Note over T: Assert order and kinds and raw_attributes identical
 
-    T->>S: raw_attributes_bytes(rewind_id)
+    T->>S: raw_attributes_bytes(timetravel_id)
     S->>DB: SELECT raw_attributes
     DB-->>T: bytes fidelity check
 ```
@@ -212,7 +212,7 @@ sequenceDiagram
 
 | # | Criterion | Status | Evidence |
 |---|---|---|---|
-| EC1 | `python -m rewind --version` runs | ✅ | `rewind, version 0.1.0` |
+| EC1 | `python -m timetravel --version` runs | ✅ | `timetravel, version 0.1.0` |
 | EC2 | 3-span trace (1 LLM + 1 tool + 1 agent) round-trips SQLite → identical | ✅ | `tests/test_models.py` (3 tests) |
 | EC3 | mypy `--strict` + ruff clean | ✅ | see §4.4 |
 
@@ -223,15 +223,15 @@ sequenceDiagram
 | `tests/test_enums_models.py` | 7 | Enum uniqueness, semconv value pinning, `extra="forbid"`, `hash_payload` determinism, signature match, validation errors. |
 | `tests/test_classify.py` | 6 | Classifier maps OpenInference/GenAI keys → `SpanKind`; unknowns preserved not dropped. |
 | `tests/test_models.py` | 3 | **Exit-criterion round-trip**, byte-fidelity, parent→child linking. |
-| `tests/test_cli.py` | 2 | `__version__` constant; `python -m rewind --version` subprocess. |
+| `tests/test_cli.py` | 2 | `__version__` constant; `python -m timetravel --version` subprocess. |
 | **Total** | **18** | **18 passing, 0 failing** |
 
 ### 4.3 Quality gates
 
 ```
 ruff check src tests   → All checks passed!
-pylint  src/rewind     → 10.00/10
-mypy    src/rewind     → Success: no issues found in 7 source files
+pylint  src/timetravel     → 10.00/10
+mypy    src/timetravel     → Success: no issues found in 7 source files
 pytest                 → 18 passed
 pytest -W error::ResourceWarning  → 18 passed (no connection leaks)
 ```
@@ -310,17 +310,17 @@ will be populated and the report archived under `.deepsec/phase0/`.
 ### 6.1 How to run Phase 0
 
 ```bash
-cd /Users/akshaymp/Projects/Agentic_AI/rewind
+cd /Users/akshaymp/Projects/Agentic_AI/timetravel
 source ../.venv/bin/activate    # or: python -m venv .venv && pip install -e ".[dev]"
 
 # quality gates (all must pass)
 ruff check src tests
-pylint src/rewind
-mypy src/rewind
+pylint src/timetravel
+mypy src/timetravel
 pytest
 
 # version smoke
-python -m rewind --version
+python -m timetravel --version
 
 # security
 python scripts/security_scan.py --phase 0
@@ -329,17 +329,17 @@ python scripts/security_scan.py --phase 0
 ### 6.2 What exists now (file inventory)
 
 ```
-rewind/
+timetravel/
 ├── pyproject.toml            # build + ruff/pylint/mypy/pytest config (strict)
 ├── README.md                 # OTel-in / replay-out architecture summary
 ├── .python-version           # 3.11
 ├── .gitignore
-├── src/rewind/
+├── src/timetravel/
 │   ├── __init__.py           # __version__ = "0.1.0"
-│   ├── __main__.py           # python -m rewind entrypoint
+│   ├── __main__.py           # python -m timetravel entrypoint
 │   ├── cli.py                # click group + version
 │   ├── enums.py              # SpanKind / ReplayMode / SpanStatus (StrEnum)
-│   ├── models.py             # Span / Trace / Branch / RewindModel / hash_payload
+│   ├── models.py             # Span / Trace / Branch / TimeTravelModel / hash_payload
 │   ├── classify.py           # GenAI/OpenInference -> SpanKind classifier
 │   └── storage.py            # TraceStore (SQLite+WAL, parameterized SQL)
 ├── tests/
@@ -368,7 +368,7 @@ Phase 1's only job is **writing into** the schema Phase 0 froze:
 - The **fidelity contract** (`raw_attributes` byte-for-byte) is already
   enforceable as a Phase 1 exit criterion because `raw_attributes_bytes()`
   exists.
-- The CLI group is wired; Phase 1 adds `rewind serve --otlp-port 4318 --db ...`.
+- The CLI group is wired; Phase 1 adds `timetravel serve --otlp-port 4318 --db ...`.
 
 ### 6.4 Decisions Phase 1 must NOT revisit
 

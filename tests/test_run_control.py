@@ -28,9 +28,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from rewind.enums import SpanKind, SpanStatus
-from rewind.models import Span, Trace, hash_payload
-from rewind.stepping import (
+from agent_timetravel.enums import SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace, hash_payload
+from agent_timetravel.stepping import (
     Decision,
     DecisionKind,
     InteractiveSession,
@@ -40,11 +40,11 @@ from rewind.stepping import (
     StepKind,
     decide_with_validation,
 )
-from rewind.stepping_api import (
+from agent_timetravel.stepping_api import (
     SSEApprovalChannel,
     mount_stepping,
 )
-from rewind.storage import SCHEMA_VERSION, TraceStore
+from agent_timetravel.storage import SCHEMA_VERSION, TraceStore
 
 _TRACE_ID = "abcd1234abcd1234abcd1234abcd1234"
 
@@ -98,7 +98,7 @@ def client(app: FastAPI) -> TestClient:
 @pytest.fixture(autouse=True)
 def _isolate_registry() -> Any:
     """Snapshot + restore the live-session registry per test."""
-    from rewind import stepping_api
+    from agent_timetravel import stepping_api
 
     saved_live = dict(stepping_api._SESSIONS._live)
     stepping_api._SESSIONS._live.clear()
@@ -200,7 +200,7 @@ class TestRunControlStorageRoundTrip:
             )
         )
         # Simulate the runner marking status — run_control must survive.
-        from rewind.stepping_api import _set_status
+        from agent_timetravel.stepping_api import _set_status
 
         _set_status(store, sid, "paused")
         row = store.get_interactive_session(sid)
@@ -229,7 +229,7 @@ class TestRunControlMigration:
                 created_at TEXT NOT NULL
             );
             CREATE TABLE spans (
-                rewind_id TEXT PRIMARY KEY, trace_id TEXT NOT NULL,
+                timetravel_id TEXT PRIMARY KEY, trace_id TEXT NOT NULL,
                 span_id TEXT NOT NULL, parent_span_id TEXT, branch_id TEXT NOT NULL DEFAULT '',
                 name TEXT NOT NULL, kind TEXT NOT NULL, start_time TEXT NOT NULL,
                 end_time TEXT NOT NULL, status TEXT NOT NULL, status_message TEXT,

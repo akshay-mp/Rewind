@@ -12,7 +12,7 @@ flowchart TB
             StoreW["TraceStore<br/>SQLite + WAL"]
         end
 
-        DB[("rewind.db<br/>traces, spans, branches,<br/>checkpoints (NEW)")]
+        DB[("agent_timetravel.db<br/>traces, spans, branches,<br/>checkpoints (NEW)")]
 
         subgraph CheckpointPlane["Checkpoint SDK (NEW)"]
             CtxMgr["checkpoint ctxmgr<br/>checkpoint.py"]
@@ -22,7 +22,7 @@ flowchart TB
 
         subgraph RollbackPlane["Rollback control plane (NEW)"]
             Session["ReplaySession.fork<br/>hands handler the branch_id"]
-            Protocol["RollbackHandler Protocol<br/>on_branch + on_rewind"]
+            Protocol["RollbackHandler Protocol<br/>on_branch + on_timetravel"]
             GitHandler["GitRollbackHandler<br/>HEAD anchor + stash delta"]
         end
     end
@@ -62,7 +62,7 @@ flowchart TB
     %% Rollback control flow
     Session -->|fork branch_at handler GitHandler| Protocol
     Protocol -->|on_branch branch_id| GitHandler
-    Protocol -->|on_rewind branch_id| GitHandler
+    Protocol -->|on_timetravel branch_id| GitHandler
     GitHandler -->|git rev-parse HEAD| Git
     GitHandler -->|git stash create plus store| Git
     GitHandler -->|git reset --hard anchor| Git

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rewind import ui_assets
+from agent_timetravel import ui_assets
 
 
 def _make_ui(path: Path) -> Path:

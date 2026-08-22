@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deep-research agent under Rewind — capture → replay → branch → diff.
+"""Deep-research agent under TimeTravel — capture → replay → branch → diff.
 
 .. note::
 
@@ -11,22 +11,22 @@
     ``deep_research_README.md`` and ``docs/demo-run.md``.
 
 This variant wires `open_deep_research` (the canonical LangGraph deep-research
-agent) into Rewind's time-travel debugger and runs the **full** loop on a
+agent) into TimeTravel's time-travel debugger and runs the **full** loop on a
 real, multi-node, tool-calling agent — proving the engine works on something
 far richer than the toy demos in ``tool_caller.py`` / ``rag_loop.py``.
 
 Three phases, each printing a banner + result summary:
 
   A. CAPTURE   — run the agent once live, capture every LLM call as an OTel
-                 span via OpenInference → ``rewind serve``. Records the seed.
-  B. FROZEN    — re-run the agent under ``rewind.replay(mode=FROZEN)`` with
+                 span via OpenInference → ``timetravel serve``. Records the seed.
+  B. FROZEN    — re-run the agent under ``timetravel.replay(mode=FROZEN)`` with
                  the OpenAI intercept active. Every LLM call is served from
                  the recorded fixture: **zero outbound traffic**, output
-                 matches the seed byte-for-byte. This is Rewind's core
+                 matches the seed byte-for-byte. This is TimeTravel's core
                  "no egress" guarantee exercised on a real agent.
   C. BRANCH    — fork at a researcher span, change the research topic, and
     + DIFF      re-run. The divergent tail goes live (captured under a new
-                 ``branch_id``); ``rewind.diff.span_diff`` flags the first
+                 ``branch_id``); ``timetravel.diff.span_diff`` flags the first
                  divergent span and ``message_diff`` shows token-level change.
 
 Model backend
@@ -40,15 +40,15 @@ unchanged against:
 
 ODR resolves its model via ``langchain.chat_models.init_chat_model``, which
 reads ``OPENAI_BASE_URL`` / ``OPENAI_API_KEY`` from the environment; we point
-its configurable model fields at ``$REWIND_MODEL`` (default
+its configurable model fields at ``$TIMETRAVEL_MODEL`` (default
 ``unsloth/Llama-3.1-8B-Instruct``). No ODR source changes are required — the
 OpenAI monkey-patch intercepts at the SDK boundary regardless of how the
 LangChain model was constructed.
 
 Run::
 
-    # 1. start the Rewind receiver (terminal 1)
-    rewind serve
+    # 1. start the TimeTravel receiver (terminal 1)
+    timetravel serve
 
     # 2. start your local model server (Unsloth / Ollama)
 
@@ -64,17 +64,17 @@ import sys
 from typing import Any
 
 # --- env wiring (must precede SDK imports) --------------------------------
-# OTLP exporter → Rewind receiver.
+# OTLP exporter → TimeTravel receiver.
 os.environ.setdefault("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
 # Flush quickly so the trace lands in the UI the moment the run finishes.
 os.environ.setdefault("OTEL_BSP_SCHEDULE_DELAY", "100")
 
 # OpenAI-compatible endpoint → your local model server (Unsloth by default).
 os.environ.setdefault("OPENAI_BASE_URL", "http://localhost:8000/v1")
-os.environ.setdefault("OPENAI_API_KEY", os.environ.get("REWIND_API_KEY", "local"))
+os.environ.setdefault("OPENAI_API_KEY", os.environ.get("TIMETRAVEL_API_KEY", "local"))
 
-#: The model name passed to the agent. Override with ``REWIND_MODEL``.
-MODEL = os.environ.get("REWIND_MODEL", "unsloth/Llama-3.1-8B-Instruct")
+#: The model name passed to the agent. Override with ``TIMETRAVEL_MODEL``.
+MODEL = os.environ.get("TIMETRAVEL_MODEL", "unsloth/Llama-3.1-8B-Instruct")
 
 #: The research topic for the seed capture.
 SEED_TOPIC = "What is time-travel debugging for AI agents, and which tools exist?"
@@ -82,8 +82,8 @@ SEED_TOPIC = "What is time-travel debugging for AI agents, and which tools exist
 #: A divergent topic used in the branch phase (different → different hash → live forward).
 BRANCH_TOPIC = "What are the best local-first agent evaluation harnesses?"
 
-#: Default DB path (matches ``rewind serve`` default).
-DEFAULT_DB = os.path.expanduser("~/.rewind/rewind.db")
+#: Default DB path (matches ``timetravel serve`` default).
+DEFAULT_DB = os.path.expanduser("~/.timetravel/timetravel.db")
 
 #: Researcher span index to branch at. Resolved dynamically from the captured
 #: trace; this is a fallback when the trace shape can't be introspected.
@@ -155,11 +155,11 @@ def _run_graph(graph: Any, topic: str) -> str:
 
 
 def _setup_telemetry() -> None:
-    """Configure a global TracerProvider + OTLP exporter pointed at Rewind.
+    """Configure a global TracerProvider + OTLP exporter pointed at TimeTravel.
 
     The OpenInference instrumentor only patches span *creation*; it does not
     wire up an exporter. Without this, spans are created in-memory but never
-    shipped to ``rewind serve``, so the captured trace is empty. We set it up
+    shipped to ``timetravel serve``, so the captured trace is empty. We set it up
     once, idempotently (a second call is a no-op).
     """
     # pylint: disable=import-outside-toplevel
@@ -170,16 +170,16 @@ def _setup_telemetry() -> None:
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     # pylint: enable=import-outside-toplevel
 
-    if getattr(trace.get_tracer_provider(), "_rewind_configured", False):
+    if getattr(trace.get_tracer_provider(), "_timetravel_configured", False):
         return
-    provider = TracerProvider(resource=Resource.create({"service.name": "rewind-deep-research"}))
+    provider = TracerProvider(resource=Resource.create({"service.name": "timetravel-deep-research"}))
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-    provider._rewind_configured = True  # type: ignore[attr-defined]  # idempotency sentinel
+    provider._timetravel_configured = True  # type: ignore[attr-defined]  # idempotency sentinel
     trace.set_tracer_provider(provider)
 
 
 def phase_capture(graph: Any, store: Any) -> str | None:
-    """Run the agent live, capture via OpenInference → Rewind receiver.
+    """Run the agent live, capture via OpenInference → TimeTravel receiver.
 
     Returns the captured ``trace_id`` (looked up from the store after the run)
     or ``None`` if capture was skipped (receiver not running).
@@ -212,7 +212,7 @@ def phase_capture(graph: Any, store: Any) -> str | None:
     # The just-captured trace is the newest one in the store.
     traces, _ = store.list_traces(limit=1)
     if not traces:
-        print("\n  ⚠ no trace found in the store — is `rewind serve` running?")
+        print("\n  ⚠ no trace found in the store — is `timetravel serve` running?")
         print("    Falling back to replay-by-id mode (pass --trace manually).")
         return None
     trace_id = traces[0].trace_id
@@ -230,9 +230,9 @@ def phase_frozen(graph: Any, store: Any, trace_id: str) -> None:
     We confirm determinism by comparing the report to the seed.
     """
     # pylint: disable=import-outside-toplevel
-    from rewind.enums import ReplayMode
-    from rewind.openai_intercept import patch
-    from rewind.replay import replay as replay_ctx
+    from agent_timetravel.enums import ReplayMode
+    from agent_timetravel.openai_intercept import patch
+    from agent_timetravel.replay import replay as replay_ctx
     # pylint: enable=import-outside-toplevel
 
     seed = store.get_trace(trace_id)
@@ -272,7 +272,7 @@ def _pick_branch_at(store: Any, trace_id: str) -> int:
     """
     trace = store.get_trace(trace_id)
     # pylint: disable=import-outside-toplevel
-    from rewind.enums import SpanKind
+    from agent_timetravel.enums import SpanKind
     # pylint: enable=import-outside-toplevel
     llm_indices = [i for i, s in enumerate(trace.spans) if s.kind == SpanKind.LLM]
     if len(llm_indices) >= 2:
@@ -283,10 +283,10 @@ def _pick_branch_at(store: Any, trace_id: str) -> int:
 def phase_branch(graph: Any, store: Any, trace_id: str) -> None:
     """Fork at a researcher span, change the topic, re-run live; diff."""
     # pylint: disable=import-outside-toplevel
-    from rewind.diff import message_diff, span_diff
-    from rewind.enums import ReplayMode, SpanKind
-    from rewind.openai_intercept import patch
-    from rewind.replay import replay as replay_ctx
+    from agent_timetravel.diff import message_diff, span_diff
+    from agent_timetravel.enums import ReplayMode, SpanKind
+    from agent_timetravel.openai_intercept import patch
+    from agent_timetravel.replay import replay as replay_ctx
     # pylint: enable=import-outside-toplevel
 
     branch_at = _pick_branch_at(store, trace_id)
@@ -308,8 +308,8 @@ def phase_branch(graph: Any, store: Any, trace_id: str) -> None:
 
     # Reconstruct the branch timeline: inherited prefix + live-captured tail.
     all_branch = store.get_spans(trace_id, branch_id=branch_id)
-    seed_ids = {s.rewind_id for s in seed_spans}
-    new_tail = [s for s in all_branch if s.rewind_id not in seed_ids]
+    seed_ids = {s.timetravel_id for s in seed_spans}
+    new_tail = [s for s in all_branch if s.timetravel_id not in seed_ids]
     branch_timeline = seed_spans[:branch_at] + new_tail
 
     diff = span_diff(seed_spans, branch_timeline)
@@ -337,7 +337,7 @@ def phase_branch(graph: Any, store: Any, trace_id: str) -> None:
 # --------------------------------------------------------------------------
 def main() -> int:
     # pylint: disable=import-outside-toplevel
-    from rewind.storage import TraceStore
+    from agent_timetravel.storage import TraceStore
     # pylint: enable=import-outside-toplevel
 
     db_path = sys.argv[sys.argv.index("--db") + 1] if "--db" in sys.argv else DEFAULT_DB
@@ -346,7 +346,7 @@ def main() -> int:
     graph = _build_graph()
     trace_id = phase_capture(graph, store)
     if trace_id is None:
-        print("\nSkipping replay phases — no captured trace. Start `rewind serve`.")
+        print("\nSkipping replay phases — no captured trace. Start `timetravel serve`.")
         return 1
 
     phase_frozen(graph, store, trace_id)

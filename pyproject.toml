@@ -3,13 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rewind-debugger"
-version = "0.1.2"
+name = "agent-timetravel"
+version = "0.2.0"
 description = "Time-travel debugging for AI agents — OTel-in / replay-out."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Rewind" }]
+authors = [{ name = "TimeTravel" }]
 keywords = ["opentelemetry", "agents", "debugging", "replay", "time-travel"]
 classifiers = [
     "Programming Language :: Python :: 3.11",
@@ -53,9 +53,9 @@ web = [
 ]
 
 # Phase 6 — per-framework replay-adapter optional extras.
-# Each extra pins the minimal framework package(s) Rewind's adapter wraps;
+# Each extra pins the minimal framework package(s) TimeTravel's adapter wraps;
 # the adapter itself degrades to a clear AdapterError if the framework is
-# absent. Install one or more with:  pip install rewind-debugger[adk]
+# absent. Install one or more with:  pip install agent-timetravel[adk]
 adk = ["google-adk>=1.28.1,<2"]
 langgraph = ["langchain-core>=0.3.0"]
 pydantic-ai = ["pydantic-ai>=1.56.0,<2"]
@@ -91,25 +91,26 @@ deepresearch = [
 ]
 
 [project.scripts]
-rewind = "rewind.cli:main"
+timetravel = "agent_timetravel.cli:main"
+agent-timetravel = "agent_timetravel.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/akshay-mp/Rewind"
-Repository = "https://github.com/akshay-mp/Rewind"
-Documentation = "https://github.com/akshay-mp/Rewind/tree/main/docs"
-Issues = "https://github.com/akshay-mp/Rewind/issues"
+Homepage = "https://github.com/akshay-mp/TimeTravel"
+Repository = "https://github.com/akshay-mp/TimeTravel"
+Documentation = "https://github.com/akshay-mp/TimeTravel/tree/main/docs"
+Issues = "https://github.com/akshay-mp/TimeTravel/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rewind"]
+packages = ["src/agent_timetravel"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"web/dist" = "rewind/_ui"
+"web/dist" = "agent_timetravel/_ui"
 
 [tool.hatch.build.targets.sdist]
 # Phase 8 — ship docs, examples, scripts, and the built UI in the sdist so
 # offline users have the quickstart and demo agents.
 include = [
-    "src/rewind",
+    "src/agent_timetravel",
     "README.md",
     "docs",
     "examples",
@@ -162,14 +163,14 @@ ignore = ["S101"]  # allow assert in tests
 "tests/**" = ["S101", "ANN", "PLR2004"]
 # SDK-boundary monkey-patch: signatures mirror OpenAI's variadic `create`
 # which is genuinely `Any`-typed. The rest of the codebase stays strict.
-"src/rewind/openai_intercept.py" = ["ANN401"]
-"src/rewind/tool_intercept.py" = ["ANN401"]
-"src/rewind/adapters/**" = ["ANN401"]
+"src/agent_timetravel/openai_intercept.py" = ["ANN401"]
+"src/agent_timetravel/tool_intercept.py" = ["ANN401"]
+"src/agent_timetravel/adapters/**" = ["ANN401"]
 # Same SDK-boundary monkey-patch for langchain: signatures mirror
 # BaseChatModel/BaseTool's `input`/`config` parameters verbatim.
-"src/rewind/langgraph_intercept.py" = ["ANN401", "A002"]
+"src/agent_timetravel/langgraph_intercept.py" = ["ANN401", "A002"]
 # Wraps foreign langgraph/langchain runnables — genuinely Any at the boundary.
-"src/rewind/graph_app.py" = ["ANN401"]
+"src/agent_timetravel/graph_app.py" = ["ANN401"]
 # Deep-research integration scripts. The ODR graph + LangChain model objects
 # are genuinely Any-typed at the SDK boundary; the scripts mirror the existing
 # adapter-override pragmatism. (Examples live outside src/ so they don't ship
@@ -218,7 +219,7 @@ disable = [
 # runner + dispatch in one place is more readable than splitting into
 # evaluator.py + runner.py + dispatch.py. The pylint maxima for module,
 # function, and class complexity need to relax accordingly.
-[tool.pylint."src/rewind/evaluate.py"]
+[tool.pylint."src/agent_timetravel/evaluate.py"]
 disable = [
     "too-many-lines",  # one-file design choice (documented in module docstring)
     "too-many-nested-blocks",  # OpenInference response schema is nested
@@ -230,7 +231,7 @@ disable = [
 # eval_api.py view models are intentionally isomorphic to evaluate.py's
 # frozen dataclasses (DB shape → wire shape). The 5-7 identical field
 # declarations are the projection contract, not duplication.
-[tool.pylint."src/rewind/eval_api.py"]
+[tool.pylint."src/agent_timetravel/eval_api.py"]
 disable = [
     "duplicate-code",  # view models mirror dataclasses by design
 ]
@@ -239,7 +240,7 @@ disable = [
 # to TraceStore, pushing the public-method count over pylint's default of 20.
 # The store is intentionally one class — splitting per-table facades would
 # fragment the connection/transaction discipline (see storage.py:184 _execute).
-[tool.pylint."src/rewind/storage.py"]
+[tool.pylint."src/agent_timetravel/storage.py"]
 disable = [
     "too-many-public-methods",  # one store, many tables — see _execute invariant
 ]
@@ -249,10 +250,10 @@ disable = [
 # no public composition API), and reuse extract_signature + the Responder
 # protocol. These relaxations apply uniformly to all adapter modules so
 # the pragmas don't have to be scattered inline across 5 files.
-[tool.pylint."src/rewind/adapters/**"]
+[tool.pylint."src/agent_timetravel/adapters/**"]
 disable = [
     "protected-access",  # subclassing framework classes requires _generate-style overrides
-    "import-outside-toplevel",  # lazy imports keep `rewind --version` fast
+    "import-outside-toplevel",  # lazy imports keep `timetravel --version` fast
     "too-many-statements",  # factory + closure-bound inner class + helpers in one place
     "too-few-public-methods",  # inner replay classes expose overrides, no new public surface
 ]
@@ -264,7 +265,7 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-packages = ["rewind"]
+packages = ["agent_timetravel"]
 
 [[tool.mypy.overrides]]
 # Generated protobuf modules — namespaced as ``opentelemetry.proto.*``
@@ -274,7 +275,7 @@ module = ["opentelemetry.proto.*", "google.protobuf.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# Optional agent-framework dependencies: Rewind ships without requiring
+# Optional agent-framework dependencies: TimeTravel ships without requiring
 # langchain_core or openai at install time (lazy imports). The adapters
 # are only type-checked when the framework is present in the developer's
 # venv; otherwise the import surface is opaque to mypy.
@@ -318,7 +319,7 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
-    "--cov=rewind",
+    "--cov=agent_timetravel",
     "--cov-report=term-missing",
     "-m", "not integration",
 ]
@@ -328,7 +329,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/rewind"]
+source = ["src/agent_timetravel"]
 branch = true
 
 [tool.coverage.report]

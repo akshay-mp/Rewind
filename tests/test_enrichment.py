@@ -1,4 +1,4 @@
-"""Unit tests for the Phase 7 :mod:`rewind.enrichment` module.
+"""Unit tests for the Phase 7 :mod:`timetravel.enrichment` module.
 
 Four families pin the Phase 7 exit criteria:
 
@@ -20,7 +20,7 @@ from collections.abc import Sequence
 
 import pytest
 
-from rewind.enrichment import (
+from agent_timetravel.enrichment import (
     GPU_PCT_ATTR,
     QUANT_ATTR,
     VRAM_MIB_ATTR,
@@ -31,8 +31,8 @@ from rewind.enrichment import (
     render_chat_template,
     sample_vram,
 )
-from rewind.enums import SpanKind
-from rewind.models import Span
+from agent_timetravel.enums import SpanKind
+from agent_timetravel.models import Span
 
 # ---------------------------------------------------------------------------
 # 1. parse_quant
@@ -110,7 +110,7 @@ def _make_span(model: str | None, *, quant_attr: str | None = None) -> Span:
 
 
 def test_quant_from_span_prefers_recorded_attribute() -> None:
-    """A recorded rewind.local.quant beats on-the-fly parsing."""
+    """A recorded timetravel.local.quant beats on-the-fly parsing."""
     span = _make_span("qwen3:32b-q4_K_M", quant_attr="q8_0")
     assert quant_from_span(span) == QuantInfo("q8_0", 8)
 
@@ -190,7 +190,7 @@ def test_render_template_with_model_name_still_returns_string() -> None:
 
 def test_sample_vram_returns_none_when_no_sampler(monkeypatch: pytest.MonkeyPatch) -> None:
     """When no GPU probe tool is installed, sample_vram is a clean no-op."""
-    monkeypatch.setattr("rewind.enrichment.shutil.which", lambda _: None)
+    monkeypatch.setattr("agent_timetravel.enrichment.shutil.which", lambda _: None)
     sample = sample_vram()
     assert sample.vram_mib is None
     assert sample.gpu_pct is None
@@ -199,7 +199,7 @@ def test_sample_vram_returns_none_when_no_sampler(monkeypatch: pytest.MonkeyPatc
 def test_sample_vram_swallows_nvidia_smi_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """nvidia-smi present but exits non-zero → treat as unavailable."""
     monkeypatch.setattr(
-        "rewind.enrichment.shutil.which",
+        "agent_timetravel.enrichment.shutil.which",
         lambda cmd: "/usr/bin/nvidia-smi" if cmd == "nvidia-smi" else None,
     )
 
@@ -211,7 +211,7 @@ def test_sample_vram_swallows_nvidia_smi_failure(monkeypatch: pytest.MonkeyPatch
 
         return _Proc()
 
-    monkeypatch.setattr("rewind.enrichment.subprocess.run", _fake_run)
+    monkeypatch.setattr("agent_timetravel.enrichment.subprocess.run", _fake_run)
     sample = sample_vram()
     assert sample.vram_mib is None
 
@@ -254,10 +254,10 @@ def test_enrich_span_vram_on_writes_when_sampler_reports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When the sampler reports a value, enrich_span writes it to raw_attributes."""
-    from rewind.enrichment import VramSample
+    from agent_timetravel.enrichment import VramSample
 
     monkeypatch.setattr(
-        "rewind.enrichment.sample_vram",
+        "agent_timetravel.enrichment.sample_vram",
         lambda: VramSample(vram_mib=4096, gpu_pct=42.5),
     )
     span = _make_span("qwen3:32b-q4_K_M")

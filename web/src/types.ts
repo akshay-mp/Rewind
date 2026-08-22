@@ -1,4 +1,4 @@
-// Wire-shape types mirroring `src/rewind/timeline.py`.
+// Wire-shape types mirroring `src/timetravel/timeline.py`.
 //
 // These are the source of truth for what the timeline UI understands. Keep
 // them in lock-step with the Pydantic models on the Python side: every field
@@ -10,7 +10,7 @@ export type SpanKind =
   | "gen_ai.tool"
   | "gen_ai.mcp"
   | "gen_ai.agent"
-  | "rewind.unknown";
+  | "timetravel.unknown";
 
 export type SpanStatus = "OK" | "ERROR" | "UNSET";
 
@@ -32,7 +32,7 @@ export interface TraceListResponse {
 }
 
 export interface SpanView {
-  rewind_id: string;
+  timetravel_id: string;
   span_id: string;
   parent_span_id: string | null;
   branch_id: string | null;
@@ -60,7 +60,7 @@ export interface TraceDetail {
 
 export interface SpanSearchHit {
   trace_id: string;
-  rewind_id: string;
+  timetravel_id: string;
   span_id: string;
   parent_span_id: string | null;
   name: string;
@@ -130,7 +130,7 @@ export interface AgentSessionRequest {
 
 // ----- Phase 5: branching & diff -------------------------------------------
 
-/** Recursive branch node — one row per `rewind.models.Branch`. */
+/** Recursive branch node — one row per `timetravel.models.Branch`. */
 export interface BranchNodeView {
   branch_id: string;
   trace_id: string;
@@ -220,7 +220,7 @@ export interface CreateBranchResponse {
 
 // ----- Phase 5.5: eval harness ---------------------------------------------
 //
-// Wire shape mirrors the pydantic view models in ``src/rewind/eval_api.py``.
+// Wire shape mirrors the pydantic view models in ``src/timetravel/eval_api.py``.
 // The eval namespace rides the same origin as the timeline API — no CORS.
 
 export type EvalVerdict = "PASS" | "FAIL" | "SKIP" | "ERROR";
@@ -305,8 +305,8 @@ export interface EvalBaselineDiffView {
 
 // ----- Phase 9: interactive stepping ---------------------------------------
 //
-// Wire shape mirrors the pydantic view models in ``src/rewind/stepping_api.py``
-// and the Step/Decision dataclasses in ``src/rewind/stepping.py``. The SSE
+// Wire shape mirrors the pydantic view models in ``src/timetravel/stepping_api.py``
+// and the Step/Decision dataclasses in ``src/timetravel/stepping.py``. The SSE
 // stream emits the StepEvent union below as one ``data: <json>`` block per
 // event.
 

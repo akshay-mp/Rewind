@@ -17,7 +17,7 @@ reported by the server):
 ```bash
 export OPENAI_BASE_URL=http://127.0.0.1:8888/v1
 export OPENAI_API_KEY="${LOCAL_OPENAI_API_KEY:?set this in the environment}"
-export REWIND_MODEL=unsloth/gemma-4-12b-it-GGUF
+export TIMETRAVEL_MODEL=unsloth/gemma-4-12b-it-GGUF
 ```
 
 `LOCAL_OPENAI_API_KEY` is only a shell variable name; keep its value out of
@@ -35,7 +35,7 @@ start the seeded interactive backend:
 
 ```bash
 ./.venv/bin/python examples/start_deep_research_stepping.py \
-  --db /tmp/rewind-demo.db \
+  --db /tmp/timetravel-demo.db \
   --host 127.0.0.1 \
   --port 8484
 ```
@@ -52,9 +52,9 @@ Open <http://127.0.0.1:5174/ui/> and click **Start Agent**.
 The backend serves the API and workbench on
 <http://127.0.0.1:8484/ui/>. Vite on port 5174 is the development UI used
 for this live verification. The seeded example imports
-`from rewind import Rewind, RewindContext`, creates
-`rewind = Rewind(title="Deep Research")`, and registers typed input with
-`@rewind.agent`. The explicit example command above is convenient for this
+`from agent_timetravel import TimeTravel, TimeTravelContext`, creates
+`timetravel = TimeTravel(title="Deep Research")`, and registers typed input with
+`@timetravel.agent`. The explicit example command above is convenient for this
 custom-titled demo. Existing names such as `debugger` remain supported.
 
 ## Interception boundary
@@ -65,7 +65,7 @@ workbench invocation, official OpenAI Python SDK Chat Completions calls
 that SDK is configured for an OpenAI-compatible endpoint. LangGraph /
 langchain apps get the same auto-activation: every `BaseChatModel` and
 `BaseTool` `invoke`/`ainvoke` inside the run is stepped, replayed, and
-captured — `rewind app:main` accepts a bare compiled graph as the launch
+captured — `timetravel app:main` accepts a bare compiled graph as the launch
 target. Other framework replay adapters remain explicit. Generic decorator
 auto-activation for CrewAI, PydanticAI, ADK, and SmolAgents is currently
 unavailable; the
@@ -86,8 +86,8 @@ assuming an optional framework package is installed. See
    auto-advances to the next substantive step.
 4. **Inspect a saved step.** Click any completed execution-path item. The
    saved response should open without another model or tool call.
-5. **Rewind and continue.** Use **Step Back / Rewind**, move forward through
-   saved history, and verify rewind/forward performs no model or tool call.
+5. **TimeTravel and continue.** Use **Step Back / TimeTravel**, move forward through
+   saved history, and verify timetravel/forward performs no model or tool call.
    Use **Continue from here** to create a successor run only when execution
    is actually resumed. Checkpoint events should remain visible at the saved
    boundaries.
@@ -120,7 +120,7 @@ behavior; it is not a claim that every planned recording feature exists.
 Synchronous OpenAI calls can be stepped through when they run in a worker
 thread, for example with `await asyncio.to_thread(sync_agent_call)`. A sync
 call cannot wait for browser approval while it is executing on the same
-asyncio event loop that serves the SSE connection; Rewind fails fast with a
+asyncio event loop that serves the SSE connection; TimeTravel fails fast with a
 clear error in that case. Prefer the async OpenAI client in an async runner,
 or move the synchronous call to a worker thread. Sync and async responses both
 publish the response usage used by the token and cost panels.

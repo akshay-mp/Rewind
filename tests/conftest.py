@@ -7,8 +7,8 @@ os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 
 import pytest  # noqa: E402
 
-from rewind.enums import SpanKind  # noqa: E402
-from rewind.models import Branch, Span, Trace  # noqa: E402
+from agent_timetravel.enums import SpanKind  # noqa: E402
+from agent_timetravel.models import Branch, Span, Trace  # noqa: E402
 
 
 @pytest.fixture

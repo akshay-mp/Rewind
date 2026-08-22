@@ -6,7 +6,7 @@ sequenceDiagram
     participant API as FastAPI timeline.py
     participant DE as diff.py (pure-logic)
     participant TS as TraceStore
-    participant DB as SQLite (rewind.db)
+    participant DB as SQLite (timetravel.db)
 
     Note over U,DB: Phase 5 two-branch diff: pick two branches → span_diff renders → expand a row → message_diff renders.
 
@@ -31,9 +31,9 @@ sequenceDiagram
 
     Note over U,DB: Stage 2 user expands a row for token-level message diff (lazy)
     U->>D: click "msg diff" on a pair row
-    D->>M: render MessageDiffBlock(left_rewind_id, right_rewind_id)
-    M->>API: GET /api/v1/spans/{left_rewind_id}/message-diff?other={right_rewind_id}
-    API->>TS: get both span rows by rewind_id
+    D->>M: render MessageDiffBlock(left_timetravel_id, right_timetravel_id)
+    M->>API: GET /api/v1/spans/{left_timetravel_id}/message-diff?other={right_timetravel_id}
+    API->>TS: get both span rows by timetravel_id
     TS->>DB: SELECT raw_attributes WHERE span key
     DB-->>TS: rows
     TS-->>API: span pair with extracted text via _extract_choice_content

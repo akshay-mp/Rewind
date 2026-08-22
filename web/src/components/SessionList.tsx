@@ -114,7 +114,7 @@ export function SessionList({ onOpenSession }: Props): JSX.Element {
       {!loading && items.length === 0 && error === null && (
         <p className="muted">
           no sessions yet. Register a runner with{" "}
-          <code>rewind.stepping_api.register_runner</code> and start one above.
+          <code>timetravel.stepping_api.register_runner</code> and start one above.
         </p>
       )}
 

@@ -5,15 +5,15 @@ Covers the Phase 4 plan exit criteria:
 1. **1000-step synthetic trace rewrites from step 500 in <2s.**
    (``test_phase4_perf_1000_step_rewrite_under_2_seconds``)
 
-2. **An agent using ``rewind.checkpoint()`` restores full state after a
-   rewind.** (``test_phase4_e2e_checkpoint_capture_then_frozen_restore``)
+2. **An agent using ``timetravel.checkpoint()`` restores full state after a
+   timetravel.** (``test_phase4_e2e_checkpoint_capture_then_frozen_restore``)
 
 3. **A trace with 100k+ spans loads its timeline without OOM.**
    (``test_phase4_perf_100k_spans_iter_no_oom``)
 
 Plus a full-stack round-trip that exercises the side-effect rollback path:
 BRANCH captures a checkpoint, the agent mutates a real git working tree
-via :class:`GitRollbackHandler`, then ``on_rewind`` restores the original
+via :class:`GitRollbackHandler`, then ``on_timetravel`` restores the original
 state while the checkpoint payload is replayed from storage in a FROZEN
 run.
 
@@ -33,12 +33,12 @@ from pathlib import Path
 
 import pytest
 
-from rewind import checkpoint as sdk_checkpoint
-from rewind.enums import ReplayMode, SpanKind, SpanStatus
-from rewind.models import Span, Trace
-from rewind.replay import ReplaySession
-from rewind.rollback.git import GitRollbackHandler
-from rewind.storage import TraceStore
+from agent_timetravel import checkpoint as sdk_checkpoint
+from agent_timetravel.enums import ReplayMode, SpanKind, SpanStatus
+from agent_timetravel.models import Span, Trace
+from agent_timetravel.replay import ReplaySession
+from agent_timetravel.rollback.git import GitRollbackHandler
+from agent_timetravel.storage import TraceStore
 
 pytestmark = pytest.mark.integration
 
@@ -56,7 +56,7 @@ def _bind(session: ReplaySession) -> Iterator[None]:
     talks directly to the underlying ``_active_session`` ContextVar.
     """
     # pylint: disable=import-outside-toplevel
-    from rewind.replay import _active_session
+    from agent_timetravel.replay import _active_session
     # pylint: enable=import-outside-toplevel
 
     token = _active_session.set(session)
@@ -226,8 +226,8 @@ def test_phase4_e2e_checkpoint_capture_then_frozen_restore(
 ) -> None:
     """Plan §Phase 4 exit criterion (2) — verbatim:
 
-    > An agent using ``rewind.checkpoint()`` restores full state after a
-    > rewind.
+    > An agent using ``timetravel.checkpoint()`` restores full state after a
+    > timetravel.
 
     Three-act structure:
 
@@ -314,7 +314,7 @@ def test_phase4_e2e_git_rollback_restores_after_agent_commit(
 
     Validates the agent-commit edge case documented in the Phase 4 threat
     model: a side-effecting code-editing agent *commits* its writes
-    during a BRANCH (rather than leaving them unstaged). On rewind, the
+    during a BRANCH (rather than leaving them unstaged). On timetravel, the
     handler must ``git reset --hard <anchor>`` to undo those commits and
     restore the pre-branch tree.
     """
@@ -324,8 +324,8 @@ def test_phase4_e2e_git_rollback_restores_after_agent_commit(
     repo = tmp_path / "agent-workspace"
     repo.mkdir()
     _git(repo, "init")
-    _git(repo, "config", "user.email", "test@rewind")
-    _git(repo, "config", "user.name", "Rewind Test")
+    _git(repo, "config", "user.email", "test@timetravel")
+    _git(repo, "config", "user.name", "TimeTravel Test")
     (repo / "README.md").write_text("# Phase 4 repo\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-m", "initial")
@@ -360,8 +360,8 @@ def test_phase4_e2e_git_rollback_restores_after_agent_commit(
             sha = _git(repo, "rev-parse", "HEAD")[:8]
             token.capture({"committed": True, "sha": sha})
 
-    # Now rewind. The handler should undo both the commit AND the new file.
-    handler.on_rewind(branched.branch_id)
+    # Now timetravel. The handler should undo both the commit AND the new file.
+    handler.on_timetravel(branched.branch_id)
 
     assert (repo / "README.md").read_text() == "# Phase 4 repo\n", (
         "git reset --hard should have restored the pre-branch README content"
@@ -374,7 +374,7 @@ def test_phase4_e2e_git_rollback_restores_after_agent_commit(
     # The agent's commit should be gone from the log.
     log = _git(repo, "log", "--oneline")
     assert "agent edits" not in log, (
-        f"Rewind undoing the agent's commit failed; git log still has it:\n{log}"
+        f"TimeTravel undoing the agent's commit failed; git log still has it:\n{log}"
     )
 
 
@@ -386,7 +386,7 @@ def _git(cwd: Path, *args: str) -> str:
 
     S603/S607 silenced: hard-coded command, no user input. ``git`` resolves
     via PATH which is fine for tests (production code in
-    :mod:`rewind.rollback.git` uses absolute discovery).
+    :mod:`timetravel.rollback.git` uses absolute discovery).
     """
     cmd = ["git", *args]  # trusted, see docstring
     result = subprocess.run(  # noqa: S603 - test helper, trusted input
