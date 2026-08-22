@@ -58,19 +58,26 @@ def test_registry_from_graph_builds_langgraph_agent() -> None:
     assert definition is not None
     assert definition.framework == "langgraph"
     schema = definition.input_schema
-    assert "inputs" in schema["properties"]
-    assert set(schema["required"]) == {"inputs"}
+    # The dialog shows a plain query string — no JSON typing for the user.
+    assert schema["properties"]["query"]["type"] == "string"
+    assert set(schema["required"]) == {"query"}
     if _HAS_LANGCHAIN:
         assert definition.available
 
     async def scenario() -> Any:
-        return await definition.compile_runner({"inputs": {"messages": []}, "config": {"recursion_limit": 5}})(  # noqa: E501
-            SimpleNamespace()
-        )
+        return await definition.compile_runner(
+            {"query": "Compare RLHF vs DPO.", "config": {"recursion_limit": 5}}
+        )(SimpleNamespace())
 
     result = asyncio.run(scenario())
     assert result == {"messages": ["done"]}
-    assert graph.calls == [({"messages": []}, {"recursion_limit": 5})]
+    # The wrapper builds the chat-state input from the query text.
+    assert graph.calls == [
+        (
+            {"messages": [{"role": "user", "content": "Compare RLHF vs DPO."}]},
+            {"recursion_limit": 5},
+        )
+    ]
 
 
 def test_registry_from_callable_uses_auto_detection() -> None:

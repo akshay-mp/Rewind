@@ -5,13 +5,14 @@ just a :class:`rewind.Rewind` registry but the objects a LangGraph project
 naturally exports:
 
 * a compiled LangGraph graph / langchain runnable (anything exposing callable
-  ``invoke`` + ``ainvoke``), wrapped into a single-agent registry whose runner
-  calls ``await graph.ainvoke(inputs, config)``;
+  ``invoke`` + ``ainvoke``), wrapped into a single-agent registry;
 * a plain callable, registered as-is with framework auto-detection.
 
-The graph wrapper's ``inputs`` / ``config`` fields render as JSON editors in
-the workbench's start-agent dialog, so a state-schema input such as
-``{"messages": [{"role": "user", "content": "..."}]}`` needs no bespoke form.
+The graph wrapper exposes a plain ``query`` string (plus an optional
+``config`` object) in the start-agent dialog: the developer types the request
+as text and the wrapper builds the standard chat-state input
+``{"messages": [{"role": "user", "content": query}]}`` internally — no JSON
+typing in the UI.
 """
 
 from __future__ import annotations
@@ -62,14 +63,19 @@ def registry_from_object(obj: Any, name: str = "graph") -> Rewind:
 def _registry_from_graph(graph: Any, *, name: str) -> Rewind:
     registry = Rewind(title=name)
 
-    async def run(inputs: dict[str, Any], config: dict[str, Any] | None = None) -> Any:
-        return await graph.ainvoke(inputs, config or None)
+    async def run(query: str, config: dict[str, Any] | None = None) -> Any:
+        return await graph.ainvoke(
+            {"messages": [{"role": "user", "content": query}]}, config or None
+        )
 
     registry.agent(
         name=name,
         framework="langgraph",
         target=graph,
-        description=f"LangGraph graph {type(graph).__name__} launched by Rewind",
+        description=(
+            f"LangGraph graph {type(graph).__name__} — type your query and "
+            "Rewind builds the graph input."
+        ),
     )(run)
     return registry
 
